@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.8.0">
+    
+    <meta name="description" content="A Python AI agent built with engineering rigor."> 
+    
+    <meta name="author" content="rararulab"> 
+    
+    <link rel="canonical" href="https://rararulab.github.io/yaya/wiki/sources/bmad-method/"><link rel="icon" type="image/png" sizes="192x192" href="../../../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../../../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../../../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../../../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../../../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../../../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>BMAD-METHOD — Breakthrough Method for Agile AI-Driven Development - yaya</title>
+
+
+<link href="../../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../../../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../../../css/normalize.css" rel="stylesheet">
+<link href="../../../css/terminal.css" rel="stylesheet">
+<link href="../../../css/theme.css" rel="stylesheet">
+<link href="../../../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../../../css/theme.footer.css" rel="stylesheet">
+<!-- dark color palette -->
+<link href="../../../css/palettes/dark.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+
+
+    
+    <link href="../../../assets/_mkdocstrings.css" rel="stylesheet">  
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../../../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "../../..",
+    shortcuts = "{}";
+</script>
+<script src="../../../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../../../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../../../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../../../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://rararulab.github.io/yaya/" class="no-style">yaya</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../../.." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../../../goal/" class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Goal</span>
+                    </a>
+                    <meta property="position" content="1">
+                </li>
+                
+                
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="2">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../..">Home</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../goal/">Goal</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Wiki</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../lessons-learned/">Lessons Learned</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">User Guide</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../guide/install/">Install</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../guide/usage/">Usage</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Development</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/architecture/">Architecture</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/no-agent-frameworks/">No Third-Party Agent Frameworks</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/workflow/">Workflow</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/multi-agent/">Multi-Agent</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/maintaining-agent-md/">Maintaining AGENT.md</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/cli/">CLI Conventions</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/agent-friendly-cli/">Agent-Friendly CLI (org spec)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/web-ui/">Web UI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/testing/">Testing</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/agent-spec/">Agent Spec (BDD Contracts)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/code-comments/">Code Comments & Docstrings</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../../dev/release/">Release</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+    </ul>
+</nav><hr>
+<nav>
+    <ul>
+        <li><a href="#bmad-method-breakthrough-method-for-agile-ai-driven-development">BMAD-METHOD — Breakthrough Method for Agile AI-Driven Development</a></li>
+        <li><a href="#why-we-read-it">Why we read it</a></li><li><a href="#what-we-took">What we took</a></li><li><a href="#what-we-rejected">What we rejected</a></li><li><a href="#mapping-to-yayas-existing-artifacts">Mapping to yaya's existing artifacts</a></li><li><a href="#see-also">See also</a></li>
+    </ul>
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="bmad-method-breakthrough-method-for-agile-ai-driven-development">BMAD-METHOD — Breakthrough Method for Agile AI-Driven Development<a class="headerlink" href="#bmad-method-breakthrough-method-for-agile-ai-driven-development" title="Permanent link">&para;</a></h1>
+<ul>
+<li><strong>URL / path</strong>: <a href="https://github.com/bmad-code-org/BMAD-METHOD">https://github.com/bmad-code-org/BMAD-METHOD</a></li>
+<li><strong>Consulted on</strong>: 2026-04-17</li>
+<li><strong>Commit / version</strong>: default branch head on consult date (45k stars,
+  under active development, v6 series)</li>
+<li><strong>Status</strong>: active</li>
+</ul>
+<h2 id="why-we-read-it">Why we read it<a class="headerlink" href="#why-we-read-it" title="Permanent link">&para;</a></h2>
+<p>The user asked us to learn from BMAD's AI-development workflow.
+BMAD structures LLM-driven software work as explicit agile ceremonies
+(analyst, PM, architect, developer, retrospective) with state files
+and gated phases. At ~45k stars it is the most-adopted community
+framework for this; worth stripping for parts even though yaya will
+not install it.</p>
+<h2 id="what-we-took">What we took<a class="headerlink" href="#what-we-took" title="Permanent link">&para;</a></h2>
+<h3 id="1-four-phase-gate-discipline">1. Four-phase gate discipline<a class="headerlink" href="#1-four-phase-gate-discipline" title="Permanent link">&para;</a></h3>
+<p>BMAD's BMM module splits work into four numbered phases, each
+producing specific artifacts:</p>
+<ol>
+<li><strong>Analysis</strong> (<code>1-analysis/</code>) — analyst, tech-writer, product brief,
+   PR/FAQ, research.</li>
+<li><strong>Plan</strong> (<code>2-plan-workflows/</code>) — PM, UX designer, create-PRD,
+   edit-PRD, validate-PRD.</li>
+<li><strong>Solutioning</strong> (<code>3-solutioning/</code>) — architect,
+   create-architecture, create-epics-and-stories,
+   generate-project-context, check-implementation-readiness.</li>
+<li><strong>Implementation</strong> (<code>4-implementation/</code>) — dev, create-story,
+   dev-story, code-review, retrospective, sprint-planning,
+   sprint-status.</li>
+</ol>
+<p>You cannot skip phases; earlier phases produce the artifacts later
+phases consume. We already have pieces of this implicitly — GOAL.md
+is analysis, <code>specs/&lt;slug&gt;.spec</code> is plan, <code>docs/dev/architecture.md</code>
++ <code>plugin-protocol.md</code> are solutioning, the worktree + PR is
+implementation — but the gates are not explicit. <strong>Adopted as
+<code>docs/dev/workflow.md</code> phase gates.</strong></p>
+<h3 id="2-context-filled-story-spec">2. Context-filled story spec<a class="headerlink" href="#2-context-filled-story-spec" title="Permanent link">&para;</a></h3>
+<p>BMAD insists every implementation task starts from a "context-filled
+story spec file" — a standalone document with goal, ACs, constraints,
+prior art, and a task list the dev agent checks off. The dev agent
+never pieces context together from chat history.</p>
+<p>We already have the scaffold for this via agent-spec
+(<code>specs/&lt;slug&gt;.spec</code> with Intent / Decisions / Boundaries /
+Completion Criteria). <strong>Adopted with no changes; BMAD's pattern
+confirms the existing direction.</strong></p>
+<h3 id="3-halt-conditions-dont-stop-at-milestones">3. HALT conditions + "don't stop at milestones"<a class="headerlink" href="#3-halt-conditions-dont-stop-at-milestones" title="Permanent link">&para;</a></h3>
+<p>BMAD's <code>bmad-dev-story/workflow.md</code> contains verbatim:</p>
+<blockquote>
+<p>Absolutely DO NOT stop because of "milestones", "significant
+progress", or "session boundaries". Continue in a single execution
+until the story is COMPLETE (all ACs satisfied and all
+tasks/subtasks checked) UNLESS a HALT condition is triggered or
+the USER gives other instruction.</p>
+</blockquote>
+<p>Explicit HALT actions fire on concrete conditions:
+<code>HALT - Run create-story</code>, <code>HALT - User can review sprint status</code>,
+etc. This codifies a failure mode we have observed: the LLM hitting
+a natural breakpoint and pausing work, losing context on resume.
+<strong>Adopted as an explicit HALT list in <code>docs/dev/workflow.md</code>.</strong></p>
+<h3 id="4-retrospective-as-a-ceremony-not-an-afterthought">4. Retrospective as a ceremony, not an afterthought<a class="headerlink" href="#4-retrospective-as-a-ceremony-not-an-afterthought" title="Permanent link">&para;</a></h3>
+<p>BMAD makes retrospective a first-class skill
+(<code>bmad-retrospective/</code>) that runs on a cadence and produces durable
+artifacts. Combines cleanly with the Karpathy wiki lint pass we
+already adopted: one ceremony covers both "what did we learn" and
+"is the wiki still accurate". <strong>Adopted by tying the retro cadence
+to the wiki lint operation.</strong></p>
+<h2 id="what-we-rejected">What we rejected<a class="headerlink" href="#what-we-rejected" title="Permanent link">&para;</a></h2>
+<h3 id="the-whole-framework-install">The whole-framework install<a class="headerlink" href="#the-whole-framework-install" title="Permanent link">&para;</a></h3>
+<p>BMAD ships via <code>npx bmad-method install</code> and drops ~30 skills, four
+modules (BMM / BMB / TEA / BMGD / CIS), a node-based installer, and
+a config file (<code>_bmad/bmm/config.yaml</code>) into your project. That is
+an entire opinionated platform. yaya is a kernel-style agent
+project; adopting BMAD's installer would bury yaya under BMAD.</p>
+<h3 id="xml-tagged-workflow-dsl">XML-tagged workflow DSL<a class="headerlink" href="#xml-tagged-workflow-dsl" title="Permanent link">&para;</a></h3>
+<p>BMAD authors each skill as a markdown file with XML tags
+(<code>&lt;workflow&gt;</code>, <code>&lt;step n="1"&gt;</code>, <code>&lt;check if="..."&gt;</code>, <code>&lt;goto
+anchor="..."&gt;</code>, <code>&lt;action&gt;</code>, <code>&lt;critical&gt;</code>, <code>HALT</code>). This is a
+small DSL on top of markdown that BMAD's runtime interprets. yaya
+already has agent-spec for structured task contracts and plain
+prose elsewhere; a second DSL is churn for marginal gain.</p>
+<h3 id="communication-language-user-skill-level-configuration">Communication-language / user-skill-level configuration<a class="headerlink" href="#communication-language-user-skill-level-configuration" title="Permanent link">&para;</a></h3>
+<p>BMAD's dev workflow branches on <code>{communication_language}</code> and
+<code>{user_skill_level}</code> configured in <code>_bmad/bmm/config.yaml</code>. yaya
+has exactly one stance (Chinese with the user, English in artifacts)
+and one audience (the user + AI agents operating the repo). No
+runtime branching needed.</p>
+<h3 id="sprint-statusyaml-as-a-parallel-tracker">sprint-status.yaml as a parallel tracker<a class="headerlink" href="#sprint-statusyaml-as-a-parallel-tracker" title="Permanent link">&para;</a></h3>
+<p>BMAD maintains <code>sprint-status.yaml</code> listing every story with status
+(<code>ready-for-dev</code>, <code>in-progress</code>, <code>done</code>). It exists because BMAD is
+agnostic to your issue tracker. yaya uses GitHub issues as the
+single source of truth; a parallel YAML file is redundant. We take
+the <em>concept</em> — before picking up work, confirm the issue has full
+context — without the extra file. GitHub labels and issue comments
+carry the equivalent state.</p>
+<h3 id="party-mode-multi-persona-single-session-collaboration">"Party mode" — multi-persona single-session collaboration<a class="headerlink" href="#party-mode-multi-persona-single-session-collaboration" title="Permanent link">&para;</a></h3>
+<p>BMAD's <code>bmad-party-mode</code> summons analyst + PM + architect + dev
+personas into one chat to deliberate. yaya has sub-agents via the
+kernel's <code>agent</code> tool (#34) for this; adding a single-session
+multi-persona shim in prose would fight the infrastructure.</p>
+<h3 id="bmad-builder-test-architect-game-dev-cis-modules">BMAD Builder / Test Architect / Game Dev / CIS modules<a class="headerlink" href="#bmad-builder-test-architect-game-dev-cis-modules" title="Permanent link">&para;</a></h3>
+<p>Out of scope. yaya is a single project with a fixed kernel; not a
+general-purpose workflow framework.</p>
+<h2 id="mapping-to-yayas-existing-artifacts">Mapping to yaya's existing artifacts<a class="headerlink" href="#mapping-to-yayas-existing-artifacts" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>BMAD concept</th>
+<th>yaya equivalent</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Analysis phase</td>
+<td><code>GOAL.md</code> + relevant <code>docs/dev/*.md</code></td>
+<td>exists</td>
+</tr>
+<tr>
+<td>Plan phase (PRD)</td>
+<td><code>specs/&lt;slug&gt;.spec</code> via agent-spec</td>
+<td>exists, lint in CI</td>
+</tr>
+<tr>
+<td>Solutioning phase (architecture)</td>
+<td><code>docs/dev/plugin-protocol.md</code> + folder <code>AGENT.md</code></td>
+<td>exists</td>
+</tr>
+<tr>
+<td>Implementation phase</td>
+<td>issue → worktree → PR state machine</td>
+<td>exists</td>
+</tr>
+<tr>
+<td>Story spec</td>
+<td><code>specs/&lt;slug&gt;.spec</code></td>
+<td>exists</td>
+</tr>
+<tr>
+<td>HALT conditions</td>
+<td><strong>new</strong> — now in <code>docs/dev/workflow.md</code></td>
+<td>adopted</td>
+</tr>
+<tr>
+<td>Phase gates</td>
+<td><strong>new</strong> — now in <code>docs/dev/workflow.md</code></td>
+<td>adopted</td>
+</tr>
+<tr>
+<td>Retrospective</td>
+<td>wiki lint pass (see <code>docs/wiki/AGENT.md</code>)</td>
+<td>merged</td>
+</tr>
+<tr>
+<td>Sprint status tracker</td>
+<td>GitHub issues + labels</td>
+<td>equivalent</td>
+</tr>
+</tbody>
+</table>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../../dev/workflow/">docs/dev/workflow.md</a> — phase gates + HALT
+  conditions live here, not in the wiki.</li>
+<li><a href="../../../dev/agent-spec/">docs/dev/agent-spec.md</a> — the spec layer
+  BMAD calls "context-filled story spec".</li>
+<li><a href="../../AGENT/">docs/wiki/AGENT.md</a> — wiki schema; retrospective is
+  the lint operation defined there.</li>
+<li><a href="../karpathy-llm-wiki/">sources/karpathy-llm-wiki.md</a> — sibling
+  source page; BMAD's retro ↔ Karpathy's lint share the same shape.</li>
+</ul>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+            
+            <p class="text-center text-muted">Copyright (c) 2026 <a href="https://github.com/rararulab">rararulab</a> contributors.</p>
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal" aria-label="Close">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>

@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#workflow-yaya-addenda">Workflow (yaya addenda)</a></li>
-        <li><a href="#state-machine-reminder">State machine (reminder)</a></li><li><a href="#worktree-verification-commands-yaya">Worktree verification commands (yaya)</a></li><li><a href="#labels-required">Labels (required)</a></li><li><a href="#multi-agent-dispatch">Multi-agent dispatch</a></li><li><a href="#stacked-prs">Stacked PRs</a></li>
+        <li><a href="#state-machine-reminder">State machine (reminder)</a></li><li><a href="#worktree-verification-commands-yaya">Worktree verification commands (yaya)</a></li><li><a href="#labels-required">Labels (required)</a></li><li><a href="#multi-agent-dispatch">Multi-agent dispatch</a></li><li><a href="#stacked-prs">Stacked PRs</a></li><li><a href="#phase-gates-yayas-flavour-of-the-bmad-4-phases">Phase gates (yaya's flavour of the BMAD 4 phases)</a></li><li><a href="#halt-conditions-when-to-stop-mid-implementation">HALT conditions — when to stop mid-implementation</a></li><li><a href="#retrospective-cadence">Retrospective cadence</a></li>
     </ul>
 </nav>
 </aside>
@@ -480,6 +480,113 @@ duplicate them in this repo.</p>
 <h2 id="stacked-prs">Stacked PRs<a class="headerlink" href="#stacked-prs" title="Permanent link">&para;</a></h2>
 <p>For features &gt; ~400 LOC or crossing layers, follow
 <code>rararulab/.github/docs/stacked-prs.md</code>.</p>
+<h2 id="phase-gates-yayas-flavour-of-the-bmad-4-phases">Phase gates (yaya's flavour of the BMAD 4 phases)<a class="headerlink" href="#phase-gates-yayas-flavour-of-the-bmad-4-phases" title="Permanent link">&para;</a></h2>
+<p>Every non-trivial change passes through four phases <strong>in order</strong>. You
+cannot skip a phase; each one produces the artifact the next consumes.
+Pattern distilled from <a href="../../wiki/sources/bmad-method/">BMAD-METHOD</a>;
+full rationale lives in that wiki source page.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Phase</th>
+<th>yaya artifact</th>
+<th>Where it lives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Analysis</strong></td>
+<td>the issue itself, with a GOAL.md-anchored description and the right labels</td>
+<td>GitHub issue</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Plan</strong></td>
+<td>a task contract with Intent / Decisions / Boundaries / Completion Criteria</td>
+<td><code>specs/&lt;slug&gt;.spec</code> (agent-spec)</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Solutioning</strong></td>
+<td>the design call — which events, which plugin category, which files; cite the authoritative doc</td>
+<td>PR description + updates to <code>docs/dev/*.md</code> and folder <code>AGENT.md</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Implementation</strong></td>
+<td>code, tests, <code>just check &amp;&amp; just test</code> green, CI green</td>
+<td>worktree branch → PR</td>
+</tr>
+</tbody>
+</table>
+<p>Gate checks (answer <code>yes</code> before moving to the next phase):</p>
+<ol>
+<li><strong>Analysis → Plan</strong>: Does the issue state <em>what</em> and <em>why</em> against
+   a GOAL.md principle? Are all required labels attached?</li>
+<li><strong>Plan → Solutioning</strong>: Does the <code>specs/&lt;slug&gt;.spec</code> lint clean
+   (<code>agent-spec lint</code>)? Is every Completion Criteria scenario bound
+   to a concrete test via <code>Test:</code>?</li>
+<li><strong>Solutioning → Implementation</strong>: Does the design cite the
+   authoritative <code>docs/dev/*.md</code> for every new contract it touches?
+   Are dependency issues resolved (no forward references to unmerged
+   PRs in unrelated streams)?</li>
+<li><strong>Implementation → merge</strong>: <code>just check &amp;&amp; just test</code> green,
+   <code>gh pr checks --watch</code> green, spec still reflects the shipped code?</li>
+</ol>
+<p>Trivial changes — single-line typos, dependency bumps, doc-only
+clarifications — skip phases 2 and 3. Anything else does not.</p>
+<h2 id="halt-conditions-when-to-stop-mid-implementation">HALT conditions — when to stop mid-implementation<a class="headerlink" href="#halt-conditions-when-to-stop-mid-implementation" title="Permanent link">&para;</a></h2>
+<p>Borrowed verbatim from BMAD's developer-workflow rule:</p>
+<blockquote>
+<p>Do NOT stop because of "milestones", "significant progress", or
+"session boundaries". Continue in a single execution until the
+story is complete UNLESS a HALT condition is triggered or the user
+gives other instructions.</p>
+</blockquote>
+<p>The rule exists because LLMs hallucinate natural breakpoints and
+lose context on resume. Do not do this.</p>
+<p>HALT for any of these; otherwise keep going:</p>
+<ul>
+<li><strong>Scope creep</strong>: the work is diverging from the <code>specs/&lt;slug&gt;.spec</code>
+  Boundaries. HALT → amend the spec in the same PR or open a
+  follow-on issue.</li>
+<li><strong>Failing test you cannot diagnose</strong>: HALT → file the failure
+  (paste <code>turn_id</code> + <code>session_id</code> per <code>docs/dev/debug.md</code>) and ask
+  the user.</li>
+<li><strong>Unresolved dependency</strong>: the implementation blocks on an issue
+  whose PR has not landed. HALT → comment on the PR and wait.</li>
+<li><strong>Authorization-required action</strong>: you are about to force-push,
+  rewrite main, or publish a release the user did not ask for.
+  HALT always.</li>
+<li><strong>Explicit user "stop"</strong>: HALT immediately.</li>
+</ul>
+<p>Do NOT HALT for:</p>
+<ul>
+<li>Reaching a "natural milestone", a "good checkpoint", or a
+  "significant chunk" — continue.</li>
+<li>Wanting a review between layers — finish the spec's Completion
+  Criteria, then open the PR.</li>
+<li>Hitting a failed pre-commit hook — fix it, re-stage, continue.</li>
+</ul>
+<p>Scheduling a "next session" counts as HALTing. Do not do it unless
+one of the HALT conditions above applies.</p>
+<h2 id="retrospective-cadence">Retrospective cadence<a class="headerlink" href="#retrospective-cadence" title="Permanent link">&para;</a></h2>
+<p>Retrospective is the wiki lint pass defined in
+<a href="../../wiki/AGENT/#lint">docs/wiki/AGENT.md</a>. Runs every ~5 merged
+PRs or every two weeks, whichever comes first.</p>
+<p>Each retro appends a <code>## [YYYY-MM-DD] lint | retrospective</code> entry to
+<code>docs/wiki/log.md</code> and updates <code>docs/wiki/lessons-learned.md</code> with
+any new hazards. Output is a short list of:</p>
+<ul>
+<li>Contradictions found between wiki pages.</li>
+<li>Stale claims about sources (<code>vendor/*</code>, external gists) that
+  newer commits have superseded.</li>
+<li>Orphan wiki pages (zero inbound links) to delete or link.</li>
+<li>Missing concept pages where design discussions repeatedly cite
+  the same idea without a home.</li>
+</ul>
 </section>
 
             </main>

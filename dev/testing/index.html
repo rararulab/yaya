@@ -533,8 +533,11 @@
 <li><strong>Example tests</strong>: one concrete input → one expected output. Default.</li>
 <li><strong>Property tests (hypothesis)</strong>: assert an invariant over a <em>generated</em>
   input space. Use for pure functions (parsers, comparators, transforms).</li>
-<li><strong>Snapshot tests (syrupy)</strong>: pin the exact shape of a stable output
-  (<code>--help</code>, JSON payload). Refresh deliberately, not reflexively.</li>
+<li><strong>Snapshot tests (syrupy)</strong>: pin the exact shape of a stable output.
+  Only snapshot outputs that are platform-agnostic — e.g. a JSON
+  payload from <code>yaya --json foo</code>. Do NOT snapshot rich-rendered help
+  text; rich picks different box-drawing glyphs on Windows vs POSIX,
+  and snapshots drift. Refresh deliberately, not reflexively.</li>
 <li><strong>CLI tests</strong>: <code>runner.invoke(cli_app, [...])</code> + assert exit code, JSON
   shape, stderr vs stdout routing. See <a href="../cli/">cli.md</a>.</li>
 </ul>

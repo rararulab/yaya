@@ -9,6 +9,9 @@ that creates or renames a page.
 
 ## Sources
 
+- [bmad-method.md](sources/bmad-method.md) — BMAD agile-AI framework;
+  sources of the phase gates and HALT conditions in
+  `docs/dev/workflow.md`.
 - [karpathy-llm-wiki.md](sources/karpathy-llm-wiki.md) — Karpathy's
   LLM Wiki pattern; the template for this directory.
 

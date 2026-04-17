@@ -11,7 +11,7 @@
     
     <meta name="author" content="rararulab"> 
     
-    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/cli/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/web-ui/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
 <link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
 <link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
 <link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
@@ -21,7 +21,7 @@
 
     
  
-<title>CLI Conventions - yaya</title>
+<title>Web UI - yaya</title>
 
 
 <link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
@@ -287,7 +287,9 @@
                 <li class="terminal-mkdocs-side-nav-li-ul-li">
     
         
-        <span class="terminal-mkdocs-side-nav-item--active">CLI Conventions</span>
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../cli/">CLI Conventions</a>
+        
     
     </li>
             
@@ -311,9 +313,7 @@
                 <li class="terminal-mkdocs-side-nav-li-ul-li">
     
         
-        
-            <a class="terminal-mkdocs-side-nav-item" href="../web-ui/">Web UI</a>
-        
+        <span class="terminal-mkdocs-side-nav-item--active">Web UI</span>
     
     </li>
             
@@ -379,96 +379,166 @@
 </nav><hr>
 <nav>
     <ul>
-        <li><a href="#cli-conventions">CLI Conventions</a></li>
-        <li><a href="#command-surface-10">Command surface (1.0)</a></li><li><a href="#pattern">Pattern</a></li><li><a href="#yaya-serve-specifics">yaya serve specifics</a></li><li><a href="#json-mode-json">JSON mode (--json)</a></li><li><a href="#extending-the-cli-checklist">Extending the CLI — checklist</a></li>
+        <li><a href="#web-ui">Web UI</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#dependency-policy">Dependency policy</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#websocket-event-protocol-overview">WebSocket event protocol (overview)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
             <main id="terminal-mkdocs-main-content">
 <section id="mkdocs-terminal-content">
-    <h1 id="cli-conventions">CLI Conventions<a class="headerlink" href="#cli-conventions" title="Permanent link">&para;</a></h1>
-<p>yaya's default experience is the web UI (<code>yaya serve</code>). The CLI stays
-minimal and scripting-friendly. Canonical org spec:
-<code>rararulab/.github/docs/agent-friendly-cli.md</code> — yaya follows it strictly.
-This file captures yaya-specific mechanics.</p>
-<h2 id="command-surface-10">Command surface (1.0)<a class="headerlink" href="#command-surface-10" title="Permanent link">&para;</a></h2>
+    <h1 id="web-ui">Web UI<a class="headerlink" href="#web-ui" title="Permanent link">&para;</a></h1>
+<p>yaya's default surface is a local web UI served by <code>yaya serve</code> from a
+single Python process. The UI is built on
+<a href="https://github.com/badlogic/pi-mono/tree/main/packages/web-ui"><code>@mariozechner/pi-web-ui</code></a>
+(Lit web components + TailwindCSS v4).</p>
+<h2 id="runtime-shape">Runtime shape<a class="headerlink" href="#runtime-shape" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya serve
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>└── one Python process (uvicorn + FastAPI)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    ├── GET /             → pre-built UI shell (HTML)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    ├── GET /assets/*     → static JS/CSS (importlib.resources)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    ├── WS  /ws           → kernel event bus ↔ UI (the contract)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    └── API /plugins/*    → list / install / remove / reload
+</code></pre></div>
+<ul>
+<li>Default bind: <code>127.0.0.1:&lt;port&gt;</code> (port picked from env / CLI flag /
+  first-free). Non-goal: public-internet deployment (see
+  <a href="../../goal/">GOAL.md</a>).</li>
+<li><code>yaya serve --no-open</code> suppresses the automatic browser launch.</li>
+<li>The agent loop runs in Python. The browser is a <strong>renderer and input
+  device</strong>, not an agent runtime. We do <strong>not</strong> embed <code>pi-agent-core</code> or
+  any JS/TS agent.</li>
+</ul>
+<h2 id="source-layout">Source layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>src/yaya/web/
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── package.json          # npm workspace — declares @mariozechner/pi-web-ui
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>├── tsconfig.json
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>├── vite.config.ts
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>├── src/                  # our shell: wires pi-web-ui components to the WS event bus
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>│   ├── main.ts
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>│   ├── ws-client.ts      # thin WebSocket client speaking yaya&#39;s event protocol
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>│   └── components/       # yaya-specific Lit components composing pi-web-ui primitives
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>├── index.html
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>└── static/               # *build output* — do NOT edit by hand
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    ├── index.html
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    ├── assets/*.js
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    └── assets/*.css
+</code></pre></div>
+<p><code>static/</code> is git-tracked so end users who install the wheel get the UI
+without needing Node. CI verifies <code>static/</code> is up-to-date with <code>src/</code>
+(see below).</p>
+<h2 id="dependency-policy">Dependency policy<a class="headerlink" href="#dependency-policy" title="Permanent link">&para;</a></h2>
+<ul>
+<li>pi-web-ui is consumed <strong>as an npm dependency</strong> (<code>package.json</code>) — not
+  vendored, not forked. Upgrades go through ordinary <code>npm update</code> PRs.</li>
+<li><code>vendor/pi-mono/</code> in the repo is <strong>reference only</strong> — a pinned mirror
+  for agents and humans to read. Do NOT import from it; the build must
+  resolve through npm.</li>
+<li>Peer dependencies (<code>@mariozechner/mini-lit</code>, <code>lit</code>) live in yaya's own
+  <code>package.json</code> and are pinned.</li>
+</ul>
+<h2 id="build-pipeline">Build pipeline<a class="headerlink" href="#build-pipeline" title="Permanent link">&para;</a></h2>
+<p>yaya ships two toolchains; only the Python half is required at install
+time.</p>
+<ul>
+<li><strong>Install time (user-facing)</strong>: <code>pip install yaya</code>. Pure Python. The
+  wheel already contains <code>src/yaya/web/static/</code>.</li>
+<li><strong>Build time (contributor)</strong>: Node + npm. <code>just web-build</code> runs
+  <code>npm ci &amp;&amp; npm run build</code> inside <code>src/yaya/web/</code> and writes into
+  <code>static/</code>. The wheel's build step (<code>hatchling</code>) includes <code>static/</code>
+  as package data.</li>
+<li><strong>Dev loop</strong>: <code>just web-dev</code> starts Vite's dev server with HMR on a
+  separate port, proxied by <code>yaya serve --dev</code> to the Python backend.
+  Two processes during development, one at release.</li>
+</ul>
+<h3 id="just-recipes">just recipes<a class="headerlink" href="#just-recipes" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>just<span class="w"> </span>web-install<span class="w">    </span><span class="c1"># npm ci inside src/yaya/web</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>just<span class="w"> </span>web-build<span class="w">      </span><span class="c1"># npm run build → static/</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>just<span class="w"> </span>web-dev<span class="w">        </span><span class="c1"># vite dev server (HMR)</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>just<span class="w"> </span>web-check<span class="w">      </span><span class="c1"># biome + tsc --noEmit</span>
+</code></pre></div>
+<h3 id="ci-rules">CI rules<a class="headerlink" href="#ci-rules" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>just web-check</code> runs on every PR.</li>
+<li><code>just web-build</code> runs and CI <strong>fails if <code>static/</code> changed</strong> — i.e. the
+  PR author must commit the built assets alongside source changes.
+  Rationale: keeps the wheel reproducible; avoids Node in the release
+  pipeline.</li>
+<li>Wheel-size budget (see <a href="../../goal/">GOAL.md</a> success metrics) is
+  asserted on the built artifact.</li>
+</ul>
+<h2 id="websocket-event-protocol-overview">WebSocket event protocol (overview)<a class="headerlink" href="#websocket-event-protocol-overview" title="Permanent link">&para;</a></h2>
+<p>The contract between kernel and UI is a stream of events. Shapes live in
+<code>src/yaya/kernel/events.py</code> (Python, authoritative) and
+<code>src/yaya/web/src/events.ts</code> (TypeScript, generated or hand-maintained
+in lock-step).</p>
+<p><strong>Mandatory pairing</strong>: any change to <code>events.py</code> updates the TS side in
+the same PR. A mismatch fails CI (checksum compare between Python JSON
+schema export and the TS type file).</p>
+<p>Minimal event kinds:</p>
 <table>
 <thead>
 <tr>
-<th>Command</th>
-<th>Purpose</th>
+<th>Kind</th>
+<th>Direction</th>
+<th>Payload</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>yaya serve</code></td>
-<td><strong>Default.</strong> Start the single-process web server; open browser.</td>
+<td><code>user.message</code></td>
+<td>UI → kernel</td>
+<td><code>{ text, attachments? }</code></td>
 </tr>
 <tr>
-<td><code>yaya version</code></td>
-<td>Print version.</td>
+<td><code>assistant.message.delta</code></td>
+<td>kernel → UI</td>
+<td>streaming text chunk</td>
 </tr>
 <tr>
-<td><code>yaya plugin list</code></td>
-<td>List installed plugins.</td>
+<td><code>assistant.message.done</code></td>
+<td>kernel → UI</td>
+<td>final message + tool calls</td>
 </tr>
 <tr>
-<td><code>yaya plugin install &lt;src&gt;</code></td>
-<td>Install from path / URL / registry.</td>
+<td><code>tool.call.start</code></td>
+<td>kernel → UI</td>
+<td><code>{ id, name, args }</code></td>
 </tr>
 <tr>
-<td><code>yaya plugin remove &lt;name&gt;</code></td>
-<td>Uninstall.</td>
+<td><code>tool.call.result</code></td>
+<td>kernel → UI</td>
+<td><code>{ id, ok, value \| error }</code></td>
+</tr>
+<tr>
+<td><code>plugin.installed</code></td>
+<td>kernel → UI</td>
+<td><code>{ name, version }</code></td>
+</tr>
+<tr>
+<td><code>plugin.reloaded</code></td>
+<td>kernel → UI</td>
+<td><code>{ names }</code></td>
+</tr>
+<tr>
+<td><code>kernel.error</code></td>
+<td>kernel → UI</td>
+<td><code>{ source, message }</code></td>
 </tr>
 </tbody>
 </table>
-<p>Everything else — <code>hello</code>, <code>update</code>, future integrations — ships as a
-plugin. Adding a built-in subcommand requires a GOAL.md amendment.</p>
-<h2 id="pattern">Pattern<a class="headerlink" href="#pattern" title="Permanent link">&para;</a></h2>
-<p>Every CLI subcommand:</p>
-<ol>
-<li>Builds a result in <code>core/</code> or <code>kernel/</code> (pure logic, no printing, no <code>sys.exit</code>).</li>
-<li>Calls <code>emit_ok</code> / <code>emit_error</code> from <code>yaya.cli.output</code> — never <code>print</code>,
-   <code>typer.echo</code>, or <code>Console().print</code> directly.</li>
-<li>Exits non-zero on failure; <code>fatal()</code> is the one-liner helper.</li>
-</ol>
-<h2 id="yaya-serve-specifics"><code>yaya serve</code> specifics<a class="headerlink" href="#yaya-serve-specifics" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya<span class="w"> </span>serve<span class="w">                       </span><span class="c1"># bind 127.0.0.1:&lt;auto&gt;, open browser</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">7456</span><span class="w">            </span><span class="c1"># fixed port</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--no-open<span class="w">              </span><span class="c1"># do not launch browser</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--dev<span class="w">                  </span><span class="c1"># proxy to `vite dev` for UI HMR</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--json<span class="w">                 </span><span class="c1"># JSON lifecycle events on stdout (addr, pid, shutdown)</span>
-</code></pre></div>
+<p>Full catalog with JSON Schema lives next to <code>events.py</code> and is surfaced
+in <a href="../agent-spec/">agent-spec.md</a> contracts.</p>
+<h2 id="what-not-to-do">What NOT To Do<a class="headerlink" href="#what-not-to-do" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Bind is always <code>127.0.0.1</code> through 1.0 (see <a href="../../goal/">GOAL.md</a>).
-  There is <strong>no</strong> <code>--host</code> flag.</li>
-<li>Exit cleanly on <code>SIGINT</code> / <code>SIGTERM</code>; emit a final
-  <code>{"ok": true, "action": "shutdown", ...}</code> under <code>--json</code>.</li>
-<li>Kernel startup errors exit non-zero with a <code>suggestion</code> field.</li>
-</ul>
-<h2 id="json-mode-json">JSON mode (<code>--json</code>)<a class="headerlink" href="#json-mode-json" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Stdout carries <code>{"ok": bool, ...}</code>. Contract enforced by <code>cli/output.py</code>.</li>
-<li>Success: <code>{"ok": true, "action": "&lt;verb&gt;", ...data}</code>.</li>
-<li>Error: <code>{"ok": false, "error": "...", "suggestion": "...", ...data}</code>.</li>
-<li>Human logs / warnings go to <strong>stderr</strong> (<code>warn(...)</code>).</li>
-</ul>
-<h2 id="extending-the-cli-checklist">Extending the CLI — checklist<a class="headerlink" href="#extending-the-cli-checklist" title="Permanent link">&para;</a></h2>
-<p>Adding a new CLI command is a GOAL.md amendment (see surface above). If
-approved, follow this:</p>
-<ul class="task-list">
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Amend GOAL.md's "Command surface" in the same PR.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Create <code>src/yaya/cli/commands/&lt;name&gt;.py</code> exposing <code>register(app)</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Register it in <code>src/yaya/cli/__init__.py</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Body pattern: build a structured result in <code>core/</code> or <code>kernel/</code>,
-      then <code>emit_ok</code> / <code>emit_error</code>. No direct printing.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Add <code>epilog=EXAMPLES</code> with at least one runnable example.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Destructive? Add <code>--dry-run</code> and <code>--yes</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Error paths must emit a <code>suggestion</code> and exit non-zero.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Add <code>tests/cli/test_&lt;name&gt;.py</code> covering text mode, <code>--json</code>, and
-      at least one failure path (exit code + JSON shape).</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Network/disk work: add <code>tests/core/test_&lt;module&gt;.py</code> with
-      <code>pytest-httpx</code> mocks — no real network in tests.</li>
+<li>Do NOT import from <code>vendor/pi-mono/</code> — use the npm package.</li>
+<li>Do NOT embed <code>pi-agent-core</code> or any JS/TS agent runtime. The agent is
+  Python; the browser renders.</li>
+<li>Do NOT add a build step that requires Node <strong>at install time</strong> —
+  users get a pre-built wheel.</li>
+<li>Do NOT introduce an auth layer or a public-bind default to "make it
+  easier to deploy". That is a 2.x conversation at earliest.</li>
+<li>Do NOT couple UI components directly to kernel internals — the
+  WebSocket event protocol is the only contract.</li>
 </ul>
 </section>
 

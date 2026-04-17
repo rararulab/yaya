@@ -102,6 +102,14 @@
                 </li>
                 
                 
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="goal/" class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Goal</span>
+                    </a>
+                    <meta property="position" content="1">
+                </li>
+                
+                
                 
                 
                 
@@ -113,7 +121,7 @@
     <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
         <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
     </a>
-    <meta property="position" content="1">
+    <meta property="position" content="2">
 </li>
                     
             </ul>
@@ -132,6 +140,19 @@
     
         
         <span class="terminal-mkdocs-side-nav-item--active">Home</span>
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="goal/">Goal</a>
+        
     
     
     
@@ -256,6 +277,19 @@
     
         
         
+            <a class="terminal-mkdocs-side-nav-item" href="dev/maintaining-agent-md/">Maintaining AGENT.md</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
             <a class="terminal-mkdocs-side-nav-item" href="dev/cli/">CLI Conventions</a>
         
     
@@ -282,6 +316,19 @@
     
         
         
+            <a class="terminal-mkdocs-side-nav-item" href="dev/web-ui/">Web UI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
             <a class="terminal-mkdocs-side-nav-item" href="dev/testing/">Testing</a>
         
     
@@ -295,7 +342,20 @@
     
         
         
-            <a class="terminal-mkdocs-side-nav-item" href="dev/agent-spec/">Agent Spec Conformance</a>
+            <a class="terminal-mkdocs-side-nav-item" href="dev/agent-spec/">Agent Spec (BDD Contracts)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="dev/code-comments/">Code Comments & Docstrings</a>
         
     
     </li>
@@ -331,7 +391,11 @@
             <main id="terminal-mkdocs-main-content">
 <section id="mkdocs-terminal-content">
     <h1 id="yaya">yaya<a class="headerlink" href="#yaya" title="Permanent link">&para;</a></h1>
-<p>A Python AI agent built with engineering rigor.</p>
+<p>A <strong>lightweight, kernel-style agent that grows itself.</strong> A single
+Python process (<code>yaya serve</code>) runs an event-driven kernel whose web UI
+opens at <code>http://127.0.0.1:&lt;port&gt;</code>. Everything else is a plugin — and
+yaya can author plugins on demand.</p>
+<p>Read the product anchor: <strong><a href="goal/">GOAL</a></strong>.</p>
 <h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>https://github.com/rararulab/yaya/releases/latest/download/yaya-&lt;VERSION&gt;-py3-none-any.whl
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>yaya<span class="w"> </span>--help
@@ -348,8 +412,10 @@
 <li><a href="dev/workflow/">Workflow</a> — issue → worktree → PR (MANDATORY).</li>
 <li><a href="dev/multi-agent/">Multi-Agent</a> — parallel dispatch, hand-off rules.</li>
 <li><a href="dev/cli/">CLI Conventions</a> — command pattern and extension checklist.</li>
+<li><a href="dev/web-ui/">Web UI</a> — <code>yaya serve</code>, pi-web-ui build, WS event protocol.</li>
 <li><a href="dev/testing/">Testing</a> — <code>just check</code> · <code>just test</code> · TDD.</li>
-<li><a href="dev/agent-spec/">Agent Spec Conformance</a> — Oracle Agent Spec rules.</li>
+<li><a href="dev/agent-spec/">Agent Spec (BDD Contracts)</a> — <code>ZhangHanDong/agent-spec</code> workflow.</li>
+<li><a href="dev/code-comments/">Code Comments &amp; Docstrings</a> — Google Python Style Guide + yaya overlays.</li>
 <li><a href="dev/release/">Release</a> — release-please automation.</li>
 </ul>
 <h2 id="org-standards">Org standards<a class="headerlink" href="#org-standards" title="Permanent link">&para;</a></h2>

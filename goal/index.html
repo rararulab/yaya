@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.8.0">
+    
+    <meta name="description" content="A Python AI agent built with engineering rigor."> 
+    
+    <meta name="author" content="rararulab"> 
+    
+    <link rel="canonical" href="https://rararulab.github.io/yaya/goal/"><link rel="icon" type="image/png" sizes="192x192" href="../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>Goal - yaya</title>
+
+
+<link href="../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../css/normalize.css" rel="stylesheet">
+<link href="../css/terminal.css" rel="stylesheet">
+<link href="../css/theme.css" rel="stylesheet">
+<link href="../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../css/theme.footer.css" rel="stylesheet">
+<!-- dark color palette -->
+<link href="../css/palettes/dark.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+
+
+    
+    <link href="../assets/_mkdocstrings.css" rel="stylesheet">  
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "..",
+    shortcuts = "{}";
+</script>
+<script src="../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://rararulab.github.io/yaya/" class="no-style">yaya</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href=".." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="./" class="menu-item active" property="item" typeof="WebPage">
+                        <span property="name">Goal</span>
+                    </a>
+                    <meta property="position" content="1">
+                </li>
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="2">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="..">Home</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        <span class="terminal-mkdocs-side-nav-item--active">Goal</span>
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">User Guide</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../guide/install/">Install</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../guide/usage/">Usage</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Development</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/architecture/">Architecture</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/workflow/">Workflow</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/multi-agent/">Multi-Agent</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/maintaining-agent-md/">Maintaining AGENT.md</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/cli/">CLI Conventions</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/agent-friendly-cli/">Agent-Friendly CLI (org spec)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/web-ui/">Web UI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/testing/">Testing</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/agent-spec/">Agent Spec (BDD Contracts)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/code-comments/">Code Comments & Docstrings</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/release/">Release</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+    </ul>
+</nav><hr>
+<nav>
+    <ul>
+        <li><a href="#goalmd-yaya">GOAL.md — yaya</a></li>
+        <li><a href="#north-star">North Star</a></li><li><a href="#problem">Problem</a></li><li><a href="#users-jobs">Users &amp; Jobs</a></li><li><a href="#product-principles-priority-order">Product Principles (priority order)</a></li><li><a href="#non-goals-explicit">Non-Goals (explicit)</a></li><li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#command-surface-minimum">Command surface (minimum)</a></li><li><a href="#milestones">Milestones</a></li><li><a href="#success-metrics">Success Metrics</a></li><li><a href="#anti-vision-what-yaya-refuses-to-become">Anti-Vision (what yaya refuses to become)</a></li><li><a href="#governance-of-this-document">Governance of this document</a></li>
+    </ul>
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="goalmd-yaya">GOAL.md — yaya<a class="headerlink" href="#goalmd-yaya" title="Permanent link">&para;</a></h1>
+<p><strong>This is the anchor.</strong> Every scope decision — features, dependencies,
+surface area — is checked against this document. If a PR conflicts with
+<code>GOAL.md</code> and the principle still holds, reject the PR. If the principle
+no longer holds, update <code>GOAL.md</code> in the <strong>same</strong> PR and justify it.</p>
+<h2 id="north-star">North Star<a class="headerlink" href="#north-star" title="Permanent link">&para;</a></h2>
+<p>yaya is a <strong>lightweight, kernel-style agent that grows itself.</strong> A single
+Python process (<code>yaya serve</code>) exposes an event-driven kernel whose
+plugins are the only way features get added. The default entrypoint is a
+local web UI built with
+<a href="https://github.com/badlogic/pi-mono/tree/main/packages/web-ui"><code>@mariozechner/pi-web-ui</code></a>
+that opens in the browser and speaks WebSocket to the kernel. yaya can
+author and install its own plugins on demand — that is the product.</p>
+<h2 id="problem">Problem<a class="headerlink" href="#problem" title="Permanent link">&para;</a></h2>
+<p>Existing coding agents (Claude Code, Cursor, Aider, Codex) are heavy,
+opinionated, and closed. Adding a capability means forking the product or
+waiting for upstream. <strong>Users adapt to the agent, not the other way around.</strong></p>
+<p>yaya inverts that: when the user asks for a capability yaya does not have,
+yaya writes the plugin, installs it into itself, and the next request uses
+it. Self-hosting growth is the product.</p>
+<h2 id="users-jobs">Users &amp; Jobs<a class="headerlink" href="#users-jobs" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Primary</strong>: power users and developers who want an agent they can
+  extend in minutes, not quarters.</li>
+<li><strong>Typical session (5 minutes)</strong>: run <code>yaya serve</code>, browser opens to
+  <code>http://127.0.0.1:&lt;port&gt;</code>, describe a task in chat. yaya either handles
+  it with existing plugins or drafts a plugin, installs it, reloads the
+  kernel, and completes the task with the new capability live.</li>
+<li><strong>Secondary</strong>: plugin authors who want a minimal, stable kernel to build
+  against without ceremony.</li>
+</ul>
+<h2 id="product-principles-priority-order">Product Principles (priority order)<a class="headerlink" href="#product-principles-priority-order" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Kernel stays small.</strong> If a feature could be a plugin, it is a plugin.
+   The core ships an event bus, a plugin loader, a web-server shell, and
+   nothing else.</li>
+<li><strong>Self-hosting growth.</strong> yaya ships the machinery to extend yaya.
+   Plugin authoring is a first-class <strong>agent</strong> capability, not an
+   afterthought for humans.</li>
+<li><strong>Single-process, local-first.</strong> One Python process. No required
+   backend, no account. Default bind: <code>127.0.0.1</code>. A remote LLM is a
+   plugin, not a dependency.</li>
+<li><strong>Events are the contract.</strong> Plugins subscribe to event types; the
+   kernel routes. The web UI is just another subscriber over WebSocket.
+   No hidden globals, no direct plugin-to-plugin coupling.</li>
+<li><strong>Fail loud, degrade gracefully.</strong> A broken plugin taints only itself;
+   the kernel keeps running. The web UI keeps rendering whatever events
+   still arrive.</li>
+<li><strong>Readable &gt; clever.</strong> A new plugin author understands the kernel in
+   one sitting.</li>
+<li><strong>Ship assets, not toolchains.</strong> The web UI is pre-built to static
+   assets and bundled into the Python wheel. End users install with
+   <code>pip</code> and need no Node, npm, or browser plugin.</li>
+</ol>
+<h2 id="non-goals-explicit">Non-Goals (explicit)<a class="headerlink" href="#non-goals-explicit" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>NOT</strong> an IDE or language server. yaya is an agent with a local web UI.</li>
+<li><strong>NOT</strong> a hosted web service. Through 1.0, <code>yaya serve</code> binds
+  <code>127.0.0.1</code> only. No public-internet deployment, no auth layer, no
+  multi-tenant mode. Anyone who wants that runs it behind their own
+  reverse proxy at their own risk.</li>
+<li><strong>NOT</strong> a cloud service. No hosted control plane, no account, no
+  telemetry-by-default.</li>
+<li><strong>NOT</strong> a general-purpose LLM-app framework. The scope is "an agent
+  that grows itself", not arbitrary orchestration.</li>
+<li><strong>NOT</strong> a Claude Code / Cursor replacement for teams that want a
+  curated product. yaya is for users who want to own their agent.</li>
+</ul>
+<h2 id="runtime-shape">Runtime shape<a class="headerlink" href="#runtime-shape" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya serve
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>└── one Python process (uvicorn + FastAPI in-process)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    ├── GET /             → pre-built UI shell (HTML)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    ├── GET /assets/*     → static JS/CSS from importlib.resources
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    ├── WS  /ws           → kernel event bus ↔ web UI (the contract)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    └── API /plugins/*    → list / install / remove / reload
+</code></pre></div>
+<p>The web UI is <strong>consumed</strong> as <code>@mariozechner/pi-web-ui</code> (npm dependency
+in <code>src/yaya/web/package.json</code>). yaya provides its own shell and talks
+to the Python kernel over WebSocket; yaya does <strong>not</strong> embed
+<code>pi-agent-core</code> or any JS/TS agent runtime.</p>
+<h2 id="command-surface-minimum">Command surface (minimum)<a class="headerlink" href="#command-surface-minimum" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>yaya serve</code></td>
+<td>Default. Starts the single-process server; opens browser.</td>
+</tr>
+<tr>
+<td><code>yaya version</code></td>
+<td>Print version.</td>
+</tr>
+<tr>
+<td><code>yaya plugin list</code></td>
+<td>List installed plugins.</td>
+</tr>
+<tr>
+<td><code>yaya plugin install &lt;src&gt;</code></td>
+<td>Install from path / URL / registry.</td>
+</tr>
+<tr>
+<td><code>yaya plugin remove &lt;name&gt;</code></td>
+<td>Uninstall.</td>
+</tr>
+</tbody>
+</table>
+<p>Everything else — including <code>hello</code> and <code>update</code> — ships as a plugin, not
+a built-in subcommand.</p>
+<h2 id="milestones">Milestones<a class="headerlink" href="#milestones" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>0.1 — kernel live in browser</strong> — event bus, plugin loader, <code>yaya
+  serve</code>, web UI shell rendering plugin output. 2–3 seed plugins
+  (<code>version</code>, <code>update</code>, <code>hello</code>) as reference plugins. Each has a
+  <code>specs/&lt;name&gt;.spec.md</code> contract.</li>
+<li><strong>0.5 — self-authoring plugin</strong> — in the web UI chat, "I want X"
+  produces <code>specs/&lt;x&gt;.spec.md</code>, scaffolds a plugin, installs it locally,
+  reloads the kernel, UI picks up the new capability without restart.</li>
+<li><strong>1.0 — stable ABIs frozen</strong> — plugin Python ABI (event shapes,
+  lifecycle, permissions) and WebSocket UI protocol are both frozen.
+  Plugins and UIs written against 1.0 keep working across 1.x.</li>
+<li><strong>2.0 — plugin registry + sandboxing</strong> — discovery, install, share;
+  plugins run in a capability-restricted sandbox by default.</li>
+</ul>
+<h2 id="success-metrics">Success Metrics<a class="headerlink" href="#success-metrics" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Time-to-first-plugin</strong> for a new user: ≤5 minutes from <code>pip install</code>
+  to a working custom plugin authored through the web UI.</li>
+<li><strong>Kernel size budget</strong> (Python LOC outside plugins and web shell):
+  stays under <!-- TODO: confirm target, e.g. 2000 LOC --> through 1.0.
+  Enforced in CI.</li>
+<li><strong>Self-authoring rate</strong>: ≥30% of plugins in the wild authored through
+  yaya's own self-authoring loop (health metric for principle #2).</li>
+<li><strong>Cold start</strong>: <code>yaya serve</code> to interactive chat in the browser in
+  ≤<!-- TODO: confirm, e.g. 500ms cold, 150ms warm -->.</li>
+<li><strong>Wheel size</strong>: bundled web assets + Python package stays under
+  <!-- TODO: confirm, e.g. 5 MiB --></li>
+</ul>
+<p>— enforced in CI on the release wheel.</p>
+<h2 id="anti-vision-what-yaya-refuses-to-become">Anti-Vision (what yaya refuses to become)<a class="headerlink" href="#anti-vision-what-yaya-refuses-to-become" title="Permanent link">&para;</a></h2>
+<ul>
+<li>A monolith where features accumulate in the kernel to "avoid plugin
+  boilerplate".</li>
+<li>An agent locked to one LLM vendor or one runtime.</li>
+<li>A hosted SaaS with accounts, billing, and a control plane.</li>
+<li>A polyglot dual-runtime beast that needs Node <strong>at run time</strong> on the
+  user's machine.</li>
+<li>A framework with a glossy docs site and no users.</li>
+</ul>
+<h2 id="governance-of-this-document">Governance of this document<a class="headerlink" href="#governance-of-this-document" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Changing North Star, Principles, Non-Goals, or Anti-Vision requires
+  owner review and a dedicated issue labelled <code>governance</code>.</li>
+<li>Milestones and Success Metrics may be refined in ordinary PRs with
+  justification in the PR body.</li>
+<li>Every <code>docs/dev/*.md</code> and folder-local <code>AGENT.md</code> must be consistent
+  with <code>GOAL.md</code>. When they conflict, <code>GOAL.md</code> wins — fix the downstream
+  doc in the same PR that introduced the conflict.</li>
+</ul>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+            
+            <p class="text-center text-muted">Copyright (c) 2026 <a href="https://github.com/rararulab">rararulab</a> contributors.</p>
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal" aria-label="Close">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>

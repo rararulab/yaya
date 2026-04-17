@@ -11,7 +11,7 @@
     
     <meta name="author" content="rararulab"> 
     
-    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/cli/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/maintaining-agent-md/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
 <link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
 <link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
 <link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
@@ -21,7 +21,7 @@
 
     
  
-<title>CLI Conventions - yaya</title>
+<title>Maintaining AGENT.md - yaya</title>
 
 
 <link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
@@ -274,9 +274,7 @@
                 <li class="terminal-mkdocs-side-nav-li-ul-li">
     
         
-        
-            <a class="terminal-mkdocs-side-nav-item" href="../maintaining-agent-md/">Maintaining AGENT.md</a>
-        
+        <span class="terminal-mkdocs-side-nav-item--active">Maintaining AGENT.md</span>
     
     </li>
             
@@ -287,7 +285,9 @@
                 <li class="terminal-mkdocs-side-nav-li-ul-li">
     
         
-        <span class="terminal-mkdocs-side-nav-item--active">CLI Conventions</span>
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../cli/">CLI Conventions</a>
+        
     
     </li>
             
@@ -379,97 +379,123 @@
 </nav><hr>
 <nav>
     <ul>
-        <li><a href="#cli-conventions">CLI Conventions</a></li>
-        <li><a href="#command-surface-10">Command surface (1.0)</a></li><li><a href="#pattern">Pattern</a></li><li><a href="#yaya-serve-specifics">yaya serve specifics</a></li><li><a href="#json-mode-json">JSON mode (--json)</a></li><li><a href="#extending-the-cli-checklist">Extending the CLI — checklist</a></li>
+        <li><a href="#maintaining-agentmd-files-mandatory">Maintaining AGENT.md Files (MANDATORY)</a></li>
+        <li><a href="#why-per-folder-agentmd">Why per-folder AGENT.md</a></li><li><a href="#the-rule">The Rule</a></li><li><a href="#shape-prompt-system-seven-layer-architecture-mandatory">Shape — prompt-system seven-layer architecture (MANDATORY)</a></li><li><a href="#pr-checklist">PR checklist</a></li>
     </ul>
 </nav>
 </aside>
             <main id="terminal-mkdocs-main-content">
 <section id="mkdocs-terminal-content">
-    <h1 id="cli-conventions">CLI Conventions<a class="headerlink" href="#cli-conventions" title="Permanent link">&para;</a></h1>
-<p>yaya's default experience is the web UI (<code>yaya serve</code>). The CLI stays
-minimal and scripting-friendly. Canonical org spec:
-<code>rararulab/.github/docs/agent-friendly-cli.md</code> — yaya follows it strictly.
-This file captures yaya-specific mechanics.</p>
-<h2 id="command-surface-10">Command surface (1.0)<a class="headerlink" href="#command-surface-10" title="Permanent link">&para;</a></h2>
+    <h1 id="maintaining-agentmd-files-mandatory">Maintaining AGENT.md Files (MANDATORY)<a class="headerlink" href="#maintaining-agentmd-files-mandatory" title="Permanent link">&para;</a></h1>
+<p>Every significant folder has an <code>AGENT.md</code>. Agents read these <strong>instead of</strong>
+re-scanning the whole tree. A stale <code>AGENT.md</code> wastes the next agent's tokens
+and erodes trust in the index.</p>
+<h2 id="why-per-folder-agentmd">Why per-folder AGENT.md<a class="headerlink" href="#why-per-folder-agentmd" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Token locality</strong>: an agent touching <code>src/yaya/cli/commands/</code> reads
+  <code>commands/AGENT.md</code> (≤40 lines) instead of skimming every file in the tree.</li>
+<li><strong>Surface compression</strong>: architectural invariants are stated once, next to
+  the code they constrain.</li>
+<li><strong>Drift detection</strong>: if reality contradicts the local <code>AGENT.md</code>, one of
+  them is wrong — fix before merging.</li>
+</ul>
+<h2 id="the-rule">The Rule<a class="headerlink" href="#the-rule" title="Permanent link">&para;</a></h2>
+<p><strong>If your PR changes behavior, structure, or invariants of a folder, you
+MUST update that folder's <code>AGENT.md</code> and any affected <code>docs/dev/*.md</code> in the
+same PR.</strong> No follow-ups.</p>
+<h3 id="what-counts-as-a-trigger">What counts as a trigger<a class="headerlink" href="#what-counts-as-a-trigger" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Command</th>
-<th>Purpose</th>
+<th>You did this</th>
+<th>You MUST update</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>yaya serve</code></td>
-<td><strong>Default.</strong> Start the single-process web server; open browser.</td>
+<td>Added a new file/module</td>
+<td>The folder's <code>AGENT.md</code> (Architecture section)</td>
 </tr>
 <tr>
-<td><code>yaya version</code></td>
-<td>Print version.</td>
+<td>Changed a public API / signature</td>
+<td>Folder <code>AGENT.md</code> + any doc referencing it</td>
 </tr>
 <tr>
-<td><code>yaya plugin list</code></td>
-<td>List installed plugins.</td>
+<td>Added a new invariant or constraint</td>
+<td>Folder <code>AGENT.md</code> (Invariants)</td>
 </tr>
 <tr>
-<td><code>yaya plugin install &lt;src&gt;</code></td>
-<td>Install from path / URL / registry.</td>
+<td>Discovered an anti-pattern during review</td>
+<td>Folder <code>AGENT.md</code> (What NOT To Do)</td>
 </tr>
 <tr>
-<td><code>yaya plugin remove &lt;name&gt;</code></td>
-<td>Uninstall.</td>
+<td>Added a new subfolder with code or tests</td>
+<td>Create <code>&lt;folder&gt;/AGENT.md</code> — the PR cannot merge without it</td>
+</tr>
+<tr>
+<td>Added/changed a CLI command</td>
+<td><code>src/yaya/cli/commands/AGENT.md</code> + <code>docs/dev/cli.md</code></td>
+</tr>
+<tr>
+<td>Added an agent/flow</td>
+<td><code>src/yaya/core/AGENT.md</code> + <code>docs/dev/agent-spec.md</code> + round-trip test</td>
+</tr>
+<tr>
+<td>Changed test conventions/fixtures</td>
+<td><code>tests/AGENT.md</code> + <code>docs/dev/testing.md</code></td>
+</tr>
+<tr>
+<td>Changed build/release tooling</td>
+<td><code>scripts/AGENT.md</code> + <code>docs/dev/release.md</code></td>
 </tr>
 </tbody>
 </table>
-<p>Everything else — <code>hello</code>, <code>update</code>, future integrations — ships as a
-plugin. Adding a built-in subcommand requires a GOAL.md amendment.</p>
-<h2 id="pattern">Pattern<a class="headerlink" href="#pattern" title="Permanent link">&para;</a></h2>
-<p>Every CLI subcommand:</p>
-<ol>
-<li>Builds a result in <code>core/</code> or <code>kernel/</code> (pure logic, no printing, no <code>sys.exit</code>).</li>
-<li>Calls <code>emit_ok</code> / <code>emit_error</code> from <code>yaya.cli.output</code> — never <code>print</code>,
-   <code>typer.echo</code>, or <code>Console().print</code> directly.</li>
-<li>Exits non-zero on failure; <code>fatal()</code> is the one-liner helper.</li>
-</ol>
-<h2 id="yaya-serve-specifics"><code>yaya serve</code> specifics<a class="headerlink" href="#yaya-serve-specifics" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya<span class="w"> </span>serve<span class="w">                       </span><span class="c1"># bind 127.0.0.1:&lt;auto&gt;, open browser</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">7456</span><span class="w">            </span><span class="c1"># fixed port</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--no-open<span class="w">              </span><span class="c1"># do not launch browser</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--dev<span class="w">                  </span><span class="c1"># proxy to `vite dev` for UI HMR</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--json<span class="w">                 </span><span class="c1"># JSON lifecycle events on stdout (addr, pid, shutdown)</span>
+<h2 id="shape-prompt-system-seven-layer-architecture-mandatory">Shape — prompt-system seven-layer architecture (MANDATORY)<a class="headerlink" href="#shape-prompt-system-seven-layer-architecture-mandatory" title="Permanent link">&para;</a></h2>
+<p>Every <code>AGENT.md</code> follows the
+<a href="https://github.com/rararulab/rara-skills/blob/main/skills/prompt-system/SKILL.md">rara-skills prompt-system framework</a>:
+seven layers with specific functions. <strong>Root <code>AGENT.md</code> uses all seven.</strong>
+<strong>Folder-local <code>AGENT.md</code> uses five</strong> (Philosophy, External Reality,
+Constraints, Interaction, Budget &amp; Loading) and inherits Style Anchors +
+Anti-sycophancy from root.</p>
+<p>Target sizes: root ~600–1000 tokens; folder-local ~200–400 tokens (≤60
+lines). Over 1500 tokens requires justification.</p>
+<h3 id="root-template">Root template<a class="headerlink" href="#root-template" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gu">## 1. Philosophy          (≤50 tok, conceptual anchor)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="gu">## 2. Style Anchors       (60–100 tok, 2–3 stylistic references)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="gu">## 3. External Reality    (60–100 tok, accountability to artifact)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="gu">## 4. Constraints         (90–150 tok, mechanical configuration)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="gu">## 5. Anti-sycophancy     (30–50 tok, permission to disagree)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="gu">## 6. Interaction         (150–250 tok, state machine + patterns)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="gu">## 7. Budget &amp; Loading    (pointers — read local first)</span>
 </code></pre></div>
+<h3 id="folder-local-template">Folder-local template<a class="headerlink" href="#folder-local-template" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>&lt;!-- Philosophy / Style / Anti-sycophancy inherit root. --&gt;
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="gu">## Philosophy           One sentence: what lives here and why.</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="gu">## External Reality     What verifies success (tests, CI, contracts).</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="gu">## Constraints          File layout, invariants, dependencies.</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="gu">## Interaction          Patterns to follow + &quot;Do NOT X — because Y&quot;.</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="gu">## Budget &amp; Loading     Links to sibling AGENT.md and relevant docs/dev/*.md.</span>
+</code></pre></div>
+<p>Only include what an agent <strong>cannot</strong> infer from reading the code.</p>
+<h3 id="health-metrics-per-the-framework">Health metrics (per the framework)<a class="headerlink" href="#health-metrics-per-the-framework" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Bind is always <code>127.0.0.1</code> through 1.0 (see <a href="../../goal/">GOAL.md</a>).
-  There is <strong>no</strong> <code>--host</code> flag.</li>
-<li>Exit cleanly on <code>SIGINT</code> / <code>SIGTERM</code>; emit a final
-  <code>{"ok": true, "action": "shutdown", ...}</code> under <code>--json</code>.</li>
-<li>Kernel startup errors exit non-zero with a <code>suggestion</code> field.</li>
+<li>Rules-to-anchors ratio &lt; 3:1 (no rule walls).</li>
+<li>Filler below 2% (cut "obviously", "simply", "just").</li>
+<li>Coverage ≥5/7 layers for root; ≥5/5 for folder-local template.</li>
+<li>Few-shot examples (if any) 100% annotated.</li>
 </ul>
-<h2 id="json-mode-json">JSON mode (<code>--json</code>)<a class="headerlink" href="#json-mode-json" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Stdout carries <code>{"ok": bool, ...}</code>. Contract enforced by <code>cli/output.py</code>.</li>
-<li>Success: <code>{"ok": true, "action": "&lt;verb&gt;", ...data}</code>.</li>
-<li>Error: <code>{"ok": false, "error": "...", "suggestion": "...", ...data}</code>.</li>
-<li>Human logs / warnings go to <strong>stderr</strong> (<code>warn(...)</code>).</li>
-</ul>
-<h2 id="extending-the-cli-checklist">Extending the CLI — checklist<a class="headerlink" href="#extending-the-cli-checklist" title="Permanent link">&para;</a></h2>
-<p>Adding a new CLI command is a GOAL.md amendment (see surface above). If
-approved, follow this:</p>
+<h2 id="pr-checklist">PR checklist<a class="headerlink" href="#pr-checklist" title="Permanent link">&para;</a></h2>
+<p>Before opening the PR:</p>
 <ul class="task-list">
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Amend GOAL.md's "Command surface" in the same PR.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Create <code>src/yaya/cli/commands/&lt;name&gt;.py</code> exposing <code>register(app)</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Register it in <code>src/yaya/cli/__init__.py</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Body pattern: build a structured result in <code>core/</code> or <code>kernel/</code>,
-      then <code>emit_ok</code> / <code>emit_error</code>. No direct printing.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Add <code>epilog=EXAMPLES</code> with at least one runnable example.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Destructive? Add <code>--dry-run</code> and <code>--yes</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Error paths must emit a <code>suggestion</code> and exit non-zero.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Add <code>tests/cli/test_&lt;name&gt;.py</code> covering text mode, <code>--json</code>, and
-      at least one failure path (exit code + JSON shape).</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Network/disk work: add <code>tests/core/test_&lt;module&gt;.py</code> with
-      <code>pytest-httpx</code> mocks — no real network in tests.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> For every folder you touched, its <code>AGENT.md</code> is still accurate.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> New folders ship with an <code>AGENT.md</code>.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> If you changed a public contract, the corresponding <code>docs/dev/*.md</code>
+      reflects the change.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> If you added an agent/flow, the Agent Spec round-trip test is present.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>just docs-test</code> passes (no broken doc links).</li>
 </ul>
+<p>Reviewers reject PRs that skip this.</p>
 </section>
 
             </main>

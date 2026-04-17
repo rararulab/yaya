@@ -11,7 +11,7 @@
     
     <meta name="author" content="rararulab"> 
     
-    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/cli/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/code-comments/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
 <link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
 <link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
 <link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
@@ -21,7 +21,7 @@
 
     
  
-<title>CLI Conventions - yaya</title>
+<title>Code Comments & Docstrings - yaya</title>
 
 
 <link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
@@ -287,7 +287,9 @@
                 <li class="terminal-mkdocs-side-nav-li-ul-li">
     
         
-        <span class="terminal-mkdocs-side-nav-item--active">CLI Conventions</span>
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../cli/">CLI Conventions</a>
+        
     
     </li>
             
@@ -350,9 +352,7 @@
                 <li class="terminal-mkdocs-side-nav-li-ul-li">
     
         
-        
-            <a class="terminal-mkdocs-side-nav-item" href="../code-comments/">Code Comments & Docstrings</a>
-        
+        <span class="terminal-mkdocs-side-nav-item--active">Code Comments & Docstrings</span>
     
     </li>
             
@@ -379,96 +379,103 @@
 </nav><hr>
 <nav>
     <ul>
-        <li><a href="#cli-conventions">CLI Conventions</a></li>
-        <li><a href="#command-surface-10">Command surface (1.0)</a></li><li><a href="#pattern">Pattern</a></li><li><a href="#yaya-serve-specifics">yaya serve specifics</a></li><li><a href="#json-mode-json">JSON mode (--json)</a></li><li><a href="#extending-the-cli-checklist">Extending the CLI — checklist</a></li>
+        <li><a href="#code-comments-docstrings">Code Comments &amp; Docstrings</a></li>
+        <li><a href="#authoritative-references">Authoritative references</a></li><li><a href="#non-negotiables">Non-negotiables</a></li><li><a href="#docstring-template-google-style">Docstring template (Google style)</a></li><li><a href="#module-docstrings">Module docstrings</a></li><li><a href="#inline-comments-when-and-how">Inline comments — when and how</a></li><li><a href="#google-style-overlays-that-matter-in-yaya">Google style overlays that matter in yaya</a></li><li><a href="#agent-authored-code-extra-rules">Agent-authored code — extra rules</a></li>
     </ul>
 </nav>
 </aside>
             <main id="terminal-mkdocs-main-content">
 <section id="mkdocs-terminal-content">
-    <h1 id="cli-conventions">CLI Conventions<a class="headerlink" href="#cli-conventions" title="Permanent link">&para;</a></h1>
-<p>yaya's default experience is the web UI (<code>yaya serve</code>). The CLI stays
-minimal and scripting-friendly. Canonical org spec:
-<code>rararulab/.github/docs/agent-friendly-cli.md</code> — yaya follows it strictly.
-This file captures yaya-specific mechanics.</p>
-<h2 id="command-surface-10">Command surface (1.0)<a class="headerlink" href="#command-surface-10" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Command</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>yaya serve</code></td>
-<td><strong>Default.</strong> Start the single-process web server; open browser.</td>
-</tr>
-<tr>
-<td><code>yaya version</code></td>
-<td>Print version.</td>
-</tr>
-<tr>
-<td><code>yaya plugin list</code></td>
-<td>List installed plugins.</td>
-</tr>
-<tr>
-<td><code>yaya plugin install &lt;src&gt;</code></td>
-<td>Install from path / URL / registry.</td>
-</tr>
-<tr>
-<td><code>yaya plugin remove &lt;name&gt;</code></td>
-<td>Uninstall.</td>
-</tr>
-</tbody>
-</table>
-<p>Everything else — <code>hello</code>, <code>update</code>, future integrations — ships as a
-plugin. Adding a built-in subcommand requires a GOAL.md amendment.</p>
-<h2 id="pattern">Pattern<a class="headerlink" href="#pattern" title="Permanent link">&para;</a></h2>
-<p>Every CLI subcommand:</p>
-<ol>
-<li>Builds a result in <code>core/</code> or <code>kernel/</code> (pure logic, no printing, no <code>sys.exit</code>).</li>
-<li>Calls <code>emit_ok</code> / <code>emit_error</code> from <code>yaya.cli.output</code> — never <code>print</code>,
-   <code>typer.echo</code>, or <code>Console().print</code> directly.</li>
-<li>Exits non-zero on failure; <code>fatal()</code> is the one-liner helper.</li>
-</ol>
-<h2 id="yaya-serve-specifics"><code>yaya serve</code> specifics<a class="headerlink" href="#yaya-serve-specifics" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya<span class="w"> </span>serve<span class="w">                       </span><span class="c1"># bind 127.0.0.1:&lt;auto&gt;, open browser</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">7456</span><span class="w">            </span><span class="c1"># fixed port</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--no-open<span class="w">              </span><span class="c1"># do not launch browser</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--dev<span class="w">                  </span><span class="c1"># proxy to `vite dev` for UI HMR</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--json<span class="w">                 </span><span class="c1"># JSON lifecycle events on stdout (addr, pid, shutdown)</span>
+    <h1 id="code-comments-docstrings">Code Comments &amp; Docstrings<a class="headerlink" href="#code-comments-docstrings" title="Permanent link">&para;</a></h1>
+<p>yaya follows the <a href="https://google.github.io/styleguide/pyguide.html">Google Python Style Guide</a>
+for Python code, with the overlay rules from
+<code>rararulab/.github/docs/code-comments.md</code>. This page captures the rules an
+agent must follow before committing code.</p>
+<h2 id="authoritative-references">Authoritative references<a class="headerlink" href="#authoritative-references" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://google.github.io/styleguide/pyguide.html">Google Python Style Guide</a> — the style
+  (<a href="https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings">§3.8 Comments and Docstrings</a> is non-negotiable).</li>
+<li>Org rule: <code>rararulab/.github/docs/code-comments.md</code>.</li>
+<li><a href="https://peps.python.org/pep-0257/">PEP 257</a> — docstring conventions baseline.</li>
+</ul>
+<h2 id="non-negotiables">Non-negotiables<a class="headerlink" href="#non-negotiables" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Every module, public class, public function, and public method has a
+  docstring.</strong> "Public" = top-level name without a leading underscore.
+  Enforced by ruff's <code>D</code> (pydocstyle) rules.</li>
+<li><strong>Docstrings explain <em>why</em>, not <em>what</em>.</strong> Signature and type hints say
+  what; the docstring says why the function exists, what invariant it
+  preserves, and when <em>not</em> to call it.</li>
+<li><strong>Google-style sections</strong>: <code>Args:</code>, <code>Returns:</code>, <code>Raises:</code>, <code>Yields:</code>,
+  <code>Example:</code>. Do not mix in NumPy or reST styles.</li>
+<li><strong>English only</strong> — docstrings, inline comments, commit messages, string
+  literals.</li>
+<li><strong>Comment what you touch.</strong> Do NOT retroactively add comments to
+  unchanged code — drive-by comment PRs pollute blame. If a line needs a
+  comment, the person editing it writes one.</li>
+</ul>
+<h2 id="docstring-template-google-style">Docstring template (Google style)<a class="headerlink" href="#docstring-template-google-style" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">atomic_swap</span><span class="p">(</span><span class="n">src</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">dst</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Move ``src`` onto ``dst`` atomically on POSIX filesystems.</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="sd">    Self-update must never leave a half-written binary in place — a crashed</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="sd">    write bricks ``yaya`` on the user&#39;s PATH. ``os.replace`` gives an atomic</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="sd">    rename on the same filesystem, so we stage ``src`` next to ``dst``.</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="sd">        src: Staged binary in a temp dir on the **same** filesystem as ``dst``.</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="sd">        dst: Installed path to overwrite (e.g. ``/usr/local/bin/yaya``).</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="sd">    Raises:</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="sd">        OSError: If ``src`` and ``dst`` live on different filesystems.</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="sd">    &quot;&quot;&quot;</span>
 </code></pre></div>
+<p>Short helpers get a one-line summary; omit <code>Args:</code> when the signature is
+self-evident (Google style allows this for obvious cases).</p>
+<h2 id="module-docstrings">Module docstrings<a class="headerlink" href="#module-docstrings" title="Permanent link">&para;</a></h2>
+<p>Every module under <code>src/yaya/</code> opens with a docstring that answers: what
+does this module own, and where does it sit in the layering? Example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="sd">&quot;&quot;&quot;Self-update core: network + filesystem logic with no CLI dependencies.</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="sd">Returns structured results. Presentation (text vs JSON, colors, progress)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="sd">lives in the CLI layer (``yaya.cli.commands.update``).</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="sd">&quot;&quot;&quot;</span>
+</code></pre></div>
+<h2 id="inline-comments-when-and-how">Inline comments — when and how<a class="headerlink" href="#inline-comments-when-and-how" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Bind is always <code>127.0.0.1</code> through 1.0 (see <a href="../../goal/">GOAL.md</a>).
-  There is <strong>no</strong> <code>--host</code> flag.</li>
-<li>Exit cleanly on <code>SIGINT</code> / <code>SIGTERM</code>; emit a final
-  <code>{"ok": true, "action": "shutdown", ...}</code> under <code>--json</code>.</li>
-<li>Kernel startup errors exit non-zero with a <code>suggestion</code> field.</li>
+<li>Explain <strong>non-obvious invariants</strong>, hidden constraints, subtle ordering.
+  Never the next line's mechanics.</li>
+<li>Prefix with the reason: <code># Race:</code>, <code># Perf:</code>, <code># Compat:</code>,
+  <code># Security:</code>, <code># Workaround(&lt;upstream-url&gt;):</code>.</li>
+<li>TODOs MUST reference an issue: <code># TODO(#123): ...</code>. A TODO without a
+  number fails review.</li>
 </ul>
-<h2 id="json-mode-json">JSON mode (<code>--json</code>)<a class="headerlink" href="#json-mode-json" title="Permanent link">&para;</a></h2>
+<h2 id="google-style-overlays-that-matter-in-yaya">Google style overlays that matter in yaya<a class="headerlink" href="#google-style-overlays-that-matter-in-yaya" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Stdout carries <code>{"ok": bool, ...}</code>. Contract enforced by <code>cli/output.py</code>.</li>
-<li>Success: <code>{"ok": true, "action": "&lt;verb&gt;", ...data}</code>.</li>
-<li>Error: <code>{"ok": false, "error": "...", "suggestion": "...", ...data}</code>.</li>
-<li>Human logs / warnings go to <strong>stderr</strong> (<code>warn(...)</code>).</li>
+<li><strong>Imports</strong>: stdlib, third-party, first-party, each block separated;
+  absolute imports only; ruff's <code>I</code> rules enforce.</li>
+<li><strong>Naming</strong>: <code>snake_case</code> for functions/variables, <code>PascalCase</code> for
+  classes, <code>UPPER_SNAKE_CASE</code> for module constants. Single-underscore
+  prefix for intentionally non-public names.</li>
+<li><strong>Line length</strong>: 120 (yaya override of Google's 80 — matches
+  <code>pyproject.toml</code>). Prefer breaking long lines at logical boundaries.</li>
+<li><strong>Default arguments</strong>: never mutable. Use <code>None</code> + <code>if x is None: x = []</code>.</li>
+<li><strong>Exceptions</strong>: raise specific types, not <code>Exception</code>. Include actionable
+  context (<code>raise ValueError(f"unsupported target: {target!r}")</code>).</li>
+<li><strong>Type hints</strong>: required on all public signatures. <code>mypy --strict</code>
+  rejects missing or <code>Any</code>-returning annotations.</li>
 </ul>
-<h2 id="extending-the-cli-checklist">Extending the CLI — checklist<a class="headerlink" href="#extending-the-cli-checklist" title="Permanent link">&para;</a></h2>
-<p>Adding a new CLI command is a GOAL.md amendment (see surface above). If
-approved, follow this:</p>
-<ul class="task-list">
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Amend GOAL.md's "Command surface" in the same PR.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Create <code>src/yaya/cli/commands/&lt;name&gt;.py</code> exposing <code>register(app)</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Register it in <code>src/yaya/cli/__init__.py</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Body pattern: build a structured result in <code>core/</code> or <code>kernel/</code>,
-      then <code>emit_ok</code> / <code>emit_error</code>. No direct printing.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Add <code>epilog=EXAMPLES</code> with at least one runnable example.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Destructive? Add <code>--dry-run</code> and <code>--yes</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Error paths must emit a <code>suggestion</code> and exit non-zero.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Add <code>tests/cli/test_&lt;name&gt;.py</code> covering text mode, <code>--json</code>, and
-      at least one failure path (exit code + JSON shape).</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Network/disk work: add <code>tests/core/test_&lt;module&gt;.py</code> with
-      <code>pytest-httpx</code> mocks — no real network in tests.</li>
+<h2 id="agent-authored-code-extra-rules">Agent-authored code — extra rules<a class="headerlink" href="#agent-authored-code-extra-rules" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Every function the agent writes has a Google-style docstring.</strong> No
+  exceptions for "obvious" utilities.</li>
+<li><strong>Prompts</strong> (strings sent to an LLM) live in <code>specs/</code> or dedicated
+  <code>prompts/</code> modules. Document the intent, variables, and expected output
+  on the factory that loads them; do not embed long prose inside function
+  bodies.</li>
+<li><strong>Public API changes</strong> include a CHANGELOG entry in the same PR
+  (release-please parses it). CHANGELOG entries are user-facing prose;
+  docstrings are developer-facing.</li>
 </ul>
 </section>
 

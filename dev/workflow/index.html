@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#workflow-yaya-addenda">Workflow (yaya addenda)</a></li>
-        <li><a href="#state-machine-reminder">State machine (reminder)</a></li><li><a href="#worktree-verification-commands-yaya">Worktree verification commands (yaya)</a></li><li><a href="#labels-required">Labels (required)</a></li><li><a href="#multi-agent-dispatch">Multi-agent dispatch</a></li><li><a href="#stacked-prs">Stacked PRs</a></li><li><a href="#phase-gates-yayas-flavour-of-the-bmad-4-phases">Phase gates (yaya's flavour of the BMAD 4 phases)</a></li><li><a href="#halt-conditions-when-to-stop-mid-implementation">HALT conditions — when to stop mid-implementation</a></li><li><a href="#retrospective-cadence">Retrospective cadence</a></li>
+        <li><a href="#state-machine-reminder">State machine (reminder)</a></li><li><a href="#worktree-verification-commands-yaya">Worktree verification commands (yaya)</a></li><li><a href="#labels-required">Labels (required)</a></li><li><a href="#issue-as-the-task-record">Issue as the task record</a></li><li><a href="#agent-task-packet">Agent Task Packet</a></li><li><a href="#pr-as-the-implementation-record">PR as the implementation record</a></li><li><a href="#multi-agent-dispatch">Multi-agent dispatch</a></li><li><a href="#stacked-prs">Stacked PRs</a></li><li><a href="#phase-gates-yayas-flavour-of-the-bmad-4-phases">Phase gates (yaya's flavour of the BMAD 4 phases)</a></li><li><a href="#halt-conditions-when-to-stop-mid-implementation">HALT conditions — when to stop mid-implementation</a></li><li><a href="#retrospective-cadence">Retrospective cadence</a></li>
     </ul>
 </nav>
 </aside>
@@ -471,10 +471,61 @@ Read it first. This file only lists yaya-specific additions.</p>
 <ul>
 <li><strong>Agent</strong>: <code>agent:claude</code> | <code>agent:codex</code></li>
 <li><strong>Type</strong>: <code>bug</code> | <code>enhancement</code> | <code>refactor</code> | <code>chore</code> | <code>documentation</code></li>
-<li><strong>Component</strong>: <code>core</code> | <code>cli</code> | <code>ci</code> | <code>docs</code></li>
+<li><strong>Component</strong>: <code>core</code> | <code>kernel</code> | <code>plugins</code> | <code>cli</code> | <code>ci</code> | <code>docs</code></li>
 </ul>
-<p>Issue and PR templates are inherited from <code>rararulab/.github</code> — do not
-duplicate them in this repo.</p>
+<p>yaya carries local experimental issue and PR templates under <code>.github/</code> so
+agent-oriented workflow changes can be tested here before they move to the org
+baseline. Keep those templates aligned with <code>rararulab/.github</code> unless the
+issue explicitly tests a workflow change.</p>
+<h2 id="issue-as-the-task-record">Issue as the task record<a class="headerlink" href="#issue-as-the-task-record" title="Permanent link">&para;</a></h2>
+<p>The GitHub issue is the only task record. Do not create shadow task files,
+BMAD-style story files, local task databases, or <code>.agents/tasks/</code> records
+unless the issue explicitly asks for a durable product artifact.</p>
+<p>All agent-facing task context belongs in the issue body or issue comments.
+Planner output goes in issue comments. Implementation notes go in the PR body.
+Reviewer findings go in PR reviews or PR comments.</p>
+<h2 id="agent-task-packet">Agent Task Packet<a class="headerlink" href="#agent-task-packet" title="Permanent link">&para;</a></h2>
+<p>Every issue assigned to a coding agent MUST include an <strong>Agent Task Packet</strong>
+section in the issue body or a linked issue comment. For small issues, a
+terse packet is enough; for agent-runtime, plugin-protocol, prompt, or
+security work, fill every subsection.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="gu">## Agent Task Packet</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="gu">### Read First</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="k">-</span><span class="w"> </span><span class="sb">`GOAL.md`</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="k">-</span><span class="w"> </span><span class="sb">`AGENT.md`</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="k">-</span><span class="w"> </span>Area-specific docs, specs, and folder <span class="sb">`AGENT.md`</span> files
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="gu">### Expected Touch Points</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="k">-</span><span class="w"> </span>Files or folders the agent is expected to edit
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="gu">### Forbidden / Avoid</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="k">-</span><span class="w"> </span>Files, layers, dependencies, or design moves that are out of scope
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="gu">### Existing Patterns</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="k">-</span><span class="w"> </span>Local code, tests, docs, or prior PRs the agent should imitate
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="gu">### Validation</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="k">-</span><span class="w"> </span>Exact commands the agent must run before pushing
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="gu">### Failure Modes To Cover</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="k">-</span><span class="w"> </span>Error paths, rollback paths, security boundaries, and drift risks
+</code></pre></div>
+<p>The packet is not a replacement for a BDD spec. The issue packet tells the
+agent how to work in this repository; <code>specs/&lt;slug&gt;.spec</code> defines the
+observable behavior and test bindings for the change.</p>
+<h2 id="pr-as-the-implementation-record">PR as the implementation record<a class="headerlink" href="#pr-as-the-implementation-record" title="Permanent link">&para;</a></h2>
+<p>The local PR template is the baseline. For agent-authored PRs, fill the body
+with these additional facts instead of creating a separate local note:</p>
+<ul>
+<li><strong>Issue context used</strong>: issue number, Agent Task Packet source, and any
+  issue comments that changed the plan.</li>
+<li><strong>Deviations from issue/spec</strong>: every scope or design change discovered
+  during implementation, with the GitHub comment or commit that explains it.</li>
+<li><strong>Agent notes</strong>: reviewer-relevant implementation notes, known trade-offs,
+  and any follow-up issue numbers.</li>
+<li><strong>Verification evidence</strong>: exact local commands run and the CI check summary.</li>
+</ul>
 <h2 id="multi-agent-dispatch">Multi-agent dispatch<a class="headerlink" href="#multi-agent-dispatch" title="Permanent link">&para;</a></h2>
 <p>See <a href="../multi-agent/">multi-agent.md</a>.</p>
 <h2 id="stacked-prs">Stacked PRs<a class="headerlink" href="#stacked-prs" title="Permanent link">&para;</a></h2>

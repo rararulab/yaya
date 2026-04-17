@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#agent-spec-bdd-contracts-for-agent-work">agent-spec — BDD Contracts for Agent Work</a></li>
-        <li><a href="#what-this-harness-enforces-today">What this harness enforces today</a></li><li><a href="#install">Install</a></li><li><a href="#task-contract-shape-specsslugspec">Task contract shape (specs/&lt;slug&gt;.spec)</a></li><li><a href="#developer-workflow">Developer workflow</a></li><li><a href="#contract-authoring-rules">Contract authoring rules</a></li><li><a href="#relationship-to-the-org-bdd-issue-template">Relationship to the org BDD issue template</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#what-this-harness-enforces-today">What this harness enforces today</a></li><li><a href="#install">Install</a></li><li><a href="#task-contract-shape-specsslugspec">Task contract shape (specs/&lt;slug&gt;.spec)</a></li><li><a href="#developer-workflow">Developer workflow</a></li><li><a href="#contract-authoring-rules">Contract authoring rules</a></li><li><a href="#relationship-to-the-yaya-bdd-issue-template">Relationship to the yaya BDD issue template</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -575,11 +575,11 @@ MUST have a <code>Test:</code> block binding it to a concrete test function.</p>
 <li><strong>One contract, one issue.</strong> Split large work into stacked
   contracts; see <a href="../workflow/">workflow.md</a>.</li>
 </ul>
-<h2 id="relationship-to-the-org-bdd-issue-template">Relationship to the org BDD issue template<a class="headerlink" href="#relationship-to-the-org-bdd-issue-template" title="Permanent link">&para;</a></h2>
-<p><code>rararulab/.github/ISSUE_TEMPLATE/bdd_task.yml</code> captures the same
-sections (Description / Plan Spec / Feature file / Design spec). Use
-the issue template to open the issue; translate its scenarios into
-the <code>specs/&lt;slug&gt;.spec</code> format above.</p>
+<h2 id="relationship-to-the-yaya-bdd-issue-template">Relationship to the yaya BDD issue template<a class="headerlink" href="#relationship-to-the-yaya-bdd-issue-template" title="Permanent link">&para;</a></h2>
+<p><code>.github/ISSUE_TEMPLATE/bdd_task.yml</code> captures the same sections
+(Description / Plan Spec / agent-spec contract draft / Design spec).
+Use the issue template to open the issue, then commit the executable
+contract as <code>specs/&lt;slug&gt;.spec</code>.</p>
 <h2 id="what-not-to-do">What NOT To Do<a class="headerlink" href="#what-not-to-do" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Do NOT open a feature PR without a <code>.spec</code> (trivia excepted).</li>

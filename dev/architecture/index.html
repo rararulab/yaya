@@ -528,7 +528,7 @@ adapter's UI assets are pre-built and shipped in the wheel.</p>
 WebSocket protocol on top of those events — the WS schema is a thin
 serialization of the event catalog, and mismatches fail CI.</p>
 <h2 id="specs-live-next-to-code">Specs live next to code<a class="headerlink" href="#specs-live-next-to-code" title="Permanent link">&para;</a></h2>
-<p>Every non-trivial feature is backed by a <code>specs/&lt;slug&gt;.spec.md</code> BDD
+<p>Every non-trivial feature is backed by a <code>specs/&lt;slug&gt;.spec</code> BDD
 contract verified with <a href="https://github.com/ZhangHanDong/agent-spec"><code>ZhangHanDong/agent-spec</code></a>.
 Scenarios bind to test functions via <code>Test:</code> selectors. Run
 <code>agent-spec lifecycle</code> before commit; CI runs <code>agent-spec guard</code> on

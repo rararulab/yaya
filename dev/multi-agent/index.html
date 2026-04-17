@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#multi-agent-development">Multi-Agent Development</a></li>
-        <li><a href="#rules">Rules</a></li><li><a href="#dispatch-pattern">Dispatch pattern</a></li><li><a href="#subagent-dispatch-template-required-read-first-items">Subagent dispatch template — required Read first items</a></li><li><a href="#done-criteria-per-pr">Done criteria (per PR)</a></li>
+        <li><a href="#rules">Rules</a></li><li><a href="#dispatch-pattern">Dispatch pattern</a></li><li><a href="#subagent-dispatch-template-required-read-first-items">Subagent dispatch template — required Read first items</a></li><li><a href="#role-hand-off-records">Role hand-off records</a></li><li><a href="#done-criteria-per-pr">Done criteria (per PR)</a></li>
     </ul>
 </nav>
 </aside>
@@ -460,8 +460,9 @@ Coordination happens through GitHub, not chat context.</p>
 <ol>
 <li><strong>One agent, one worktree, one branch, one PR.</strong> Agents never share a
    working tree.</li>
-<li><strong>Shared state is the issue tracker.</strong> Discussion, status, and hand-off
-   happen in issue/PR comments — <code>@claude</code>, <code>@codex</code> mentions route work.</li>
+<li><strong>Shared state is the issue tracker.</strong> Discussion, status, plans, and
+   hand-off happen in issue/PR comments — <code>@claude</code>, <code>@codex</code> mentions route
+   work.</li>
 <li><strong>No cross-branch edits.</strong> An agent never pushes to another agent's
    branch. Hand-off = comment + new PR.</li>
 <li><strong>Parallelism condition</strong>: issues are dispatched in parallel only when
@@ -469,6 +470,9 @@ Coordination happens through GitHub, not chat context.</p>
    stacked PRs (<code>rararulab/.github/docs/stacked-prs.md</code>).</li>
 <li><strong>Identity is a label.</strong> Every issue and PR carries <code>agent:claude</code> or
    <code>agent:codex</code> so authorship is auditable.</li>
+<li><strong>No shadow task records.</strong> Do not create <code>.agents/tasks/</code>, story files,
+   or local task databases for agent work. Use the GitHub issue, PR body, and
+   comments as the durable hand-off record.</li>
 </ol>
 <h2 id="dispatch-pattern">Dispatch pattern<a class="headerlink" href="#dispatch-pattern" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>User request
@@ -490,6 +494,7 @@ in order:</p>
 <li><code>docs/dev/workflow.md</code>, <code>testing.md</code>, <code>code-comments.md</code>,
    <code>agent-spec.md</code>, <code>maintaining-agent-md.md</code> as relevant.</li>
 <li>The GitHub issue itself (<code>gh issue view &lt;N&gt;</code>).</li>
+<li>The issue's <code>Agent Task Packet</code> section and the latest issue comments.</li>
 </ol>
 <p>Skipping item 3 causes the subagent to re-commit known anti-patterns;
 every review round that uncovers a new hazard <strong>appends a bullet</strong> to
@@ -505,6 +510,21 @@ the wiki doc in the same PR.</p>
 <p>Large features that cannot be decomposed into independent issues use
 <strong>stacked PRs</strong>: one epic issue, sub-issues branched off <code>feat/{name}</code>,
 final summary PR to <code>main</code>.</p>
+<h2 id="role-hand-off-records">Role hand-off records<a class="headerlink" href="#role-hand-off-records" title="Permanent link">&para;</a></h2>
+<p>When agents split planning, implementation, and review, keep the hand-off in
+GitHub:</p>
+<ul>
+<li><strong>Planner</strong>: post the implementation plan as an issue comment. Include the
+  Agent Task Packet deltas if discovery changed the expected touch points,
+  validation commands, or forbidden areas.</li>
+<li><strong>Implementer</strong>: preserve what context was actually used in the PR body.
+  Call out deviations from the issue packet or BDD spec explicitly.</li>
+<li><strong>Reviewer</strong>: leave findings as PR review comments. If a finding exposes a
+  reusable hazard, append it to <code>docs/wiki/lessons-learned.md</code> in the fixing
+  PR.</li>
+</ul>
+<p>Do not hide hand-off notes in chat context. If the next agent needs it, it
+belongs in the issue or PR.</p>
 <h2 id="done-criteria-per-pr">Done criteria (per PR)<a class="headerlink" href="#done-criteria-per-pr" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>just check</code> clean</li>

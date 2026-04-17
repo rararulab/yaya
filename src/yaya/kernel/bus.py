@@ -36,9 +36,20 @@ import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 
 from yaya.kernel.events import Event, new_event
+
+_IN_WORKER: ContextVar[bool] = ContextVar("_IN_WORKER", default=False)
+"""True while the current task is executing inside a session drain worker.
+
+Set by :meth:`EventBus._drain` for the duration of the worker's loop body.
+ContextVars propagate across ``await`` boundaries within the same task, so
+any handler invoked by the worker — and any nested :meth:`EventBus.publish`
+those handlers make — observes ``True`` and skips awaiting the completion
+future to avoid cross-session and same-session deadlock cycles.
+"""
 
 EventHandler = Callable[[Event], Awaitable[None]]
 
@@ -58,10 +69,11 @@ class _Envelope:
     """Queue item pairing an event with its per-publish completion future.
 
     The future is resolved by the session's drain worker once every
-    subscriber for this event has finished (or failed). :meth:`EventBus.publish`
-    awaits this future so external callers observe synchronous-ish delivery
-    semantics — except from within the worker itself, where awaiting would
-    deadlock (see :meth:`EventBus.publish`).
+    subscriber for this event has finished (or failed). Callers whose task
+    is not running inside any session worker await this future so they
+    observe synchronous-ish delivery. Callers running inside a session
+    worker (detected via a ContextVar) skip the await to avoid
+    cross-session and same-session deadlock cycles.
     """
 
     event: Event
@@ -199,11 +211,9 @@ class EventBus:
         done: asyncio.Future[None] = loop.create_future()
         await queue.put(_Envelope(event, done))
 
-        # Re-entry: if we're running inside the session's own worker, awaiting
-        # the completion future would deadlock (the worker can't pick up the
-        # new event until the current handler returns). Enqueue-and-return.
-        worker = self._session_workers.get(event.session_id)
-        if worker is not None and asyncio.current_task() is worker:
+        if _IN_WORKER.get():
+            # Caller is running inside some session worker; awaiting would risk
+            # a cross-session or same-session deadlock. Fire-and-forget.
             return
         await done
 
@@ -226,6 +236,7 @@ class EventBus:
         Exits when the queue is empty (releasing the session's state) or
         when :data:`_CLOSE_TOKEN` is popped (shutdown path).
         """
+        token = _IN_WORKER.set(True)
         try:
             while True:
                 item = await queue.get()
@@ -247,6 +258,7 @@ class EventBus:
                 if queue.empty():
                     break
         finally:
+            _IN_WORKER.reset(token)
             # Only release if we're still the current worker for this session.
             # (close() clears the dicts itself; guard avoids KeyError then.)
             if self._session_queues.get(session_id) is queue:
@@ -271,7 +283,7 @@ class EventBus:
 
         The synthetic event is enqueued on the ``"kernel"`` session (not the
         originating session) so it does not interleave with the caller's
-        per-session FIFO.
+        per-session FIFO. Delivery is fire-and-forget.
         """
         if sub.source == "kernel":
             _logger.exception(
@@ -297,15 +309,12 @@ class EventBus:
             return
         queue = self._ensure_worker("kernel")
         loop = asyncio.get_running_loop()
+        # Fire-and-forget: this path always runs inside a session worker
+        # (see _deliver -> _drain), so awaiting would create cross-session
+        # deadlock cycles. The completion future is created but never
+        # awaited here — the kernel-session worker still resolves it.
         done: asyncio.Future[None] = loop.create_future()
         await queue.put(_Envelope(err, done))
-        # Do not await ``done`` — the kernel session may be the caller's own
-        # worker (e.g. a plugin.error handler raised) and awaiting would
-        # deadlock. The originating publish's completion future still
-        # resolves once its own envelope finishes; the synthetic error
-        # delivers asynchronously.
-        if asyncio.current_task() is not self._session_workers.get("kernel"):
-            await done
 
     # -- shutdown ---------------------------------------------------------------
 

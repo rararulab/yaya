@@ -105,7 +105,7 @@ async def test_fifo_per_session() -> None:
     seen: list[int] = []
 
     async def handler(ev: Event) -> None:
-        # Variable delay to try to reorder — the per-session lock must prevent it.
+        # Variable delay to try to reorder — the per-session worker must preserve order.
         await asyncio.sleep(0.01 if ev.payload["n"] % 2 == 0 else 0.001)
         seen.append(ev.payload["n"])
 
@@ -302,6 +302,76 @@ async def test_duplicate_subscription_same_args_unsubscribes_one_copy() -> None:
 
     await bus.publish(new_event("kernel.ready", {"version": "0.0.1"}, session_id="s", source="kernel"))
     assert count == 1
+
+
+async def test_cross_session_cycle_does_not_deadlock() -> None:
+    """Handlers on different sessions that publish into each other must not deadlock.
+
+    With per-session workers AND await-done-for-external-callers, a cycle
+    where s1 handler publishes to s2 and s2 handler publishes to s1 would
+    block both workers on each other's completion future. The fix is to
+    treat any in-worker caller as fire-and-forget, regardless of target
+    session.
+    """
+    bus = EventBus(handler_timeout_s=1.0)
+    seen_pong: list[Event] = []
+
+    async def on_ping(ev: Event) -> None:
+        # Received on s2; publishes a pong to s1.
+        await bus.publish(new_event("x.pong", {"reply": ev.payload["n"]}, session_id="s1", source="p"))
+
+    async def on_pong(ev: Event) -> None:
+        seen_pong.append(ev)
+
+    bus.subscribe("x.ping", on_ping, source="p")
+    bus.subscribe("x.pong", on_pong, source="observer")
+
+    # External call: top-level task publishes a ping to s2 and awaits delivery.
+    await asyncio.wait_for(
+        bus.publish(new_event("x.ping", {"n": 1}, session_id="s2", source="kernel")),
+        timeout=0.5,
+    )
+    # Let s1's worker drain the pong.
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    assert len(seen_pong) == 1
+    assert seen_pong[0].payload["reply"] == 1
+
+
+async def test_plugin_error_cascade_does_not_deadlock() -> None:
+    """A plugin.error handler that publishes back to the originating session must not deadlock.
+
+    Regression for the round-1 design: _report_handler_failure awaited the
+    kernel-session done from inside a session worker, so a plugin.error
+    handler that cascaded back to the originating session would hang.
+    """
+    bus = EventBus(handler_timeout_s=1.0)
+    cascade: list[Event] = []
+
+    async def bad(_: Event) -> None:
+        raise RuntimeError("boom")
+
+    async def on_error_cascade(_: Event) -> None:
+        await bus.publish(new_event("x.echo", {"msg": "after-error"}, session_id="s1", source="errhandler"))
+
+    async def on_echo(ev: Event) -> None:
+        cascade.append(ev)
+
+    bus.subscribe("x.trigger", bad, source="bad")
+    bus.subscribe("plugin.error", on_error_cascade, source="errhandler")
+    bus.subscribe("x.echo", on_echo, source="observer")
+
+    await asyncio.wait_for(
+        bus.publish(new_event("x.trigger", {}, session_id="s1", source="kernel")),
+        timeout=0.5,
+    )
+    # Allow kernel + s1 workers to drain.
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+    assert len(cascade) == 1
+    assert cascade[0].payload["msg"] == "after-error"
 
 
 async def test_publish_after_close_logs_warning(caplog: pytest.LogCaptureFixture) -> None:

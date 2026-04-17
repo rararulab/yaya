@@ -1,34 +1,36 @@
 # tests — Agent Guidelines
 
-## Purpose
-Pytest suite. Mirrors `src/yaya/` one-to-one.
+<!-- Prompt-system layers. Philosophy / Style / Anti-sycophancy inherit root. -->
 
-## Architecture
-- `conftest.py` — shared fixtures:
-  - `runner`: Typer `CliRunner`.
-  - `cli_app`: the configured Typer app.
-  - `_isolate_state_dir` (autouse): redirects `STATE_DIR` under `tmp_path` so tests never touch `~/.local/share/yaya`.
-  - `_no_auto_update` (autouse): sets `YAYA_NO_AUTO_UPDATE=1` to suppress the startup toast.
-  - `project_root`: path to repo root.
+## Philosophy
+Pytest suite. Mirrors `src/yaya/` one-to-one. Tests are the specification.
+
+## External Reality
+- `just test` (pytest + coverage) is ground truth. Coverage floor: 80% (`fail_under`).
+- `addopts` enforces `--strict-markers` + `--strict-config` + 30s timeout.
+- `pytest-randomly` shuffles test order — order-dependence fails CI immediately.
+- Tests run hermetically: autouse fixtures redirect `STATE_DIR` and disable the update toast.
+
+## Constraints
+- `conftest.py` shared fixtures:
+  - `runner` — Typer `CliRunner`.
+  - `cli_app` — the configured Typer app.
+  - `_isolate_state_dir` (autouse) — redirects `STATE_DIR` under `tmp_path`.
+  - `_no_auto_update` (autouse) — sets `YAYA_NO_AUTO_UPDATE=1`.
+  - `project_root` — path to repo root.
 - `cli/` — CLI-level tests (one file per command).
-- `core/` — unit tests for domain modules.
+- `core/` — unit tests per domain module.
+- File layout MIRRORS source: `src/yaya/core/foo.py` ⇒ `tests/core/test_foo.py`.
+- Markers: `unit` (default, fast/pure), `integration` (fs/subprocess/local net), `slow` (>1s).
 
-## Critical Invariants
-- Test file layout MIRRORS source: `src/yaya/core/foo.py` ⇒ `tests/core/test_foo.py`.
-- Every public function/class in `src/yaya/` has at least one test. Coverage must not regress (`fail_under = 80`).
-- **No network, no time, no randomness** without an explicit seam. Use `pytest-httpx` for HTTP, `freezegun` or injected clocks for time.
-- New agents/flows in `core/` MUST have an Agent Spec round-trip test in `tests/core/`.
-- Tests must fail before they pass (write the failing test first).
+## Interaction (patterns)
+- TDD: the test must fail before the implementation makes it pass.
+- Prefer real objects + `tmp_path` + `pytest-httpx` over `unittest.mock`.
+- Do NOT hit real network, real filesystem outside `tmp_path`, or real wall-clock time without a seam.
+- Do NOT mark tests `skip` / `xfail` without a linked issue.
+- Every non-trivial change ships with a `specs/<slug>.spec.md` whose scenarios bind to test functions via `Test:` selectors — `agent-spec guard` rejects unbound scenarios.
+- New public function/class ⇒ at least one test; coverage must not regress.
 
-## What NOT To Do
-- Do NOT mock what `pytest-httpx` or `tmp_path` can cover with real objects.
-- Do NOT hit the real filesystem outside `tmp_path` — the autouse fixtures exist for this.
-- Do NOT mark tests `skip`/`xfail` without a linked issue.
-
-## Markers
-- `unit` — default; fast, pure.
-- `integration` — touches filesystem, subprocess, local network.
-- `slow` — >1s; run via `pytest -m slow` or skipped via `-m 'not slow'`.
-
-## Dependencies
-See [../docs/dev/testing.md](../docs/dev/testing.md) for commands, conventions, and the TDD workflow.
+## Budget & Loading
+- Commands + conventions: [../docs/dev/testing.md](../docs/dev/testing.md).
+- Contract workflow + scenario shape: [../docs/dev/agent-spec.md](../docs/dev/agent-spec.md).

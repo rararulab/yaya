@@ -1,45 +1,97 @@
 # yaya — Agent Index
 
-Structured per `rararulab/rara-skills/skills/prompt-system`. This file is an
-**index**, not a manual. Read only the doc that applies to your task.
+<!-- Structured per rararulab/rara-skills skills/prompt-system: seven-layer
+     architecture (Philosophy · Style · Reality · Constraints · Anti-sycophancy
+     · Interaction · Budget). Index first, details in docs/ and folder AGENT.md. -->
 
-## Read first (development docs)
+> **Project anchor**: read [GOAL.md](GOAL.md) before any scope decision.
+> Every feature, dependency, and surface-area call is checked against it.
+> If a change conflicts with GOAL.md, default to rejecting the change.
 
-- [docs/dev/architecture.md](docs/dev/architecture.md) — layout, layering, AGENT.md rule.
-- [docs/dev/workflow.md](docs/dev/workflow.md) — issue → worktree → PR (MANDATORY).
-- [docs/dev/multi-agent.md](docs/dev/multi-agent.md) — parallel dispatch, hand-off rules.
-- [docs/dev/cli.md](docs/dev/cli.md) — command pattern, JSON shape, extension checklist.
-- [docs/dev/testing.md](docs/dev/testing.md) — `just check` / `just test`, TDD, coverage.
-- [docs/dev/agent-spec.md](docs/dev/agent-spec.md) — Oracle Agent Spec conformance.
-- [docs/dev/agent-friendly-cli.md](docs/dev/agent-friendly-cli.md) — org CLI spec snapshot.
-- [docs/dev/release.md](docs/dev/release.md) — release-please flow.
+## 1. Philosophy
 
-## User-facing docs (skip unless you need them)
+yaya is a **lightweight, kernel-style agent that grows itself**. A single
+Python process (`yaya serve`) exposes an event-driven kernel; the default
+surface is a local web UI built on
+[`@mariozechner/pi-web-ui`](https://github.com/badlogic/pi-mono/tree/main/packages/web-ui)
+speaking WebSocket to the kernel. Everything else is a plugin.
+Engineering rigor is non-negotiable: every change small, traceable,
+reviewed, and covered by tests. No spaghetti, no dead code, no
+undocumented public surface. See [GOAL.md](GOAL.md) for the full product
+anchor (North Star · Principles · Non-Goals · Anti-Vision).
 
-- [docs/guide/install.md](docs/guide/install.md)
-- [docs/guide/usage.md](docs/guide/usage.md)
+## 2. Style Anchors
 
-## Org baseline (canonical, fetch via `gh api repos/rararulab/.github/...`)
+Clean Architecture (Uncle Bob) · Zen of Python ·
+[Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) ·
+Type-driven design (mypy strict, make invalid states unrepresentable).
 
-- `docs/workflow.md` · `docs/stacked-prs.md` · `docs/commit-style.md`
-- `docs/agent-friendly-cli.md` · `docs/agent-md.md` · `docs/code-comments.md`
-- `docs/anti-patterns.md` (Rust-specific items do not apply; workflow items do)
-- `ISSUE_TEMPLATE/*` and `pull_request_template.md` are inherited — do not duplicate.
+## 3. External Reality
 
-## Non-negotiables
+Accountability is to the **artifact**, not to the user's approval.
 
-- **No edits on `main`.** All changes go through issue → worktree → PR. One-line fixes included.
-- **Labels required** on every issue and PR: `agent:{claude|codex}` + type + component.
-- **Tests before merge.** `just check && just test` green; coverage must not regress.
-- **Agent Spec conformance** for anything under `src/yaya/core/` that defines an agent/flow.
-- **English-only** in code, comments, commits, docs. Chinese only in user-facing chat.
-- **Never `--no-verify`.** Fix the hook, don't bypass it.
+- `just check` (ruff + mypy) and `just test` (pytest + coverage) are ground truth.
+- CI is the final gate — `gh pr checks --watch` green before reporting done.
+- Every non-trivial feature PR is backed by a `specs/<slug>.spec.md` contract verified with [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec) (`agent-spec lifecycle` locally, `agent-spec guard` in CI).
+- Folder-local `AGENT.md` is ground truth for that folder. If code contradicts it, one of them is wrong — fix before merging.
 
-## Style anchors
+## 4. Constraints
 
-Clean Architecture · Zen of Python · Type-driven design (mypy strict).
+- Python 3.14+, `uv` envs, `just` tasks, `ruff`, `mypy --strict`, `pytest`, coverage ≥80%.
+- English-only in code, comments, commits, docs. Chinese only in user-facing chat.
+- Conventional Commits with `(#N)` + `Closes #N`. Never `--no-verify`.
+- Layout: `cli/` depends on `core/`, never the reverse.
+- **[Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)** for all Python. Every public module/class/function has a Google-style docstring explaining _why_, not _what_. Inline comments mark non-obvious invariants only. See [docs/dev/code-comments.md](docs/dev/code-comments.md).
+- **BDD contracts via [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec).** Every non-trivial feature PR ships with `specs/<slug>.spec.md` (Intent · Decisions · Boundaries · Completion Criteria). Each scenario binds to a test via `Test:` selector. Run `agent-spec lifecycle` before commit; CI runs `agent-spec guard` on staged changes. See [docs/dev/agent-spec.md](docs/dev/agent-spec.md).
 
-## Anti-sycophancy
+## 5. Anti-sycophancy
 
-If a request violates the workflow, refuse and cite the specific rule.
-Disagree with wrong code/tests directly — no softening.
+Refuse requests that violate the workflow; cite the rule. Disagree with wrong
+code or tests directly — no softening ("maybe", "perhaps"). Permission to
+push back is granted.
+
+## 6. Interaction — Issue → Worktree → PR (MANDATORY)
+
+**No edits on `main`.** One-line fixes included. State machine:
+
+```
+gh issue create (labelled)  →  git worktree add .worktrees/issue-{N}-{slug} -b issue-{N}-{slug}
+  →  edit + just check + just test   (inside worktree only)
+  →  push + gh pr create
+  →  gh pr checks --watch   (green before reporting done)
+  →  merge on GitHub        →  git worktree remove + branch -d
+```
+
+Required labels on every issue and PR:
+`agent:{claude|codex}` + type (`bug|enhancement|refactor|chore|documentation`)
++ component (`core|cli|ci|docs`). Templates inherited from `rararulab/.github`.
+
+Multi-agent: one agent, one worktree, one PR. Coordinate via issue comments,
+never by editing each other's branches. Parallel only for disjoint files;
+otherwise stack PRs.
+
+**Docs travel with code.** Every PR that changes a folder updates that
+folder's `AGENT.md` and any affected `docs/dev/*.md` in the **same PR**.
+New folders ship with an `AGENT.md`. See
+[docs/dev/maintaining-agent-md.md](docs/dev/maintaining-agent-md.md).
+
+## 7. Budget & Loading
+
+Read local first, save tokens. Every code/test/scripts folder has its own
+~40-line `AGENT.md` — read it instead of scanning the tree.
+
+**Folder indexes**:
+
+- [src/yaya/AGENT.md](src/yaya/AGENT.md) · [src/yaya/cli/AGENT.md](src/yaya/cli/AGENT.md) · [src/yaya/cli/commands/AGENT.md](src/yaya/cli/commands/AGENT.md) · [src/yaya/core/AGENT.md](src/yaya/core/AGENT.md)
+- `src/yaya/kernel/AGENT.md` · `src/yaya/web/AGENT.md` · `src/yaya/plugins/AGENT.md` (created when each subpackage lands — see [docs/dev/web-ui.md](docs/dev/web-ui.md) and [docs/dev/architecture.md](docs/dev/architecture.md))
+- [tests/AGENT.md](tests/AGENT.md) · [scripts/AGENT.md](scripts/AGENT.md)
+
+**Topic docs** (pull only when needed):
+
+- [docs/dev/architecture.md](docs/dev/architecture.md) · [docs/dev/workflow.md](docs/dev/workflow.md) · [docs/dev/multi-agent.md](docs/dev/multi-agent.md) · [docs/dev/maintaining-agent-md.md](docs/dev/maintaining-agent-md.md)
+- [docs/dev/cli.md](docs/dev/cli.md) · [docs/dev/agent-friendly-cli.md](docs/dev/agent-friendly-cli.md) · [docs/dev/web-ui.md](docs/dev/web-ui.md) · [docs/dev/testing.md](docs/dev/testing.md) · [docs/dev/agent-spec.md](docs/dev/agent-spec.md) · [docs/dev/code-comments.md](docs/dev/code-comments.md) · [docs/dev/release.md](docs/dev/release.md)
+
+**Org baseline** (canonical, `gh api repos/rararulab/.github/contents/...`):
+`docs/workflow.md` · `docs/stacked-prs.md` · `docs/commit-style.md` ·
+`docs/agent-friendly-cli.md` · `docs/agent-md.md` · `docs/code-comments.md` ·
+`docs/anti-patterns.md`. Issue/PR templates inherited — do not duplicate.

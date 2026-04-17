@@ -1,17 +1,24 @@
 # scripts — Agent Guidelines
 
-## Purpose
+<!-- Prompt-system layers. Philosophy / Style / Anti-sycophancy inherit root. -->
+
+## Philosophy
 Release-time and CI helper scripts. Not imported by the package.
 
-## Architecture
-- `check_version_tag.py` — verifies that the git tag matches `pyproject.toml` version during release.
+## External Reality
+- Scripts run in CI (release-please workflow) and locally via `just`. Exit codes are their contract.
+- `check_version_tag.py` gates releases — a mismatch between the git tag and `pyproject.toml` version fails the release pipeline.
 
-## Critical Invariants
-- Scripts are **standalone** — runnable with `python scripts/<name>.py` using only stdlib (or clearly documented deps).
-- No imports from `yaya.*` unless absolutely required (scripts run before install in some CI contexts).
-- Every script has a module-level docstring stating: what it does, when it runs, and exit-code semantics.
+## Constraints
+- `check_version_tag.py` — verifies the git tag matches `pyproject.toml` version at release time.
+- Scripts are **standalone**: runnable with `python scripts/<name>.py` using only stdlib (or clearly documented deps available in the CI environment).
+- No imports from `yaya.*` unless strictly required — scripts may run before install in CI.
+- Every script has a module-level docstring stating: what it does, when it runs, exit-code semantics.
 
-## What NOT To Do
+## Interaction (patterns)
 - Do NOT add scripts that duplicate `justfile` recipes — extend the justfile instead.
-- Do NOT put secrets or hard-coded paths here — read from env.
-- Do NOT add a script without a line in the release workflow or justfile that calls it (orphans rot).
+- Do NOT hard-code secrets or environment-specific paths — read from env.
+- Do NOT add a script without a caller (justfile recipe or workflow step). Orphans rot.
+
+## Budget & Loading
+- Release flow: [../docs/dev/release.md](../docs/dev/release.md).

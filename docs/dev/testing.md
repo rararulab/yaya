@@ -13,8 +13,10 @@
   recorded fixtures before `unittest.mock`.
 - **Tests must fail before they pass.** Write the failing test first, then
   the implementation (TDD).
-- **Agent/flow PRs**: include an Agent Spec round-trip test
-  (see [agent-spec.md](agent-spec.md)).
+- **Feature PRs**: each observable behavior is covered by a BDD scenario
+  in `specs/<slug>.spec.md` whose `Test:` selector names the test
+  function. `agent-spec guard` rejects unbound scenarios. See
+  [agent-spec.md](agent-spec.md).
 - **Test layout mirrors `src/`.** A file at `src/yaya/core/foo.py` has its
   tests at `tests/core/test_foo.py`.
 - **No network, no time, no randomness** in tests without an explicit seam.

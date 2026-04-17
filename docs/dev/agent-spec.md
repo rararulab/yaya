@@ -1,108 +1,157 @@
 # agent-spec — BDD Contracts for Agent Work
 
 Canonical tool: [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec).
-An AI-native BDD verification framework. Humans author a **task contract**,
-the agent implements against it, `agent-spec` verifies compliance
-deterministically.
+An AI-native BDD / spec verification framework. Humans author a
+**task contract**; the agent implements against it; `agent-spec` lints
+the contract and — with an AI backend — verifies compliance.
 
-**In yaya, every non-trivial feature PR is backed by a `.spec.md` contract.**
-Trivial means: single-line typos, doc-only changes, dependency bumps. Everything
-else — new commands, new `core/` modules, new agents, behavior changes —
-must have a spec.
+**In yaya, every non-trivial feature PR is backed by a `.spec` contract.**
+Trivial means: single-line typos, doc-only changes, dependency bumps.
+Everything else — new commands, new `core/` or `kernel/` modules, new
+plugins, behavior changes — must have a spec.
+
+## What this harness enforces today
+
+- **Lint** on every PR and pre-commit: parse errors, missing
+  frontmatter, quality metrics (determinism / testability / coverage),
+  unbound scenarios, vague verbs.
+- Spec files MUST live under `specs/<slug>.spec` (no `.md` suffix; the
+  tool parses a YAML-front-matter format, not Markdown).
+
+**Not yet enforced** (tracked separately):
+
+- `boundary` layer (diff-vs-allowed-paths) is implemented upstream but
+  has a path-handling bug on non-linux runners in 0.2.7 that we are
+  avoiding until the next release. Boundaries are still declared in
+  specs — we just don't block merges on them yet.
+- `verify` layer (scenario-level pass/fail) needs an AI backend we
+  have not wired up. Scenarios lint-pass when they bind a real test
+  via the `Test:` selector, but the tool can't yet confirm the test
+  exists or passes.
+
+When the upstream fix lands we flip from `lint` to
+`lifecycle --layers lint,boundary`; the AI verify layer is a separate
+future issue.
 
 ## Install
 
 ```bash
-cargo install agent-spec
+cargo install agent-spec --version 0.2.7 --locked
+agent-spec --version
 ```
 
-Also install the appropriate agent skill for your runtime:
+The version is pinned in `.github/workflows/main.yml` and in
+`scripts/check_specs.sh`. Upgrade both together.
 
-- Claude Code ⇒ `agent-spec-tool-first` (under `~/.claude/skills/`)
-- Codex / Cursor / Aider ⇒ matching skill per the upstream README
+Optional: install the corresponding agent skill for your runtime
+(`agent-spec-tool-first` for Claude Code, equivalents for Codex /
+Cursor). Not required for CI.
 
-## Task contract shape (`.spec.md`)
+If you do not want to install Rust locally, skip it — the wrapper
+script prints a friendly notice and succeeds, and CI enforces the
+check on every PR.
 
-Contracts live at `specs/<slug>.spec.md`, one per issue:
+## Task contract shape (`specs/<slug>.spec`)
 
-```markdown
-# specs/<slug>.spec.md
+```
+spec: task
+name: "<slug>"
+tags: [<optional tags>]
+---
 
 ## Intent
-What and why — one paragraph, stakeholder-readable.
+
+One stakeholder-readable paragraph — what and why.
 
 ## Decisions
-Fixed technical choices that are NOT up for debate in this PR.
-(Library picks, file layout, algorithmic direction.)
+
+- Fixed technical choices that are NOT up for debate in this PR.
 
 ## Boundaries
-- Allowed: `src/yaya/cli/commands/<new>.py`, `tests/cli/test_<new>.py`
-- Forbidden: `src/yaya/core/updater.py`, `pyproject.toml` dependencies section
 
-## Completion Criteria (BDD)
+### Allowed Changes
+- `src/yaya/cli/commands/<new>.py`
+- `tests/cli/test_<new>.py`
+
+### Forbidden
+- `src/yaya/core/updater.py`
+- `pyproject.toml` dependencies section
+
+## Completion Criteria
+
 Scenario: happy path
+  Test:
+    Package: yaya
+    Filter: tests/cli/test_<new>.py::test_happy
+  Level: unit
   Given <precondition>
-  When  <action>
-  Then  <observable outcome>
-  Test: tests/cli/test_<new>.py::test_<scenario>
+  When <action>
+  Then <observable outcome>
 
 Scenario: error case
+  Test:
+    Package: yaya
+    Filter: tests/cli/test_<new>.py::test_error
+  Level: unit
   Given <precondition>
-  When  <invalid input>
-  Then  <error code + JSON suggestion field>
-  Test: tests/cli/test_<new>.py::test_<scenario_error>
+  When <invalid input>
+  Then <exit non-zero with JSON error + suggestion>
+
+## Out of Scope
+
+- Things deliberately deferred.
 ```
 
-Minimum 3 scenarios: happy path + error + edge case.
-Every scenario MUST have an explicit `Test:` selector naming the test
-function that proves it.
+Minimum 3 scenarios: happy path + error + edge case. Every scenario
+MUST have a `Test:` block binding it to a concrete test function.
 
 ## Developer workflow
 
 ```bash
 # 1. Author contract (or accept one written by a design agent)
-$EDITOR specs/<slug>.spec.md
+$EDITOR specs/<slug>.spec
 
-# 2. Pull context before coding (contract + codebase sketch)
-agent-spec plan specs/<slug>.spec.md
+# 2. Iterate; re-lint until clean
+agent-spec lint specs/<slug>.spec
 
 # 3. Implement inside the issue worktree
 
-# 4. Verify locally — lint + BDD compliance + report
-agent-spec lifecycle specs/<slug>.spec.md
+# 4. Verify locally (full lifecycle)
+just check-specs
 
-# 5. PR description from the contract
-agent-spec explain specs/<slug>.spec.md > /tmp/pr-body.md
-gh pr create --body-file /tmp/pr-body.md
+# 5. Before PR: ensure `just check` is green (it runs check-specs too)
+just check && just test
 ```
 
-CI runs `agent-spec guard` on staged changes — boundary violations or
-unbound scenarios fail the build.
+Pre-commit runs `agent-spec lint` automatically on any staged
+`.spec` file.
 
 ## Contract authoring rules
 
 - **Intent is stakeholder-readable.** No code, no jargon the user didn't use.
-- **Decisions are _decisions_, not suggestions.** If it's still open, it
-  does not belong here — brainstorm elsewhere.
-- **Boundaries are narrow.** Prefer listing explicit allowed paths. A spec
-  that "allows everything" is useless for `guard`.
+- **Decisions are _decisions_, not suggestions.** If it's still open,
+  it does not belong here — brainstorm elsewhere.
+- **Boundaries are narrow.** List explicit allowed paths. A spec that
+  "allows everything" is useless once boundary enforcement is on.
 - **Scenarios are observable.** Assert on exit code, stdout JSON shape,
   file-on-disk state — never on "the function was called".
-- **One contract, one issue.** Split large work into stacked contracts;
-  see [stacked-prs](workflow.md#stacked-prs).
+- **One contract, one issue.** Split large work into stacked
+  contracts; see [workflow.md](workflow.md).
 
 ## Relationship to the org BDD issue template
 
-`rararulab/.github/ISSUE_TEMPLATE/bdd_task.yml` captures the same four
-sections (Description / Plan Spec / Feature file / Design spec). Use the
-issue template to open the issue; copy its Gherkin block into
-`specs/<slug>.spec.md` so `agent-spec` can verify it.
+`rararulab/.github/ISSUE_TEMPLATE/bdd_task.yml` captures the same
+sections (Description / Plan Spec / Feature file / Design spec). Use
+the issue template to open the issue; translate its scenarios into
+the `specs/<slug>.spec` format above.
 
 ## What NOT To Do
 
-- Do NOT open a feature PR without a `.spec.md` (trivia excepted).
-- Do NOT change scope mid-PR without updating the contract in the same commit.
-- Do NOT write scenarios without a `Test:` selector — `guard` will flag them
-  as unbound.
-- Do NOT relax `Boundaries` to make the build pass — revisit scope instead.
-- Do NOT skip `agent-spec lifecycle` before requesting review.
+- Do NOT open a feature PR without a `.spec` (trivia excepted).
+- Do NOT change scope mid-PR without updating the contract in the
+  same commit.
+- Do NOT write scenarios without a `Test:` selector — lint flags them.
+- Do NOT relax `Boundaries` to make the build pass — revisit scope
+  instead.
+- Do NOT use the old `.spec.md` extension. The tool parses
+  `.spec` files with YAML frontmatter.

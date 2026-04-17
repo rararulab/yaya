@@ -61,8 +61,11 @@ Use module-level `pytestmark = pytest.mark.unit` to tag a whole file.
 - **Example tests**: one concrete input → one expected output. Default.
 - **Property tests (hypothesis)**: assert an invariant over a *generated*
   input space. Use for pure functions (parsers, comparators, transforms).
-- **Snapshot tests (syrupy)**: pin the exact shape of a stable output
-  (`--help`, JSON payload). Refresh deliberately, not reflexively.
+- **Snapshot tests (syrupy)**: pin the exact shape of a stable output.
+  Only snapshot outputs that are platform-agnostic — e.g. a JSON
+  payload from `yaya --json foo`. Do NOT snapshot rich-rendered help
+  text; rich picks different box-drawing glyphs on Windows vs POSIX,
+  and snapshots drift. Refresh deliberately, not reflexively.
 - **CLI tests**: `runner.invoke(cli_app, [...])` + assert exit code, JSON
   shape, stderr vs stdout routing. See [cli.md](cli.md).
 

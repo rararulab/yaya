@@ -286,10 +286,63 @@ hooks with `--no-verify`.
 
 ---
 
+## 15. Silent "no request_id" drops hang plugin authors
+
+**Symptom** — A plugin forgets to echo ``request_id`` on its response
+event. The agent loop hangs for ``step_timeout_s`` (60 s default), then
+surfaces ``kernel.error: step_timeout`` with no indication the real
+cause was a missing correlation field.
+
+**Root cause** — ``_RequestTracker.resolve`` silently returns when the
+incoming event has no ``request_id``, treating it as "maybe a rogue
+response from outside the loop". That silent path is indistinguishable
+from "correlation id doesn't match any in-flight request", so the loop
+waits for a response that will never match.
+
+**Rule** — When a protocol-defined correlation field is missing, log a
+WARNING that names the offending event kind and source. "Late arrival
+for a cancelled turn" is debug-level; "missing required correlation
+field" is warning-level. The 60-second wait is not the error — the
+silence is.
+
+**Reference** — PR #38, ``src/yaya/kernel/loop.py`` ``_RequestTracker.resolve``.
+
+---
+
+## 16. Reviewers: verify the flagged pattern is actually wrong
+
+**Symptom** — PR #38 round-2 review flagged `except TypeError, ValueError:`
+(without parentheses) as an "unidiomatic hazard" and asked the author
+to parenthesize it. The request was bogus: PEP 758 (accepted in
+Python 3.12) makes unparenthesized multi-type `except` clauses valid
+and semantically identical to the parenthesized form. Worse, ruff
+with `target-version = "py314"` actively **normalizes** the
+parenthesized form back to unparenthesized, so committing the
+"fix" would have failed `ruff format --check` in CI.
+
+**Root cause** — Reviewer applied pre-3.12 Python style intuition
+without re-checking the language spec + the ruff formatter config
+in `pyproject.toml`. Pattern-level lints are especially vulnerable
+to this — "looks wrong to me" often means "unfamiliar to me".
+
+**Rule** — Before filing a pattern-level finding: (a) confirm the
+current Python version (`pyproject.toml` `requires-python`), (b)
+confirm the configured ruff/mypy target-version would flag it on its
+own, (c) test the diff in a scratch file with `ruff format` and
+`ruff check` to see what CI actually enforces. If the formatter
+disagrees with the finding, the finding is wrong — trust the
+formatter, not intuition.
+
+**Reference** — PR #38 review round 2 (aborted). Cf. lesson #11
+(empirical probes beat static reasoning) — it applies to reviewers
+too, not just authors.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,
-  agent loop, or any async infrastructure: **read entries 1–13**.
+  agent loop, or any async infrastructure: **read every entry**.
 - When dispatching a subagent: reference this doc in the prompt's
   "Read first" list.
 - When a review turn surfaces a hazard that is **not** listed here:

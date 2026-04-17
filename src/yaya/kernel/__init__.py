@@ -15,16 +15,19 @@ from yaya.kernel.events import (
     PublicEventKind,
     new_event,
 )
+from yaya.kernel.loop import AgentLoop, LoopConfig
 from yaya.kernel.plugin import Category, KernelContext, Plugin
 
 __all__ = [
     "DEFAULT_HANDLER_TIMEOUT_S",
     "PUBLIC_EVENT_KINDS",
+    "AgentLoop",
     "Category",
     "Event",
     "EventBus",
     "EventHandler",
     "KernelContext",
+    "LoopConfig",
     "Plugin",
     "PublicEventKind",
     "Subscription",

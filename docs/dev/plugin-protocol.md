@@ -60,8 +60,8 @@ class Event(TypedDict):
 | kind | direction | payload |
 |---|---|---|
 | `llm.call.request` | kernel → provider | `{ provider: str, model: str, messages: list[Message], tools?: list[ToolSchema], params: dict }` |
-| `llm.call.response` | provider → kernel | `{ text?: str, tool_calls?: list[ToolCall], usage: Usage }` |
-| `llm.call.error` | provider → kernel | `{ error: str, retry_after_s?: float }` |
+| `llm.call.response` | provider → kernel | `{ text?: str, tool_calls?: list[ToolCall], usage: Usage, request_id?: str }` |
+| `llm.call.error` | provider → kernel | `{ error: str, retry_after_s?: float, request_id?: str }` |
 
 #### Tool execution (kernel ↔ tool)
 
@@ -69,7 +69,7 @@ class Event(TypedDict):
 |---|---|---|
 | `tool.call.request` | kernel → tool | `{ id: str, name: str, args: dict }` |
 | `tool.call.start` | kernel → adapters (for UI) | `{ id: str, name: str, args: dict }` |
-| `tool.call.result` | tool → kernel | `{ id: str, ok: bool, value?: Any, error?: str }` |
+| `tool.call.result` | tool → kernel | `{ id: str, ok: bool, value?: Any, error?: str, request_id?: str }` |
 
 #### Memory (kernel ↔ memory)
 
@@ -77,14 +77,14 @@ class Event(TypedDict):
 |---|---|---|
 | `memory.query` | kernel → memory | `{ query: str, k: int }` |
 | `memory.write` | kernel → memory | `{ entry: MemoryEntry }` |
-| `memory.result` | memory → kernel | `{ hits: list[MemoryEntry] }` |
+| `memory.result` | memory → kernel | `{ hits: list[MemoryEntry], request_id?: str }` |
 
 #### Strategy (kernel ↔ strategy)
 
 | kind | direction | payload |
 |---|---|---|
 | `strategy.decide.request` | kernel → strategy | `{ state: AgentLoopState }` |
-| `strategy.decide.response` | strategy → kernel | `{ next: "llm" \| "tool" \| "memory" \| "done", ... }` |
+| `strategy.decide.response` | strategy → kernel | `{ next: "llm" \| "tool" \| "memory" \| "done", request_id?: str, ... }` |
 
 #### Plugin lifecycle (kernel → all)
 
@@ -101,7 +101,7 @@ class Event(TypedDict):
 |---|---|
 | `kernel.ready` | `{ version: str }` |
 | `kernel.shutdown` | `{ reason: str }` |
-| `kernel.error` | `{ source: str, message: str }` |
+| `kernel.error` | `{ source: str, message: str, detail?: dict }` |
 
 ### Extension namespace
 
@@ -227,6 +227,22 @@ user.message.received
 Strategies control: which tools to offer, when to call memory, when to
 stop. Strategies **do not** change the ordering of the sequence —
 that is the kernel's contract with adapters.
+
+### Correlation via event id
+
+Request/response pairs (`strategy.decide.*`, `llm.call.*`,
+`memory.query` / `memory.result`, `tool.call.request` /
+`tool.call.result`) are correlated by the **originating event's `id`**:
+when a plugin responds, it MUST mirror the request event's `id` back on
+its response payload as `request_id`. The kernel's agent loop stamps a
+fresh event id on each outbound request and awaits the response whose
+`request_id` equals that id. This is how concurrent in-flight calls on
+the same session are matched to the right awaiter without introducing a
+separate correlation channel. `request_id` is an additive optional
+field on the five response payloads above (`strategy.decide.response`,
+`llm.call.response`, `llm.call.error`, `memory.result`,
+`tool.call.result`) — compatible with hand-crafted test fixtures, but
+required in practice for the kernel loop to observe a response.
 
 ## Plugin failure model
 

@@ -29,6 +29,24 @@ jobs:
         run: uv run mypy --strict
       - name: Lock file up to date
         run: uv lock --locked
+      - name: Install Rust toolchain (for agent-spec)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo + agent-spec binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/agent-spec
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: agent-spec-0.2.7-${{ runner.os }}
+      - name: Install agent-spec
+        run: |
+          if ! command -v agent-spec >/dev/null 2>&1; then
+            cargo install agent-spec --version 0.2.7 --locked
+          fi
+          agent-spec --version
+      - name: Lint specs (agent-spec)
+        run: bash scripts/check_specs.sh
 
   tests:
     name: Tests (${{ matrix.os }}, py${{ matrix.python-version }})

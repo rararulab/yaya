@@ -17,10 +17,21 @@ adapter, tool, LLM provider, …) is built on top.
 ## Decisions
 
 - Registry lives in ``src/yaya/kernel/registry.py`` as ``PluginRegistry``
-  with ``PluginStatus`` (``StrEnum``: ``loaded | failed | unloaded``)
-  and an internal ``_PluginRecord`` dataclass (``eq=False``,
+  with ``PluginStatus`` (``StrEnum``: ``loaded | unloading | failed |
+  unloaded``) and an internal ``_PluginRecord`` dataclass (``eq=False``,
   ``slots=True``) — identity-keyed so subscription handles survive
   ``list.remove`` / identity comparisons (lesson #7).
+- **Status ladder**: threshold path is
+  ``loaded → unloading → failed``; orderly stop / remove is
+  ``loaded → unloaded``. ``unloading`` is a **transient** state claimed
+  synchronously inside ``_on_plugin_error`` BEFORE the unload task is
+  scheduled via ``asyncio.create_task``. This defeats a race where 10
+  concurrent ``plugin.error`` events (one per session) on the same
+  plugin past threshold would otherwise each pass the
+  ``status is LOADED`` guard and spawn parallel unload tasks. With the
+  synchronous flip, rival handlers observe ``status is UNLOADING`` and
+  short-circuit. Regression test
+  ``tests/kernel/test_registry.py::test_concurrent_errors_trigger_single_unload``.
 - Entry-point group: ``yaya.plugins.v1`` — frozen in
   ``docs/dev/plugin-protocol.md``. Discovery uses
   ``importlib.metadata.entry_points(group=…)``. Ordering: bundled first

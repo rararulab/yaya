@@ -413,8 +413,13 @@ def test_validate_install_source_rejects_hazards() -> None:
 
 
 def test_plugin_status_values() -> None:
-    """PluginStatus is a closed three-member StrEnum."""
-    assert {s.value for s in PluginStatus} == {"loaded", "failed", "unloaded"}
+    """PluginStatus is a closed four-member StrEnum.
+
+    ``unloading`` is the transient state between a threshold-breached
+    ``plugin.error`` and ``on_unload`` completing — see
+    ``test_concurrent_errors_trigger_single_unload``.
+    """
+    assert {s.value for s in PluginStatus} == {"loaded", "unloading", "failed", "unloaded"}
 
 
 async def test_entry_point_load_exception_emits_plugin_error(tmp_path: Path) -> None:
@@ -632,15 +637,16 @@ async def test_subscriptions_raising_is_isolated(tmp_path: Path) -> None:
     await bus.close()
 
 
-def test_ep_is_bundled_none_dist_is_false() -> None:
+def test_ep_is_bundled_none_dist_is_false(tmp_path: Path) -> None:
     """Entry points without an associated distribution are not bundled."""
-    from yaya.kernel.registry import _ep_is_bundled
+    bus = EventBus()
+    registry = PluginRegistry(bus, state_dir=tmp_path)
 
     class _OrphanEP:
         name = "orphan"
         dist = None
 
-    assert _ep_is_bundled(_OrphanEP()) is False  # type: ignore[arg-type]
+    assert registry._is_ep_bundled(_OrphanEP()) is False  # type: ignore[arg-type]
 
 
 def test_yaya_version_falls_back_on_missing_dist() -> None:
@@ -851,20 +857,31 @@ async def test_zero_plugins_logs_info(tmp_path: Path, caplog: pytest.LogCaptureF
     await bus.close()
 
 
-def test_ep_is_bundled_none_dist_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
-    """P2 — a None-dist entry point logs a WARNING before returning False."""
-    from yaya.kernel.registry import _ep_is_bundled
+def test_ep_is_bundled_none_dist_logs_warning_once(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """P2 — a None-dist entry point logs a WARNING at most once per name.
+
+    Repeated discovery passes (install / remove each re-run
+    ``_discover_and_load``) must not spam the log with the same
+    "no distribution metadata" warning.
+    """
+    bus = EventBus()
+    registry = PluginRegistry(bus, state_dir=tmp_path)
 
     class _OrphanEP:
         name = "orphan"
         dist = None
 
     with caplog.at_level(logging.WARNING, logger="yaya.kernel.registry"):
-        assert _ep_is_bundled(_OrphanEP()) is False  # type: ignore[arg-type]
+        assert registry._is_ep_bundled(_OrphanEP()) is False  # type: ignore[arg-type]
+        # Subsequent passes must NOT emit another warning for the same name.
+        assert registry._is_ep_bundled(_OrphanEP()) is False  # type: ignore[arg-type]
+        assert registry._is_ep_bundled(_OrphanEP()) is False  # type: ignore[arg-type]
 
-    assert any("no distribution metadata" in rec.message for rec in caplog.records), (
-        "expected a WARNING about missing distribution metadata"
-    )
+    warnings = [rec for rec in caplog.records if "no distribution metadata" in rec.message]
+    assert len(warnings) == 1, f"expected exactly one WARNING across 3 discovery passes, got {len(warnings)}"
 
 
 async def test_orderly_stop_reports_unloaded_not_failed_even_with_error_count(
@@ -946,6 +963,99 @@ def test_yaya_version_narrows_to_package_not_found() -> None:
         pytest.raises(RuntimeError),
     ):
         _yaya_version()
+
+
+async def test_concurrent_errors_trigger_single_unload(tmp_path: Path) -> None:
+    """Round-2 P1 — concurrent plugin.error bursts must not dupe unload tasks.
+
+    10 sessions each deliver one ``tool.call.request`` that makes the
+    plugin raise. All 10 ``plugin.error`` events arrive at the registry
+    handler near-simultaneously. Without the synchronous
+    ``PluginStatus.UNLOADING`` flip (claimed BEFORE ``create_task``
+    returns), 8 of those handler invocations would see
+    ``status is LOADED`` and spawn parallel unload tasks — ``on_unload``
+    would run 8 times and ``plugin.removed`` would fire 8 times.
+    """
+    bus = EventBus(handler_timeout_s=1.0)
+    removed: list[Event] = []
+    bus.subscribe("plugin.removed", _collector(removed), source="observer")
+
+    plugin = _FailingPlugin()
+    with patch(
+        "yaya.kernel.registry.entry_points",
+        side_effect=_fake_entry_points([_FakeEntryPoint("flaky", plugin)]),
+    ):
+        # Threshold 1 so the very first error on every session breaches.
+        registry = PluginRegistry(bus, state_dir=tmp_path, failure_threshold=1)
+        await registry.start()
+
+    # Fan 10 sessions in parallel — each produces one plugin.error.
+    await asyncio.gather(
+        *(
+            bus.publish(
+                new_event(
+                    "tool.call.request",
+                    {"id": f"c-{i}", "name": "noop", "args": {}},
+                    session_id=f"s-{i}",
+                    source="kernel",
+                )
+            )
+            for i in range(10)
+        )
+    )
+    await asyncio.wait_for(_drain_until(lambda: len(removed) >= 1, bus), timeout=1.0)
+
+    # on_unload fires exactly once; plugin.removed emitted exactly once.
+    assert plugin.on_unload_calls == 1, (
+        f"expected exactly 1 on_unload call, got {plugin.on_unload_calls} "
+        "— rival plugin.error events spawned duplicate unload tasks"
+    )
+    assert len(removed) == 1, f"expected exactly 1 plugin.removed event, got {len(removed)}"
+    statuses = {row["name"]: row["status"] for row in registry.snapshot()}
+    assert statuses["flaky-tool"] == "failed"
+
+    await registry.stop()
+    await bus.close()
+
+
+async def test_remove_cleans_snapshot_row(tmp_path: Path) -> None:
+    """Round-2 P2 — ``remove()`` prunes the record so snapshot stops listing it."""
+    bus = EventBus()
+    plugin = _RecordingPlugin()
+    plugin.name = "removable"
+
+    fake_proc = AsyncMock()
+    fake_proc.communicate = AsyncMock(return_value=(b"", b""))
+    fake_proc.returncode = 0
+
+    calls = iter([[_FakeEntryPoint("x", plugin)], []])
+
+    def _eps(group: str) -> list[_FakeEntryPoint]:
+        _ = group
+        return next(calls, [])
+
+    with (
+        patch("yaya.kernel.registry.entry_points", side_effect=_eps),
+        patch("yaya.kernel.registry.shutil.which", return_value="/usr/bin/uv"),
+        patch(
+            "yaya.kernel.registry.asyncio.create_subprocess_exec",
+            AsyncMock(return_value=fake_proc),
+        ),
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path)
+        await registry.start()
+        assert any(r["name"] == "removable" for r in registry.snapshot())
+
+        await registry.remove("removable")
+
+    # Record pruned: snapshot no longer lists the uninstalled plugin.
+    assert not any(r["name"] == "removable" for r in registry.snapshot())
+    assert "removable" not in registry._records
+    assert "removable" not in registry._load_order
+    assert "removable" not in registry._bundled_names
+
+    await registry.stop()
+    await bus.close()
 
 
 # ---------------------------------------------------------------------------

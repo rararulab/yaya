@@ -257,6 +257,13 @@ required in practice for the kernel loop to observe a response.
 - `on_load` failure prevents registration; the plugin is marked
   `status: failed` in `yaya plugin list` with the stack trace in its
   state directory.
+- Status ladder reported by `yaya plugin list` / `snapshot()`:
+  `loaded → unloading → failed` for the threshold path (transient
+  `unloading` between threshold breach and `on_unload` completion);
+  `loaded → unloaded` for orderly `stop()` / `remove()`. `unloading`
+  is observable so operators see in-flight unloads and so the registry
+  can reject duplicate unload tasks from rival `plugin.error` events
+  during the race window.
 - **The kernel never crashes because a plugin did**. If the kernel
   itself raises, `kernel.error` fires, and `yaya serve` exits non-zero.
 

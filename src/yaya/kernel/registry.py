@@ -20,12 +20,19 @@ bus's synthetic-error path and trips the recursion guard in
 handler increments the offending plugin's counter; a **successful**
 ``on_event`` invocation resets that counter to zero, so the threshold
 counts **consecutive** failures, not cumulative. Once the counter
-breaches the configured threshold the registry spawns an unload task
-via ``asyncio.create_task(..., context=contextvars.Context())`` so the
+breaches the configured threshold the registry flips the record's
+status to ``UNLOADING`` **synchronously** (before returning from the
+error handler) and THEN spawns the unload task via
+``asyncio.create_task(..., context=contextvars.Context())`` so the
 bus's private ``_IN_WORKER`` ContextVar resets — without that reset,
 the unload task's ``await bus.publish(...)`` would fire-and-forget and
-``plugin.removed`` would never reach adapters. Same pattern the agent
-loop uses for per-turn tasks.
+``plugin.removed`` would never reach adapters. The synchronous status
+flip matters because 10 concurrent ``plugin.error`` events (one per
+session) for the same plugin past threshold would otherwise each see
+``status is LOADED`` and spawn parallel unload tasks. Status ladder:
+``loaded → unloading → failed`` for the threshold path vs
+``loaded → unloaded`` for orderly ``stop()`` / ``remove()``. Same
+context-reset pattern the agent loop uses for per-turn tasks.
 
 **install / remove**. Shells to ``uv pip`` via
 :func:`asyncio.create_subprocess_exec` (no ``shell=True``). Falls back to
@@ -93,9 +100,24 @@ class PluginStatus(StrEnum):
     Reported verbatim by :meth:`PluginRegistry.snapshot` and shown in
     ``yaya plugin list``. The set is closed; adding a new value is a
     contract change.
+
+    Status ladder:
+
+    * ``loaded`` — plugin registered and accepting events.
+    * ``unloading`` — **transient**: threshold breached, unload task
+      scheduled but ``on_unload`` has not yet completed. Surfaced so
+      operators see in-flight unloads; rival ``plugin.error`` events
+      for the same plugin observe this state and do NOT schedule a
+      duplicate unload task.
+    * ``failed`` — terminal, threshold path (``loaded → unloading →
+      failed``) or a discovery-time failure (bad entry point, invalid
+      object, ``on_load`` raised).
+    * ``unloaded`` — terminal, orderly shutdown (``loaded → unloaded``
+      via ``stop()`` or ``remove()``).
     """
 
     LOADED = "loaded"
+    UNLOADING = "unloading"
     FAILED = "failed"
     UNLOADED = "unloaded"
 
@@ -186,6 +208,10 @@ class PluginRegistry:
         self._error_sub: Subscription | None = None
         # Pending unload tasks so stop() can await them (no leak on shutdown).
         self._unload_tasks: set[asyncio.Task[None]] = set()
+        # Entry-point names we've already warned about for missing dist
+        # metadata. Keeps ``_is_ep_bundled`` idempotent across repeated
+        # discovery passes instead of spamming the log.
+        self._warned_no_dist: set[str] = set()
         self._started = False
 
     # -- lifecycle --------------------------------------------------------------
@@ -348,6 +374,19 @@ class PluginRegistry:
         if record is not None and record.status is PluginStatus.LOADED:
             await self._unload_record(record, emit_removed=True)
 
+        # Prune the record — the entry point is gone, so
+        # ``_discover_and_load`` below will not re-visit it. Leaving the
+        # stale row in ``_records`` / ``_load_order`` would keep
+        # ``snapshot()`` reporting an uninstalled plugin (and block a
+        # subsequent re-install from running ``on_load`` because the
+        # name still collides in ``_load_entry_point``'s dedup check).
+        # Runs AFTER the bundled guard above, so bundled plugins are
+        # never pruned here.
+        self._records.pop(name, None)
+        if name in self._load_order:
+            self._load_order.remove(name)
+        self._bundled_names.discard(name)
+
         await self._discover_and_load()
 
     # -- discovery --------------------------------------------------------------
@@ -366,7 +405,7 @@ class PluginRegistry:
         bundled: list[EntryPoint] = []
         third_party: list[EntryPoint] = []
         for ep in eps:
-            if _ep_is_bundled(ep):
+            if self._is_ep_bundled(ep):
                 bundled.append(ep)
                 # Record ``ep.name`` now so ``remove()`` blocks bundled
                 # packages even if the load fails below.
@@ -377,7 +416,7 @@ class PluginRegistry:
         third_party.sort(key=lambda e: e.name)
 
         for ep in (*bundled, *third_party):
-            await self._load_entry_point(ep, bundled=_ep_is_bundled(ep))
+            await self._load_entry_point(ep, bundled=self._is_ep_bundled(ep))
 
     def _refresh_bundled_names(self) -> None:
         """Populate :attr:`_bundled_names` from current entry-point metadata.
@@ -387,7 +426,7 @@ class PluginRegistry:
         the underlying set dedups.
         """
         for ep in entry_points(group=self._entry_point_group):
-            if _ep_is_bundled(ep):
+            if self._is_ep_bundled(ep):
                 self._bundled_names.add(ep.name)
 
     async def _load_entry_point(self, ep: EntryPoint, *, bundled: bool) -> None:
@@ -431,15 +470,15 @@ class PluginRegistry:
             raise
         except Exception as exc:
             _logger.warning("plugin %r raised in on_load: %s", name, exc)
-            record = _PluginRecord(
-                plugin=plugin,
-                ctx=ctx,
-                subs=[],
-                status=PluginStatus.FAILED,
-                bundled=bundled,
+            self._register_record(
+                _PluginRecord(
+                    plugin=plugin,
+                    ctx=ctx,
+                    subs=[],
+                    status=PluginStatus.FAILED,
+                    bundled=bundled,
+                )
             )
-            self._records[name] = record
-            self._load_order.append(name)
             await self._emit_plugin_error(name, f"on_load_failed: {exc}")
             return
 
@@ -452,15 +491,15 @@ class PluginRegistry:
         subs: list[Subscription] = [
             self._bus.subscribe(kind, handler, source=name) for kind in _safe_subscriptions(plugin)
         ]
-        record = _PluginRecord(
-            plugin=plugin,
-            ctx=ctx,
-            subs=subs,
-            status=PluginStatus.LOADED,
-            bundled=bundled,
+        self._register_record(
+            _PluginRecord(
+                plugin=plugin,
+                ctx=ctx,
+                subs=subs,
+                status=PluginStatus.LOADED,
+                bundled=bundled,
+            )
         )
-        self._records[name] = record
-        self._load_order.append(name)
 
         await self._bus.publish(
             new_event(
@@ -474,6 +513,37 @@ class PluginRegistry:
                 source="kernel",
             )
         )
+
+    def _register_record(self, record: _PluginRecord) -> None:
+        """Install ``record`` into the registry's bookkeeping.
+
+        Single-source the ``_records`` + ``_load_order`` write so both
+        branches of :meth:`_load_entry_point` (FAILED path on ``on_load``
+        raising, LOADED path on success) stay in lock-step for future
+        audits.
+        """
+        self._records[record.plugin.name] = record
+        self._load_order.append(record.plugin.name)
+
+    def _is_ep_bundled(self, ep: EntryPoint) -> bool:
+        """Return True if ``ep`` ships inside yaya's own distribution.
+
+        Logs a WARNING at most once per entry-point name when ``ep.dist``
+        is None so repeated discovery passes (install / remove re-runs
+        discovery) don't spam the log with the same "no distribution
+        metadata" message.
+        """
+        dist = ep.dist
+        if dist is None:
+            if ep.name not in self._warned_no_dist:
+                _logger.warning(
+                    "entry point %r has no distribution metadata; treating as third-party",
+                    ep.name,
+                )
+                self._warned_no_dist.add(ep.name)
+            return False
+        # ``metadata['Name']`` is normalised lower-case in Python 3.10+.
+        return (dist.metadata["Name"] or "").lower() == _YAYA_DIST
 
     def _make_context(self, plugin: Plugin) -> KernelContext:
         """Build the :class:`KernelContext` handed to ``plugin``'s lifecycle hooks."""
@@ -518,6 +588,16 @@ class PluginRegistry:
         record.error_count += 1
         if record.error_count < self._failure_threshold:
             return
+
+        # Claim the unload synchronously: flip status BEFORE create_task
+        # returns so rival ``plugin.error`` events for the same plugin —
+        # arriving from other sessions while this handler is still
+        # scheduling the unload task — fall through the ``status is not
+        # LOADED`` guard above instead of spawning duplicate unload
+        # tasks. Without this flip, 10 concurrent sessions each pushing
+        # the same plugin past threshold would fire ``on_unload`` up to
+        # 10 times and interleave ``plugin.removed`` emissions.
+        record.status = PluginStatus.UNLOADING
 
         # Threshold breached — spawn the unload task in a fresh context
         # so ``_IN_WORKER`` resets and the task's publishes await delivery.
@@ -614,19 +694,6 @@ def _yaya_version() -> str:
         return distribution(_YAYA_DIST).version
     except PackageNotFoundError:
         return "0.0.0"
-
-
-def _ep_is_bundled(ep: EntryPoint) -> bool:
-    """Return True if ``ep`` is shipped inside yaya's own distribution."""
-    dist = ep.dist
-    if dist is None:
-        _logger.warning(
-            "entry point %r has no distribution metadata; treating as third-party",
-            ep.name,
-        )
-        return False
-    # ``metadata['Name']`` is normalised lower-case in Python 3.10+.
-    return (dist.metadata["Name"] or "").lower() == _YAYA_DIST
 
 
 def _category_str(category: Any) -> str:

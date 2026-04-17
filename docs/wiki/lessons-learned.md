@@ -363,6 +363,31 @@ recorded explicitly.
 
 ---
 
+## 18. Authoritative-source checks at enforcement points, not cached state
+
+**Symptom** — PR #49 round-1's `remove()` bundled guard consulted
+`self._records[name].bundled`. A bundled plugin whose load failed or
+whose discovery hadn't run was absent from `_records`, so the guard
+silently permitted `pip uninstall` on bundled names.
+
+**Root cause** — Policy decisions that protect against user error
+were gated on an in-memory cache whose population was conditional on
+earlier lifecycle steps succeeding. When the cache wasn't populated,
+the policy didn't apply.
+
+**Rule** — At enforcement points (uninstall guards, permission
+checks, allowlists, sandbox gates), re-derive the predicate from the
+authoritative source — entry-point metadata, auth server, filesystem
+— not from a cached record. If the cache is the source of truth, it
+must be populated BEFORE any path that could bypass the enforcement.
+
+**Reference** — PR #49 review round 1. Distinct from lesson #6
+(leak-prone dicts) and lesson #13 (decision documentation) because
+the failure mode is silent policy bypass, not resource leak or
+lost context.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

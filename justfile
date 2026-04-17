@@ -30,10 +30,25 @@ fmt:
     uv run ruff format .
     uv run ruff check --fix .
 
-# Run tests
+# Run unit + CLI tests (default suite)
 test:
     @echo "🧪 Running pytest"
     uv run python -m pytest --cov --cov-report=term-missing
+
+# Build wheel, install into a fresh venv, run post-install smoke
+test-e2e:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "📦 Building wheel"
+    uvx --from build pyproject-build --installer uv --outdir dist --wheel
+    wheel="$(ls -t dist/*.whl | head -1)"
+    echo "🚀 Installing $wheel into a fresh venv and running smoke"
+    rm -rf .smoke-venv
+    python3.14 -m venv .smoke-venv
+    . .smoke-venv/bin/activate
+    python -m pip install --upgrade pip >/dev/null
+    python -m pip install "$wheel" pytest pytest-timeout >/dev/null
+    python -m pytest tests/e2e -v
 
 # Remove build artifacts
 clean:

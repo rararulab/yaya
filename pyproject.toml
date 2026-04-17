@@ -91,12 +91,16 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Default suite = unit + integration-by-file-layout, but exclude `tests/e2e/`
+# which expects yaya installed on PATH. Run `just test-e2e` to invoke those
+# against an installed wheel.
 addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
     "--timeout=30",
     "--timeout-method=thread",
+    "--ignore=tests/e2e",
 ]
 markers = [
     "unit: fast, isolated, pure-logic tests (default)",

@@ -25,17 +25,18 @@ jobs:
         run: uv run ruff check .
       - name: Format check (ruff)
         run: uv run ruff format --check .
-      - name: Type check (mypy)
-        run: uv run mypy
+      - name: Type check (mypy strict)
+        run: uv run mypy --strict
       - name: Lock file up to date
         run: uv lock --locked
 
   tests:
-    name: Tests (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Tests (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.14"]
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +49,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ matrix.python-version }}
+          name: coverage-${{ matrix.os }}-${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: ignore
 
@@ -68,3 +69,33 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  e2e-smoke:
+    name: E2E smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: [build-wheel]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          allow-prereleases: true
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install wheel in a fresh venv and run smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .smoke-venv
+          # shellcheck disable=SC1091
+          if [ -f .smoke-venv/bin/activate ]; then . .smoke-venv/bin/activate; else . .smoke-venv/Scripts/activate; fi
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl pytest pytest-timeout
+          python -m pytest tests/e2e -v

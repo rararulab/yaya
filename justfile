@@ -67,3 +67,24 @@ docs:
 docs-test:
     @echo "📖 Building docs (strict)"
     uv run --group docs mkdocs build -s
+
+# --- Web UI (src/yaya/web/) — pi-web-ui consumer ------------------------------
+# Install npm deps (run once after clone / lockfile change)
+web-install:
+    @echo "📦 npm ci in src/yaya/web"
+    cd src/yaya/web && npm ci
+
+# Build static assets into src/yaya/web/static/ (CI + pre-wheel)
+web-build:
+    @echo "🌐 Building web UI (pi-web-ui)"
+    cd src/yaya/web && npm run build
+
+# Dev server with HMR (pair with `yaya serve --dev` in another shell)
+web-dev:
+    @echo "🌐 vite dev server (HMR)"
+    cd src/yaya/web && npm run dev
+
+# Lint + type check TS (biome + tsc --noEmit)
+web-check:
+    @echo "🌐 Web UI check"
+    cd src/yaya/web && npm run check

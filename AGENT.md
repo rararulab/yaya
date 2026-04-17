@@ -90,9 +90,12 @@ Read local first, save tokens. Every code/test/scripts folder has its own
 - `src/yaya/kernel/AGENT.md` · `src/yaya/plugins/AGENT.md` · `src/yaya/plugins/web/AGENT.md` (created when each subpackage lands — see [docs/dev/plugin-protocol.md](docs/dev/plugin-protocol.md), [docs/dev/architecture.md](docs/dev/architecture.md), [docs/dev/web-ui.md](docs/dev/web-ui.md))
 - [tests/AGENT.md](tests/AGENT.md) · [scripts/AGENT.md](scripts/AGENT.md)
 
-**Wiki** (read before starting work — running log of hazards we already hit):
+**Wiki** — LLM-maintained knowledge base following the [Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern. Read before starting work; update in the same PR as the code that inspires the update.
 
-- [docs/wiki/lessons-learned.md](docs/wiki/lessons-learned.md) — anti-patterns + review findings to avoid repeating.
+- [docs/wiki/AGENT.md](docs/wiki/AGENT.md) — wiki schema: three layers, ingest/query/lint operations, page shapes.
+- [docs/wiki/index.md](docs/wiki/index.md) — content catalog (every page, one-line summary).
+- [docs/wiki/log.md](docs/wiki/log.md) — chronological append-only log of ingests, queries, lint passes.
+- [docs/wiki/lessons-learned.md](docs/wiki/lessons-learned.md) — rolling log of hazards we already hit.
 
 **Topic docs** (pull only when needed):
 

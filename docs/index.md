@@ -23,7 +23,8 @@ Requires Python 3.14+. Other install options → [Install](guide/install.md).
 
 ## Development
 
-- [Architecture](dev/architecture.md) — layout and layering.
+- [Architecture](dev/architecture.md) — kernel + plugins layout.
+- [Plugin Protocol](dev/plugin-protocol.md) — event catalog, ABI, categories (authoritative).
 - [Workflow](dev/workflow.md) — issue → worktree → PR (MANDATORY).
 - [Multi-Agent](dev/multi-agent.md) — parallel dispatch, hand-off rules.
 - [CLI Conventions](dev/cli.md) — command pattern and extension checklist.

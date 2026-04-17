@@ -17,7 +17,9 @@ principle in ``GOAL.md`` (no special cases for bundled plugins).
 ``source="kernel-registry"`` (not ``"kernel"``, which is reserved for the
 bus's synthetic-error path and trips the recursion guard in
 ``bus._report_handler_failure``). When a ``plugin.error`` arrives, the
-handler increments the offending plugin's counter; once the counter
+handler increments the offending plugin's counter; a **successful**
+``on_event`` invocation resets that counter to zero, so the threshold
+counts **consecutive** failures, not cumulative. Once the counter
 breaches the configured threshold the registry spawns an unload task
 via ``asyncio.create_task(..., context=contextvars.Context())`` so the
 bus's private ``_IN_WORKER`` ContextVar resets — without that reset,
@@ -47,7 +49,7 @@ import shutil
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from importlib.metadata import EntryPoint, distribution, entry_points
+from importlib.metadata import EntryPoint, PackageNotFoundError, distribution, entry_points
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -73,7 +75,11 @@ _ENTRY_POINT_GROUP = "yaya.plugins.v1"
 """Public entry-point group per ``docs/dev/plugin-protocol.md``."""
 
 _DEFAULT_FAILURE_THRESHOLD = 3
-"""Consecutive ``plugin.error`` events tolerated before unload."""
+"""Consecutive ``plugin.error`` events tolerated before unload.
+
+A successful :meth:`Plugin.on_event` invocation resets the counter to
+zero, so N *consecutive* failures — not N cumulative — trigger unload.
+"""
 
 # Yaya's own distribution name — used to tag bundled plugins so the
 # registry can (a) order them first deterministically and (b) reject
@@ -170,6 +176,12 @@ class PluginRegistry:
         self._records: dict[str, _PluginRecord] = {}
         # Load order — needed for reverse-order unload on stop().
         self._load_order: list[str] = []
+        # Names known to be bundled — authoritative entry-point-derived
+        # guard for ``remove()``. Populated during discovery with BOTH
+        # ``ep.name`` and (if load succeeded) ``plugin.name`` so
+        # ``remove()`` blocks bundled packages even when their load
+        # failed or discovery hasn't reached them yet.
+        self._bundled_names: set[str] = set()
         # Subscription for our own ``plugin.error`` accounting handler.
         self._error_sub: Subscription | None = None
         # Pending unload tasks so stop() can await them (no leak on shutdown).
@@ -197,6 +209,13 @@ class PluginRegistry:
         )
 
         await self._discover_and_load()
+
+        if not self._load_order:
+            _logger.info(
+                "kernel boot: no plugins discovered in entry-point group %r; "
+                "kernel.ready will emit but the system cannot service requests",
+                self._entry_point_group,
+            )
 
         await self._bus.publish(
             new_event(
@@ -313,9 +332,14 @@ class PluginRegistry:
                 to a build without the bundled plugin.
             RuntimeError: If the subprocess returned non-zero.
         """
-        record = self._records.get(name)
-        if record is not None and record.bundled:
+        # Refresh the bundled set from entry-point metadata so third-party
+        # plugins installed just before this call still get the correct
+        # guard decision even if earlier discovery failed to load them.
+        self._refresh_bundled_names()
+        if name in self._bundled_names:
             raise ValueError(f"cannot remove bundled plugin {name!r}")
+
+        record = self._records.get(name)
 
         await _run_package_command(["pip", "uninstall", "-y", name])
 
@@ -342,12 +366,29 @@ class PluginRegistry:
         bundled: list[EntryPoint] = []
         third_party: list[EntryPoint] = []
         for ep in eps:
-            (bundled if _ep_is_bundled(ep) else third_party).append(ep)
+            if _ep_is_bundled(ep):
+                bundled.append(ep)
+                # Record ``ep.name`` now so ``remove()`` blocks bundled
+                # packages even if the load fails below.
+                self._bundled_names.add(ep.name)
+            else:
+                third_party.append(ep)
         bundled.sort(key=lambda e: e.name)
         third_party.sort(key=lambda e: e.name)
 
         for ep in (*bundled, *third_party):
             await self._load_entry_point(ep, bundled=_ep_is_bundled(ep))
+
+    def _refresh_bundled_names(self) -> None:
+        """Populate :attr:`_bundled_names` from current entry-point metadata.
+
+        Used by :meth:`remove` so the bundled guard does not depend on
+        an earlier :meth:`_discover_and_load` having succeeded. Idempotent —
+        the underlying set dedups.
+        """
+        for ep in entry_points(group=self._entry_point_group):
+            if _ep_is_bundled(ep):
+                self._bundled_names.add(ep.name)
 
     async def _load_entry_point(self, ep: EntryPoint, *, bundled: bool) -> None:
         """Resolve one entry point and register the plugin it exposes.
@@ -374,6 +415,11 @@ class PluginRegistry:
 
         plugin: Plugin = obj
         name = plugin.name
+        if bundled:
+            # Tag the plugin's declared name too; ``remove(plugin.name)``
+            # must still be blocked for bundled plugins even if the
+            # entry-point name differs.
+            self._bundled_names.add(name)
         if name in self._records:
             # Already loaded (or already in a terminal state) — skip.
             return
@@ -397,7 +443,12 @@ class PluginRegistry:
             await self._emit_plugin_error(name, f"on_load_failed: {exc}")
             return
 
-        handler = _make_handler(plugin, ctx)
+        def _reset_counter(_name: str = name) -> None:
+            rec = self._records.get(_name)
+            if rec is not None and rec.status is PluginStatus.LOADED:
+                rec.error_count = 0
+
+        handler = _make_handler(plugin, ctx, on_success=_reset_counter)
         subs: list[Subscription] = [
             self._bus.subscribe(kind, handler, source=name) for kind in _safe_subscriptions(plugin)
         ]
@@ -456,8 +507,9 @@ class PluginRegistry:
         name = ev.payload.get("name")
         if not isinstance(name, str):
             _logger.warning(
-                "plugin.error without 'name' payload; cannot attribute (source=%r)",
+                "plugin.error without 'name' payload; cannot attribute (source=%r, payload=%r)",
                 ev.source,
+                ev.payload,
             )
             return
         record = self._records.get(name)
@@ -471,7 +523,7 @@ class PluginRegistry:
         # so ``_IN_WORKER`` resets and the task's publishes await delivery.
         ctx = contextvars.Context()
         task = asyncio.get_running_loop().create_task(
-            self._unload_record(record, emit_removed=True),
+            self._unload_record(record, emit_removed=True, reason="threshold"),
             name=f"yaya-registry-unload:{name}",
             context=ctx,
         )
@@ -483,12 +535,22 @@ class PluginRegistry:
         record: _PluginRecord,
         *,
         emit_removed: bool,
+        reason: str = "stop",
     ) -> None:
         """Unsubscribe, run ``on_unload``, and optionally emit ``plugin.removed``.
 
         ``on_unload`` exceptions are logged and swallowed — once we have
         decided to unload a plugin, propagating its cleanup error would
         just replace a known-bad plugin with a wedged registry.
+
+        Args:
+            record: The plugin record to unload.
+            emit_removed: If True, publish a ``plugin.removed`` event.
+            reason: Why the unload is happening. ``"threshold"`` is the
+                failure-accounting path and ends in status ``failed``;
+                every other value (default ``"stop"``, also used by
+                ``remove()``) ends in status ``unloaded`` regardless of
+                the plugin's lingering ``error_count``.
         """
         for sub in record.subs:
             sub.unsubscribe()
@@ -505,7 +567,7 @@ class PluginRegistry:
                 exc,
             )
 
-        record.status = PluginStatus.FAILED if record.error_count else PluginStatus.UNLOADED
+        record.status = PluginStatus.FAILED if reason == "threshold" else PluginStatus.UNLOADED
 
         if emit_removed:
             await self._bus.publish(
@@ -550,7 +612,7 @@ def _yaya_version() -> str:
     """Best-effort yaya package version for ``kernel.ready`` payloads."""
     try:
         return distribution(_YAYA_DIST).version
-    except Exception:
+    except PackageNotFoundError:
         return "0.0.0"
 
 
@@ -558,6 +620,10 @@ def _ep_is_bundled(ep: EntryPoint) -> bool:
     """Return True if ``ep`` is shipped inside yaya's own distribution."""
     dist = ep.dist
     if dist is None:
+        _logger.warning(
+            "entry point %r has no distribution metadata; treating as third-party",
+            ep.name,
+        )
         return False
     # ``metadata['Name']`` is normalised lower-case in Python 3.10+.
     return (dist.metadata["Name"] or "").lower() == _YAYA_DIST
@@ -602,6 +668,13 @@ def _validate_install_source(source: str) -> None:
     """
     if not source or any(ch in source for ch in (";", "|", "&", "`", "\n", "\r")):
         raise ValueError(f"install source {source!r} contains disallowed characters")
+
+    # Windows drive-letter absolute path (``C:/...`` or ``C:\...``) detected
+    # cross-platform: on non-Windows runners ``Path.is_absolute`` returns
+    # False for these, and ``urlparse`` would otherwise read the drive
+    # letter as a URL scheme and reject it.
+    if len(source) >= 3 and source[1] == ":" and source[2] in ("/", "\\") and source[0].isalpha():
+        return
 
     # Check filesystem paths BEFORE URL parsing: on Windows ``urlparse`` reads
     # ``C:\foo`` as scheme ``"c"``, which would otherwise be rejected below.
@@ -662,11 +735,20 @@ async def _run_package_command(args: list[str]) -> None:
 def _make_handler(
     plugin: Plugin,
     ctx: KernelContext,
+    *,
+    on_success: Callable[[], None],
 ) -> Callable[[Event], Awaitable[None]]:
-    """Return an ``(ev) -> Awaitable[None]`` closure that forwards to on_event."""
+    """Return an ``(ev) -> Awaitable[None]`` closure that forwards to on_event.
+
+    ``on_success`` fires **only** if ``plugin.on_event`` returned without
+    raising — the caller uses it to reset the plugin's consecutive
+    failure counter so the threshold tracks consecutive errors, not
+    cumulative.
+    """
 
     async def _handler(ev: Event) -> None:
         await plugin.on_event(ev, ctx)
+        on_success()
 
     return _handler
 

@@ -35,9 +35,24 @@ adapter, tool, LLM provider, …) is built on top.
 - Failure threshold default = 3. The registry subscribes to
   ``plugin.error`` with ``source="kernel-registry"`` (not ``"kernel"``,
   which trips the bus's recursion guard on synthetic-error re-emission).
-  Consecutive ``plugin.error`` events for a loaded plugin increment that
-  plugin's counter; once the counter breaches the threshold the
-  registry spawns an unload task.
+  Each ``plugin.error`` attributed to a loaded plugin increments its
+  counter; a **successful** ``on_event`` invocation resets that
+  counter to zero, so **N *consecutive* failures** — not N cumulative —
+  triggers unload. Default N = 3. Reset runs inside the per-plugin
+  bus handler closure (``_make_handler``'s ``on_success`` callback)
+  so the success path cannot forget to update failure accounting.
+  Once the counter breaches the threshold the registry spawns an
+  unload task with ``reason="threshold"`` (record ends in
+  ``status=failed``); orderly ``stop()`` / ``remove()`` unloads pass
+  ``reason="stop"`` and land in ``status=unloaded`` regardless of any
+  lingering ``error_count``.
+- The ``remove()`` bundled guard is entry-point-authoritative. The
+  registry maintains ``_bundled_names: set[str]`` populated during
+  discovery with both ``ep.name`` and ``plugin.name`` (when load
+  succeeded), and ``remove()`` refreshes the set from
+  ``importlib.metadata.entry_points`` before checking membership. This
+  blocks ``remove("<bundled>")`` even when the bundled entry point
+  failed to load, or hasn't been discovered yet.
 - **Unload task is spawned via ``asyncio.create_task(..., context=
   contextvars.Context())``** so the bus's private ``_IN_WORKER``
   ContextVar resets inside the task. Without the reset,

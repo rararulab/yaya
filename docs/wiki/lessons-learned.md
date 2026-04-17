@@ -339,6 +339,30 @@ too, not just authors.
 
 ---
 
+## 17. "Consecutive" vs "cumulative" in failure policies
+
+**Symptom** — PR #49 documented the registry's failure threshold as
+"consecutive plugin.error events" in both the spec and protocol doc,
+then implemented it as a monotonic counter: 2 errors + 1 success + 1
+error = permanent unload.
+
+**Root cause** — Incrementing a counter on error without ever resetting
+it is the obvious implementation; "consecutive" requires a reset hook
+on success that is easy to forget because the success path doesn't
+naturally touch the failure accounting.
+
+**Rule** — When a policy uses the word "consecutive", the implementation
+MUST reset the counter on the non-failure event. Write the reset test
+first (lesson #11: empirical probe): 2 bad, N good, 1 bad, assert still
+loaded. If that test doesn't exist, "consecutive" is aspirational and
+the doc should say "cumulative".
+
+**Reference** — PR #49 review. Cf. lesson #13 (non-obvious decisions in
+spec Decisions) — the decision here was "reset or not" and it wasn't
+recorded explicitly.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

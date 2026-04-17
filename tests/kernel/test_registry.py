@@ -14,6 +14,7 @@ shutdown, and ``_validate_install_source``.
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Any, ClassVar
 from unittest.mock import AsyncMock, patch
@@ -644,11 +645,13 @@ def test_ep_is_bundled_none_dist_is_false() -> None:
 
 def test_yaya_version_falls_back_on_missing_dist() -> None:
     """``_yaya_version`` returns a sentinel when the distribution lookup fails."""
+    from importlib.metadata import PackageNotFoundError
+
     from yaya.kernel.registry import _yaya_version
 
     with patch(
         "yaya.kernel.registry.distribution",
-        side_effect=RuntimeError("not installed"),
+        side_effect=PackageNotFoundError("yaya"),
     ):
         assert _yaya_version() == "0.0.0"
 
@@ -676,6 +679,273 @@ async def test_plugin_error_payload_without_name_is_ignored(tmp_path: Path) -> N
 
     await registry.stop()
     await bus.close()
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for PR #49 review findings.
+# ---------------------------------------------------------------------------
+
+
+class _ToggleFailPlugin:
+    """Plugin whose ``on_event`` alternates between raising and succeeding.
+
+    Used to prove the failure counter resets on a successful
+    ``on_event`` invocation (PR #49 P0).
+    """
+
+    name = "toggle-tool"
+    version = "0.1.0"
+    category = Category.TOOL
+    requires: ClassVar[list[str]] = []
+
+    def __init__(self) -> None:
+        self.fail = True  # toggle from the test
+        self.on_unload_calls = 0
+
+    def subscriptions(self) -> list[str]:
+        return ["tool.call.request"]
+
+    async def on_load(self, ctx: KernelContext) -> None:
+        return None
+
+    async def on_event(self, ev: Event, ctx: KernelContext) -> None:
+        if self.fail:
+            raise RuntimeError("toggled failure")
+
+    async def on_unload(self, ctx: KernelContext) -> None:
+        self.on_unload_calls += 1
+
+
+async def test_error_counter_resets_on_successful_event(tmp_path: Path) -> None:
+    """P0 — a successful on_event resets the consecutive-error counter.
+
+    Fires 2 failing requests, one success, then 2 more failures. With a
+    threshold of 3, the plugin must remain loaded (error_count == 2
+    after the second post-reset failure, not 4 cumulatively).
+    """
+    bus = EventBus(handler_timeout_s=1.0)
+    removed: list[Event] = []
+    errors: list[Event] = []
+    bus.subscribe("plugin.removed", _collector(removed), source="observer")
+    bus.subscribe("plugin.error", _collector(errors), source="observer")
+
+    plugin = _ToggleFailPlugin()
+    with patch(
+        "yaya.kernel.registry.entry_points",
+        side_effect=_fake_entry_points([_FakeEntryPoint("toggle", plugin)]),
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path, failure_threshold=3)
+        await registry.start()
+
+    async def _fire() -> None:
+        await bus.publish(
+            new_event(
+                "tool.call.request",
+                {"id": "x", "name": "noop", "args": {}},
+                session_id="s",
+                source="kernel",
+            )
+        )
+
+    # 2 failures.
+    plugin.fail = True
+    await _fire()
+    await _fire()
+    await asyncio.wait_for(_drain_until(lambda: len(errors) >= 2, bus), timeout=1.0)
+
+    # 1 success — must reset the counter.
+    plugin.fail = False
+    await _fire()
+    # Let the success path drain and reset fire.
+    await asyncio.wait_for(
+        _drain_until(lambda: registry._records["toggle-tool"].error_count == 0, bus),
+        timeout=1.0,
+    )
+
+    # 2 more failures (below the threshold of 3).
+    plugin.fail = True
+    await _fire()
+    await _fire()
+    await asyncio.wait_for(_drain_until(lambda: len(errors) >= 4, bus), timeout=1.0)
+
+    # Cumulative failures = 4, but consecutive since last success = 2 — still loaded.
+    assert not removed, "plugin must not be unloaded below the threshold"
+    record = registry._records["toggle-tool"]
+    assert record.status is PluginStatus.LOADED
+    assert record.error_count == 2
+
+    await registry.stop()
+    await bus.close()
+
+
+async def test_remove_bundled_plugin_raises_even_before_load(tmp_path: Path) -> None:
+    """P1 — remove() blocks a bundled entry point even if it hasn't been loaded.
+
+    The registry instance is constructed but :meth:`start` is *not* called,
+    so ``_discover_and_load`` has never run. ``remove()`` must still reject
+    the bundled name by consulting entry-point metadata directly.
+    """
+    bus = EventBus()
+    plugin = _RecordingPlugin()
+    plugin.name = "bundled-web"
+    with patch(
+        "yaya.kernel.registry.entry_points",
+        side_effect=_fake_entry_points([_FakeEntryPoint("web", plugin, bundled=True)]),
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path)
+        with pytest.raises(ValueError, match="bundled"):
+            await registry.remove("web")  # ep.name, not plugin.name — still blocked.
+
+    await bus.close()
+
+
+async def test_remove_bundled_plugin_raises_when_load_failed(tmp_path: Path) -> None:
+    """P1 — remove() still blocks a bundled plugin whose load() raised."""
+    bus = EventBus()
+
+    class _BoomBundledEP:
+        name = "bundled-broken"
+        dist = _FakeDist("yaya")
+
+        def load(self) -> Any:
+            raise ImportError("bundled import broke")
+
+    with patch(
+        "yaya.kernel.registry.entry_points",
+        side_effect=_fake_entry_points([_BoomBundledEP()]),  # type: ignore[list-item]
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path)
+        await registry.start()  # discovery records the name even though load() blew up.
+        with pytest.raises(ValueError, match="bundled"):
+            await registry.remove("bundled-broken")
+
+    await registry.stop()
+    await bus.close()
+
+
+def test_validate_accepts_windows_forward_slash_path() -> None:
+    """P2 — ``C:/foo`` accepted regardless of the runner's OS."""
+    _validate_install_source("C:/Users/x/plugin")
+
+
+def test_validate_accepts_windows_backslash_path() -> None:
+    """P2 — ``C:\\foo`` accepted regardless of the runner's OS."""
+    _validate_install_source("C:\\Users\\x\\plugin")
+
+
+async def test_zero_plugins_logs_info(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """P2 — start() with no entry points emits an INFO log."""
+    bus = EventBus()
+    with (
+        patch("yaya.kernel.registry.entry_points", side_effect=_fake_entry_points([])),
+        caplog.at_level(logging.INFO, logger="yaya.kernel.registry"),
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path)
+        await registry.start()
+
+    assert any("no plugins discovered" in rec.message for rec in caplog.records), (
+        "expected an INFO log about zero plugins"
+    )
+
+    await registry.stop()
+    await bus.close()
+
+
+def test_ep_is_bundled_none_dist_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """P2 — a None-dist entry point logs a WARNING before returning False."""
+    from yaya.kernel.registry import _ep_is_bundled
+
+    class _OrphanEP:
+        name = "orphan"
+        dist = None
+
+    with caplog.at_level(logging.WARNING, logger="yaya.kernel.registry"):
+        assert _ep_is_bundled(_OrphanEP()) is False  # type: ignore[arg-type]
+
+    assert any("no distribution metadata" in rec.message for rec in caplog.records), (
+        "expected a WARNING about missing distribution metadata"
+    )
+
+
+async def test_orderly_stop_reports_unloaded_not_failed_even_with_error_count(
+    tmp_path: Path,
+) -> None:
+    """P2 — orderly stop sets status=unloaded even when error_count > 0.
+
+    Only the threshold-driven failure path earns the ``failed`` status;
+    a plugin that ticked up a few errors but never breached the
+    threshold should report ``unloaded`` after an orderly ``stop()``.
+    """
+    bus = EventBus()
+    plugin = _RecordingPlugin()
+    with patch(
+        "yaya.kernel.registry.entry_points",
+        side_effect=_fake_entry_points([_FakeEntryPoint("stub", plugin)]),
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path, failure_threshold=5)
+        await registry.start()
+
+    registry._records["stub-tool"].error_count = 2  # below threshold
+    await registry.stop()
+    rows = registry.snapshot()
+    assert rows[0]["status"] == "unloaded"
+
+    await bus.close()
+
+
+async def test_plugin_error_payload_without_name_logs_payload(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """P3 — the 'no name' warning includes the event payload for debuggability."""
+    bus = EventBus()
+    with patch(
+        "yaya.kernel.registry.entry_points",
+        side_effect=_fake_entry_points([]),
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path)
+        await registry.start()
+
+    with caplog.at_level(logging.WARNING, logger="yaya.kernel.registry"):
+        await bus.publish(
+            new_event(
+                "plugin.error",
+                {"error": "oops-no-name"},
+                session_id="kernel",
+                source="kernel",
+            )
+        )
+        await asyncio.sleep(0.01)
+
+    assert any("oops-no-name" in rec.message for rec in caplog.records), (
+        "warning must include the payload so operators can diagnose the source"
+    )
+
+    await registry.stop()
+    await bus.close()
+
+
+def test_yaya_version_narrows_to_package_not_found() -> None:
+    """P3 — _yaya_version only catches PackageNotFoundError, not bare Exception."""
+    from importlib.metadata import PackageNotFoundError
+
+    from yaya.kernel.registry import _yaya_version
+
+    with patch(
+        "yaya.kernel.registry.distribution",
+        side_effect=PackageNotFoundError("yaya"),
+    ):
+        assert _yaya_version() == "0.0.0"
+
+    # A non-PackageNotFoundError must propagate (guards against over-broad except).
+    with (
+        patch(
+            "yaya.kernel.registry.distribution",
+            side_effect=RuntimeError("unexpected"),
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        _yaya_version()
 
 
 # ---------------------------------------------------------------------------

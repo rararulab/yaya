@@ -16,6 +16,8 @@ check:
     uv run ruff format --check .
     @echo "🧠 Type-checking with mypy (strict)"
     uv run mypy --strict
+    @echo "🧠 Type-checking with pyright (pylance parity)"
+    uv run pyright
     @echo "🧾 Linting specs with agent-spec"
     @bash scripts/check_specs.sh
 

@@ -52,7 +52,7 @@ class UpdateStatus:
     current_version: str
     latest_version: str | None = None
     message: str = ""
-    extra: dict[str, str] = field(default_factory=dict)
+    extra: dict[str, str] = field(default_factory=lambda: {})
 
     def to_dict(self) -> dict[str, object]:
         return {

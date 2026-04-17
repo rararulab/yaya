@@ -375,7 +375,7 @@ class Event:
     session_id: str
     ts: float
     source: str
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=lambda: {})
 
 
 def new_event(

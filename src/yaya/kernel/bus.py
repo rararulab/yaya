@@ -219,10 +219,10 @@ class EventBus:
 
     def _ensure_worker(self, session_id: str) -> asyncio.Queue[object]:
         """Return the session's queue, creating queue + worker on first use."""
-        queue = self._session_queues.get(session_id)
-        if queue is not None:
-            return queue
-        queue = asyncio.Queue()
+        existing = self._session_queues.get(session_id)
+        if existing is not None:
+            return existing
+        queue: asyncio.Queue[object] = asyncio.Queue()
         self._session_queues[session_id] = queue
         self._session_workers[session_id] = asyncio.create_task(
             self._drain(session_id, queue),

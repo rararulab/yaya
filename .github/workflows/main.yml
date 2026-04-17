@@ -27,6 +27,8 @@ jobs:
         run: uv run ruff format --check .
       - name: Type check (mypy strict)
         run: uv run mypy --strict
+      - name: Type check (pyright — pylance parity)
+        run: uv run pyright
       - name: Lock file up to date
         run: uv lock --locked
       - name: Install Rust toolchain (for agent-spec)

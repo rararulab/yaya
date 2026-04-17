@@ -146,7 +146,7 @@ class _RequestTracker:
     Not thread-safe; expected to be used from a single event loop.
     """
 
-    _pending: dict[str, asyncio.Future[Event]] = field(default_factory=dict)
+    _pending: dict[str, asyncio.Future[Event]] = field(default_factory=lambda: {})
 
     def track(self, request_id: str) -> asyncio.Future[Event]:
         """Register ``request_id`` and return a fresh future to await on."""
@@ -206,7 +206,7 @@ class _TurnState:
     messages: list[Message]
     last_tool_result: dict[str, Any] | None = None
     last_llm_text: str = ""
-    last_tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    last_tool_calls: list[dict[str, Any]] = field(default_factory=lambda: [])
 
 
 class AgentLoop:
@@ -378,11 +378,15 @@ class AgentLoop:
                 return True
             state.last_llm_text = response.payload.get("text", "") or state.last_llm_text
             raw_tool_calls = response.payload.get("tool_calls")
-            state.last_tool_calls = list(raw_tool_calls) if isinstance(raw_tool_calls, list) else []
+            tool_calls: list[dict[str, Any]] = (
+                [dict(tc) for tc in raw_tool_calls] if isinstance(raw_tool_calls, list) else []
+            )
+            state.last_tool_calls = tool_calls
             state.messages.append({"role": "assistant", "content": state.last_llm_text})
             return False
         if next_step == "tool":
-            tool_call = decision.payload.get("tool_call") or {}
+            raw_tool_call = decision.payload.get("tool_call") or {}
+            tool_call: dict[str, Any] = dict(raw_tool_call) if isinstance(raw_tool_call, dict) else {}
             result = await self._call_tool(session_id, tool_call)
             state.last_tool_result = dict(result.payload)
             return False
@@ -433,8 +437,9 @@ class AgentLoop:
             source=_SOURCE,
         )
         result = await self._request(req)
-        hits = result.payload.get("hits") or []
-        return list(hits) if isinstance(hits, list) else []
+        raw_hits = result.payload.get("hits") or []
+        hits: list[dict[str, Any]] = [dict(h) for h in raw_hits] if isinstance(raw_hits, list) else []
+        return hits
 
     async def _call_llm(
         self,

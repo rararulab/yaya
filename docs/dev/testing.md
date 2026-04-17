@@ -7,8 +7,11 @@
 ## Rules
 
 - **No public function/class without a test.** Coverage must not regress on any PR.
-- **Coverage floor: 80%.** Enforced by `fail_under = 80` in `pyproject.toml`.
-  Raise the floor after every merge that meaningfully improves coverage.
+- **Coverage floor: 88%.** Enforced by `fail_under = 88` in `pyproject.toml`.
+  Ratchet policy — every merge to `main` that raises global coverage by
+  ≥1 point must raise `fail_under` to `(new_value − 0.5)` in the same PR.
+  Never lower a floor without a `governance` issue. Per-module gates
+  (kernel ≥95%, core ≥90%, cli ≥85%) are tracked in #43.
 - **Prefer integration over mocks.** Reach for real objects, `tmp_path`, and
   recorded fixtures before `unittest.mock`.
 - **Tests must fail before they pass.** Write the failing test first, then

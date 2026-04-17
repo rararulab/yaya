@@ -14,8 +14,8 @@ check:
     uv run ruff check .
     @echo "🎨 Checking format with ruff"
     uv run ruff format --check .
-    @echo "🧠 Type-checking with mypy"
-    uv run mypy
+    @echo "🧠 Type-checking with mypy (strict)"
+    uv run mypy --strict
 
 # Run all pre-commit hooks + lock file consistency (CI parity)
 check-all: check

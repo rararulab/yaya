@@ -62,14 +62,29 @@ only-include = ["src/yaya", "tests", "CHANGELOG.md"]
 sources = ["src"]
 only-include = ["src/yaya"]
 
+# Authoritative strict-mode configuration. Changes that weaken any
+# setting below must go through a `governance` issue. The justfile
+# recipe invokes `mypy --strict` explicitly so the flag is visible in
+# task output; every option here is a belt-and-braces layer on top.
 [tool.mypy]
 files = ["src"]
 python_version = "3.14"
-disallow_untyped_defs = false
+strict = true
+# `strict = true` implies all of the below; they are pinned so a
+# future `strict = false` cannot silently turn them off individually.
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+disallow_untyped_calls = true
+disallow_any_generics = true
 no_implicit_optional = true
 check_untyped_defs = true
+warn_redundant_casts = true
 warn_return_any = true
 warn_unused_ignores = true
+warn_unreachable = true
+strict_equality = true
+extra_checks = true
 show_error_codes = true
 ignore_missing_imports = true
 
@@ -96,7 +111,7 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
-fail_under = 80
+fail_under = 88
 exclude_also = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",

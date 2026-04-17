@@ -159,7 +159,7 @@ authoritative 1.0 contract.
   strategy · one memory), `yaya serve` opens a browser chat that
   round-trips a real LLM call through the bus.
 - **0.5 — self-authoring plugin**: in the web UI, "I want X" produces
-  a `specs/<x>.spec.md`, scaffolds a plugin (correct category,
+  a `specs/<x>.spec`, scaffolds a plugin (correct category,
   subscribes to the right events), installs it locally, reloads the
   kernel, UI picks up the new capability without restart.
 - **1.0 — protocol freeze**: event taxonomy, plugin ABI, strategy

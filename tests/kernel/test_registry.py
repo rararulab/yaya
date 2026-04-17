@@ -1,6 +1,6 @@
 """Tests for the kernel plugin registry.
 
-AC-bindings from ``specs/kernel-registry.spec.md``:
+AC-bindings from ``specs/kernel-registry.spec``:
 
 * AC-01 entry-point discovery → ``test_entry_point_discovery_loads_plugin``
 * AC-02 bundled uses same path → ``test_bundled_plugin_uses_same_load_path``

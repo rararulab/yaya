@@ -12,6 +12,19 @@ Adopted the three-layer pattern (raw sources / wiki / schema) for
 `lessons-learned.md` in place as the first `lessons/*` page.
 See: sources/karpathy-llm-wiki.md, AGENT.md
 
+## [2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)
+Ported `kernel-bus-and-abi`, `kernel-agent-loop`, and `kernel-registry`
+from Markdown-with-Gherkin `.spec.md` files to the canonical
+agent-spec `.spec` format (YAML frontmatter + structured `Test:`
+blocks with `Package:` + `Filter:`). `scripts/check_specs.sh` now
+lints all four kernel specs in CI; previously it silently skipped
+three. Added lesson #19 (author in tool format, not protocol-doc
+pseudo-format). Prose examples in `AGENT.md`, `AGENTS.md`,
+`CLAUDE.md`, `GOAL.md`, `docs/dev/architecture.md`,
+`docs/dev/testing.md`, and package `AGENT.md` files updated from
+`.spec.md` to `.spec`.
+See: lessons-learned.md#19, ../../specs/
+
 ## [2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)
 Adopted two disciplines: the 4-phase gate model (analysis → plan →
 solutioning → implementation, gated on explicit artifacts) and

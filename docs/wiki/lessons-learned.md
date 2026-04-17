@@ -388,6 +388,32 @@ lost context.
 
 ---
 
+## 19. Author specs in the tool's format, not the protocol doc's pseudo-format
+
+**Symptom** — PR #11 through PR #49 landed three `.spec.md` files that
+were Markdown with Gherkin-ish prose. `scripts/check_specs.sh` globs
+`specs/*.spec` (no `.md`), so CI silently skipped them for months.
+We had a documentation promise with zero enforcement.
+
+**Root cause** — The protocol docs (`docs/dev/agent-spec.md` and
+`docs/dev/plugin-protocol.md`) described the Gherkin block informally
+and used a `Test: path::name` shorthand that matches pytest node ids
+but not the canonical `agent-spec` YAML-frontmatter-plus-`Test:`-block
+format. Nobody ran `agent-spec init` to see the real template, so
+every spec author inherited the pseudo-format from the prose example.
+
+**Rule** — When a tool emits a canonical template (`agent-spec init`,
+`ruff format`, `cargo new`, etc.), the project's own prose examples
+MUST match the tool output exactly. If you can't run the tool on the
+example in the doc and see it pass, the example is a trap. Lint
+protocol docs against real tool output, not the other way round.
+
+**Reference** — Issue #52, PR that ports the .spec.md files.
+Generalises lesson #16 (reviewers verify pattern semantics) to
+authoring: authors verify format against tool output.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

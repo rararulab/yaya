@@ -8,6 +8,7 @@ this module is its Python surface. Kernel layering: no imports from
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
@@ -94,7 +95,7 @@ class KernelContext:
         self,
         *,
         bus: EventBus,
-        logger: Any,
+        logger: logging.Logger,
         config: Mapping[str, object],
         state_dir: Path,
         plugin_name: str,
@@ -115,7 +116,7 @@ class KernelContext:
         self._plugin_name = plugin_name
 
     @property
-    def logger(self) -> Any:
+    def logger(self) -> logging.Logger:
         """Plugin-scoped logger."""
         return self._logger
 

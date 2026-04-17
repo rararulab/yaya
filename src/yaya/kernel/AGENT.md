@@ -14,7 +14,8 @@ The kernel. Event bus, plugin ABI, closed public event catalog, and (later) the 
 ## Constraints
 - `events.py` — closed `PublicEventKind` Literal, per-kind `TypedDict` payloads, `Event` dataclass, `new_event()` factory. New public kind = governance amendment (protocol doc + GOAL.md + this module in the same PR).
 - `plugin.py` — `Category` StrEnum, runtime-checkable `Plugin` Protocol, `KernelContext` (emit stamps `source` with the plugin name; plugins cannot forge identity).
-- `bus.py` — asyncio pub/sub. Exact-kind routing (no wildcards at 1.0). Per-subscriber 30s timeout. FIFO per `session_id` via per-session `asyncio.Lock`. Failing handlers produce a synthetic `plugin.error` (`source = "kernel"`); kernel-origin failures do NOT re-emit (recursion guard).
+- `bus.py` — asyncio pub/sub. Exact-kind routing (no wildcards at 1.0). Per-subscriber 30s timeout. FIFO per `session_id` via a single drain worker task over a per-session `asyncio.Queue`; handlers may call `publish` / `ctx.emit` on the same session while running, the follow-up event is enqueued and delivered after the current handler returns (no re-entry hazard). Failing handlers produce a synthetic `plugin.error` enqueued on the `"kernel"` session (`source = "kernel"`); kernel-origin failures do NOT re-emit (recursion guard).
+- **`source="kernel"` is reserved for kernel-internal code.** The plugin registry (issue #13) will enforce that plugin subscriptions cannot claim this source. Until the registry lands, this is an honor-system invariant — the recursion guard in the bus trusts it to short-circuit loops.
 - Stdlib only (plus `loguru` only if a plugin-facing logger demands it). No module-level side effects at import.
 
 ## Interaction (patterns)

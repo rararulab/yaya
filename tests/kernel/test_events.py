@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import pytest
 
-from yaya.kernel.events import PUBLIC_EVENT_KINDS, Event, new_event
+from yaya.kernel.events import (
+    PUBLIC_EVENT_KINDS,
+    AssistantMessageDonePayload,
+    Event,
+    LlmCallErrorPayload,
+    LlmCallRequestPayload,
+    LlmCallResponsePayload,
+    ToolCallResultPayload,
+    UserMessageReceivedPayload,
+    new_event,
+)
 
 
 def test_envelope_fields() -> None:
@@ -65,6 +75,31 @@ def test_public_catalog_matches_protocol_document() -> None:
         "kernel.error",
     }
     assert expected == PUBLIC_EVENT_KINDS
+
+
+@pytest.mark.parametrize(
+    ("td", "required", "optional"),
+    [
+        (UserMessageReceivedPayload, {"text"}, {"attachments"}),
+        (AssistantMessageDonePayload, {"content", "tool_calls"}, set()),
+        (
+            LlmCallRequestPayload,
+            {"provider", "model", "messages", "params"},
+            {"tools"},
+        ),
+        (LlmCallResponsePayload, {"usage"}, {"text", "tool_calls"}),
+        (LlmCallErrorPayload, {"error"}, {"retry_after_s"}),
+        (ToolCallResultPayload, {"id", "ok"}, {"value", "error"}),
+    ],
+)
+def test_typed_dict_required_optional_partition(
+    td: type,
+    required: set[str],
+    optional: set[str],
+) -> None:
+    """Required/optional field partition must match docs/dev/plugin-protocol.md."""
+    assert set(td.__required_keys__) == required
+    assert set(td.__optional_keys__) == optional
 
 
 def test_new_event_ids_are_unique() -> None:

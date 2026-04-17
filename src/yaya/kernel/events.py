@@ -10,14 +10,19 @@ type-checking.
 
 Layering: this module lives in ``src/yaya/kernel/`` and must not import from
 ``cli``, ``plugins``, or ``core``.
-"""
 
-from __future__ import annotations
+Note:
+    This module deliberately does NOT use ``from __future__ import annotations``.
+    ``typing.NotRequired`` inside :class:`TypedDict` bodies must be evaluated
+    at class-construction time for ``__required_keys__`` / ``__optional_keys__``
+    to reflect the intended partition; PEP 563 string annotations defer that
+    evaluation and collapse every field into ``__required_keys__``.
+"""
 
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal, TypedDict, get_args
+from typing import Any, Literal, NotRequired, TypedDict, get_args
 
 # ---------------------------------------------------------------------------
 # Public event kinds — closed catalog (frozen at 1.0).
@@ -128,11 +133,11 @@ class AgentLoopState(TypedDict, total=False):
 # --- User input ------------------------------------------------------------
 
 
-class UserMessageReceivedPayload(TypedDict, total=False):
+class UserMessageReceivedPayload(TypedDict):
     """``user.message.received`` — text the adapter just received from the user."""
 
     text: str
-    attachments: list[Attachment]
+    attachments: NotRequired[list[Attachment]]
 
 
 class UserInterruptPayload(TypedDict, total=False):
@@ -148,7 +153,7 @@ class AssistantMessageDeltaPayload(TypedDict):
     content: str
 
 
-class AssistantMessageDonePayload(TypedDict, total=False):
+class AssistantMessageDonePayload(TypedDict):
     """``assistant.message.done`` — terminal assistant message for a turn."""
 
     content: str
@@ -158,29 +163,29 @@ class AssistantMessageDonePayload(TypedDict, total=False):
 # --- LLM invocation --------------------------------------------------------
 
 
-class LlmCallRequestPayload(TypedDict, total=False):
+class LlmCallRequestPayload(TypedDict):
     """``llm.call.request`` — kernel asks a provider plugin to run a completion."""
 
     provider: str
     model: str
     messages: list[Message]
-    tools: list[ToolSchema]
     params: dict[str, Any]
+    tools: NotRequired[list[ToolSchema]]
 
 
-class LlmCallResponsePayload(TypedDict, total=False):
+class LlmCallResponsePayload(TypedDict):
     """``llm.call.response`` — provider's completion result."""
 
-    text: str
-    tool_calls: list[ToolCall]
     usage: Usage
+    text: NotRequired[str]
+    tool_calls: NotRequired[list[ToolCall]]
 
 
-class LlmCallErrorPayload(TypedDict, total=False):
+class LlmCallErrorPayload(TypedDict):
     """``llm.call.error`` — provider failure with optional retry hint."""
 
     error: str
-    retry_after_s: float
+    retry_after_s: NotRequired[float]
 
 
 # --- Tool execution --------------------------------------------------------
@@ -202,13 +207,13 @@ class ToolCallStartPayload(TypedDict):
     args: dict[str, Any]
 
 
-class ToolCallResultPayload(TypedDict, total=False):
+class ToolCallResultPayload(TypedDict):
     """``tool.call.result`` — tool plugin's outcome."""
 
     id: str
     ok: bool
-    value: Any
-    error: str
+    value: NotRequired[Any]
+    error: NotRequired[str]
 
 
 # --- Memory ----------------------------------------------------------------

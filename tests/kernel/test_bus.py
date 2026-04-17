@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import pytest
 
@@ -183,3 +184,130 @@ def test_handler_timeout_default_is_30s() -> None:
     from yaya.kernel.bus import DEFAULT_HANDLER_TIMEOUT_S
 
     assert pytest.approx(30.0) == DEFAULT_HANDLER_TIMEOUT_S
+
+
+async def test_handler_can_emit_on_same_session() -> None:
+    """A handler re-publishing on its own session must not deadlock.
+
+    Regression for the per-session Lock design: acquiring the same
+    ``asyncio.Lock`` inside a handler hung and spuriously surfaced a
+    ``plugin.error``. With the queue-based design the follow-up event
+    is enqueued and drained after the current handler returns.
+    """
+    bus = EventBus()
+    results: list[Event] = []
+    errors: list[Event] = []
+
+    async def request_handler(ev: Event) -> None:
+        await bus.publish(
+            new_event(
+                "tool.call.result",
+                {"id": ev.payload["id"], "ok": True, "value": 42},
+                session_id=ev.session_id,
+                source="tool.demo",
+            )
+        )
+
+    async def on_result(ev: Event) -> None:
+        results.append(ev)
+
+    async def on_error(ev: Event) -> None:
+        errors.append(ev)
+
+    bus.subscribe("tool.call.request", request_handler, source="tool.demo")
+    bus.subscribe("tool.call.result", on_result, source="observer")
+    bus.subscribe("plugin.error", on_error, source="observer")
+
+    await bus.publish(
+        new_event(
+            "tool.call.request",
+            {"id": "call-1", "name": "demo", "args": {}},
+            session_id="s-1",
+            source="kernel",
+        )
+    )
+    # Let the session worker drain the follow-up event.
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    assert len(results) == 1
+    assert results[0].payload["id"] == "call-1"
+    assert errors == []
+
+
+async def test_session_queue_releases_when_idle() -> None:
+    """After a burst of unique session_ids, no queue/worker entries leak."""
+    bus = EventBus()
+
+    async def handler(_: Event) -> None:
+        return None
+
+    bus.subscribe("x.burst.tick", handler, source="burst")
+
+    async def one(n: int) -> None:
+        await bus.publish(new_event("x.burst.tick", {"n": n}, session_id=f"s-{n}", source="gen"))
+
+    await asyncio.gather(*(one(i) for i in range(1000)))
+    # Give pending worker coroutines a chance to finalise their ``finally``
+    # cleanup block.
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    assert len(bus._session_queues) == 0
+    assert len(bus._session_workers) == 0
+
+
+async def test_cancellation_propagates_without_plugin_error() -> None:
+    """Cancelling an outer publish must not be swallowed as plugin.error."""
+    bus = EventBus()
+    errors: list[Event] = []
+    started = asyncio.Event()
+
+    async def slow(_: Event) -> None:
+        started.set()
+        await asyncio.sleep(10)
+
+    async def on_err(ev: Event) -> None:
+        errors.append(ev)
+
+    bus.subscribe("user.message.received", slow, source="slow")
+    bus.subscribe("plugin.error", on_err, source="observer")
+
+    task = asyncio.create_task(
+        bus.publish(new_event("user.message.received", {"text": "x"}, session_id="s", source="a"))
+    )
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # Allow any pending error-emit path to run (there should be none).
+    for _ in range(3):
+        await asyncio.sleep(0)
+    assert errors == []
+
+
+async def test_duplicate_subscription_same_args_unsubscribes_one_copy() -> None:
+    """Subscribing the same handler+source twice yields two distinct entries."""
+    bus = EventBus()
+    count = 0
+
+    async def handler(_: Event) -> None:
+        nonlocal count
+        count += 1
+
+    sub_a = bus.subscribe("kernel.ready", handler, source="t")
+    bus.subscribe("kernel.ready", handler, source="t")
+    sub_a.unsubscribe()
+
+    await bus.publish(new_event("kernel.ready", {"version": "0.0.1"}, session_id="s", source="kernel"))
+    assert count == 1
+
+
+async def test_publish_after_close_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """Publishing after close is a no-op but surfaces a warning with the kind."""
+    bus = EventBus()
+    await bus.close()
+    with caplog.at_level(logging.WARNING, logger="yaya.kernel.bus"):
+        await bus.publish(new_event("kernel.ready", {"version": "0.0.1"}, session_id="s", source="kernel"))
+    assert any("kernel.ready" in rec.getMessage() for rec in caplog.records)

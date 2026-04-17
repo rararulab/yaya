@@ -23,8 +23,11 @@ envelope before any plugin or the agent loop can be built on top.
   with exactly the six categories from `plugin-protocol.md`.
 - `EventBus` is asyncio-native. Exact-kind routing at 1.0 (no wildcards).
   Per-subscriber 30s timeout (`DEFAULT_HANDLER_TIMEOUT_S`). FIFO per
-  `session_id` via per-session `asyncio.Lock`. A raising or hanging
-  handler is isolated; the bus emits a synthetic `plugin.error`
+  `session_id` via a per-session drain worker over an `asyncio.Queue`
+  (single worker per session preserves order; handlers may publish on
+  the same session without deadlocking because the follow-up event is
+  enqueued and delivered after the current handler returns). A raising
+  or hanging handler is isolated; the bus emits a synthetic `plugin.error`
   (`source = "kernel"`). Kernel-origin failures do not re-emit.
 - Stdlib only. No imports from `cli`, `plugins`, or `core`.
 

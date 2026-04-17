@@ -453,7 +453,7 @@
 <nav>
     <ul>
         <li><a href="#wiki-log">Wiki Log</a></li>
-        <li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li>
+        <li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li>
     </ul>
 </nav>
 </aside>
@@ -470,6 +470,18 @@ parses.</p>
 <code>sources/karpathy-llm-wiki.md</code>. Kept the existing
 <code>lessons-learned.md</code> in place as the first <code>lessons/*</code> page.
 See: sources/karpathy-llm-wiki.md, AGENT.md</p>
+<h2 id="2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)<a class="headerlink" href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52" title="Permanent link">&para;</a></h2>
+<p>Ported <code>kernel-bus-and-abi</code>, <code>kernel-agent-loop</code>, and <code>kernel-registry</code>
+from Markdown-with-Gherkin <code>.spec.md</code> files to the canonical
+agent-spec <code>.spec</code> format (YAML frontmatter + structured <code>Test:</code>
+blocks with <code>Package:</code> + <code>Filter:</code>). <code>scripts/check_specs.sh</code> now
+lints all four kernel specs in CI; previously it silently skipped
+three. Added lesson #19 (author in tool format, not protocol-doc
+pseudo-format). Prose examples in <code>AGENT.md</code>, <code>AGENTS.md</code>,
+<code>CLAUDE.md</code>, <code>GOAL.md</code>, <code>docs/dev/architecture.md</code>,
+<code>docs/dev/testing.md</code>, and package <code>AGENT.md</code> files updated from
+<code>.spec.md</code> to <code>.spec</code>.
+See: lessons-learned.md#19, ../../specs/</p>
 <h2 id="2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)<a class="headerlink" href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method" title="Permanent link">&para;</a></h2>
 <p>Adopted two disciplines: the 4-phase gate model (analysis → plan →
 solutioning → implementation, gated on explicit artifacts) and

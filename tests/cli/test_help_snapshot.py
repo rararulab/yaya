@@ -12,11 +12,20 @@ from typer.testing import CliRunner
 
 pytestmark = pytest.mark.unit
 
+_BOX_CORNER_TRANSLATION = str.maketrans(
+    {
+        "┌": "╭",
+        "┐": "╮",
+        "└": "╰",
+        "┘": "╯",
+    },
+)
+
 
 def _normalize(output: str) -> str:
     # Strip trailing whitespace per line and collapse box-drawing artifacts
     # so minor width/terminal differences do not fail the snapshot.
-    return "\n".join(line.rstrip() for line in output.strip().splitlines())
+    return "\n".join(line.rstrip().translate(_BOX_CORNER_TRANSLATION) for line in output.strip().splitlines())
 
 
 def test_root_help_snapshot(runner: CliRunner, cli_app, snapshot) -> None:

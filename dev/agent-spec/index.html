@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#agent-spec-bdd-contracts-for-agent-work">agent-spec — BDD Contracts for Agent Work</a></li>
-        <li><a href="#install">Install</a></li><li><a href="#task-contract-shape-specmd">Task contract shape (.spec.md)</a></li><li><a href="#developer-workflow">Developer workflow</a></li><li><a href="#contract-authoring-rules">Contract authoring rules</a></li><li><a href="#relationship-to-the-org-bdd-issue-template">Relationship to the org BDD issue template</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#what-this-harness-enforces-today">What this harness enforces today</a></li><li><a href="#install">Install</a></li><li><a href="#task-contract-shape-specsslugspec">Task contract shape (specs/&lt;slug&gt;.spec)</a></li><li><a href="#developer-workflow">Developer workflow</a></li><li><a href="#contract-authoring-rules">Contract authoring rules</a></li><li><a href="#relationship-to-the-org-bdd-issue-template">Relationship to the org BDD issue template</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -455,95 +455,141 @@
 <section id="mkdocs-terminal-content">
     <h1 id="agent-spec-bdd-contracts-for-agent-work">agent-spec — BDD Contracts for Agent Work<a class="headerlink" href="#agent-spec-bdd-contracts-for-agent-work" title="Permanent link">&para;</a></h1>
 <p>Canonical tool: <a href="https://github.com/ZhangHanDong/agent-spec"><code>ZhangHanDong/agent-spec</code></a>.
-An AI-native BDD verification framework. Humans author a <strong>task contract</strong>,
-the agent implements against it, <code>agent-spec</code> verifies compliance
-deterministically.</p>
-<p><strong>In yaya, every non-trivial feature PR is backed by a <code>.spec.md</code> contract.</strong>
-Trivial means: single-line typos, doc-only changes, dependency bumps. Everything
-else — new commands, new <code>core/</code> modules, new agents, behavior changes —
-must have a spec.</p>
-<h2 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>cargo<span class="w"> </span>install<span class="w"> </span>agent-spec
-</code></pre></div>
-<p>Also install the appropriate agent skill for your runtime:</p>
+An AI-native BDD / spec verification framework. Humans author a
+<strong>task contract</strong>; the agent implements against it; <code>agent-spec</code> lints
+the contract and — with an AI backend — verifies compliance.</p>
+<p><strong>In yaya, every non-trivial feature PR is backed by a <code>.spec</code> contract.</strong>
+Trivial means: single-line typos, doc-only changes, dependency bumps.
+Everything else — new commands, new <code>core/</code> or <code>kernel/</code> modules, new
+plugins, behavior changes — must have a spec.</p>
+<h2 id="what-this-harness-enforces-today">What this harness enforces today<a class="headerlink" href="#what-this-harness-enforces-today" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Claude Code ⇒ <code>agent-spec-tool-first</code> (under <code>~/.claude/skills/</code>)</li>
-<li>Codex / Cursor / Aider ⇒ matching skill per the upstream README</li>
+<li><strong>Lint</strong> on every PR and pre-commit: parse errors, missing
+  frontmatter, quality metrics (determinism / testability / coverage),
+  unbound scenarios, vague verbs.</li>
+<li>Spec files MUST live under <code>specs/&lt;slug&gt;.spec</code> (no <code>.md</code> suffix; the
+  tool parses a YAML-front-matter format, not Markdown).</li>
 </ul>
-<h2 id="task-contract-shape-specmd">Task contract shape (<code>.spec.md</code>)<a class="headerlink" href="#task-contract-shape-specmd" title="Permanent link">&para;</a></h2>
-<p>Contracts live at <code>specs/&lt;slug&gt;.spec.md</code>, one per issue:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gh"># specs/&lt;slug&gt;.spec.md</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="gu">## Intent</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>What and why — one paragraph, stakeholder-readable.
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="gu">## Decisions</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>Fixed technical choices that are NOT up for debate in this PR.
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>(Library picks, file layout, algorithmic direction.)
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="gu">## Boundaries</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="k">-</span><span class="w"> </span>Allowed: <span class="sb">`src/yaya/cli/commands/&lt;new&gt;.py`</span>, <span class="sb">`tests/cli/test_&lt;new&gt;.py`</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="k">-</span><span class="w"> </span>Forbidden: <span class="sb">`src/yaya/core/updater.py`</span>, <span class="sb">`pyproject.toml`</span> dependencies section
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="gu">## Completion Criteria (BDD)</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>Scenario: happy path
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>  Given &lt;precondition&gt;
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>  When  &lt;action&gt;
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>  Then  &lt;observable outcome&gt;
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>  Test: tests/cli/test_&lt;new&gt;.py::test_&lt;scenario&gt;
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>
-<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>Scenario: error case
-<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>  Given &lt;precondition&gt;
-<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>  When  &lt;invalid input&gt;
-<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>  Then  &lt;error code + JSON suggestion field&gt;
-<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>  Test: tests/cli/test_&lt;new&gt;.py::test_&lt;scenario_error&gt;
+<p><strong>Not yet enforced</strong> (tracked separately):</p>
+<ul>
+<li><code>boundary</code> layer (diff-vs-allowed-paths) is implemented upstream but
+  has a path-handling bug on non-linux runners in 0.2.7 that we are
+  avoiding until the next release. Boundaries are still declared in
+  specs — we just don't block merges on them yet.</li>
+<li><code>verify</code> layer (scenario-level pass/fail) needs an AI backend we
+  have not wired up. Scenarios lint-pass when they bind a real test
+  via the <code>Test:</code> selector, but the tool can't yet confirm the test
+  exists or passes.</li>
+</ul>
+<p>When the upstream fix lands we flip from <code>lint</code> to
+<code>lifecycle --layers lint,boundary</code>; the AI verify layer is a separate
+future issue.</p>
+<h2 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>cargo<span class="w"> </span>install<span class="w"> </span>agent-spec<span class="w"> </span>--version<span class="w"> </span><span class="m">0</span>.2.7<span class="w"> </span>--locked
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>agent-spec<span class="w"> </span>--version
 </code></pre></div>
-<p>Minimum 3 scenarios: happy path + error + edge case.
-Every scenario MUST have an explicit <code>Test:</code> selector naming the test
-function that proves it.</p>
+<p>The version is pinned in <code>.github/workflows/main.yml</code> and in
+<code>scripts/check_specs.sh</code>. Upgrade both together.</p>
+<p>Optional: install the corresponding agent skill for your runtime
+(<code>agent-spec-tool-first</code> for Claude Code, equivalents for Codex /
+Cursor). Not required for CI.</p>
+<p>If you do not want to install Rust locally, skip it — the wrapper
+script prints a friendly notice and succeeds, and CI enforces the
+check on every PR.</p>
+<h2 id="task-contract-shape-specsslugspec">Task contract shape (<code>specs/&lt;slug&gt;.spec</code>)<a class="headerlink" href="#task-contract-shape-specsslugspec" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>spec: task
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>name: &quot;&lt;slug&gt;&quot;
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>tags: [&lt;optional tags&gt;]
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>---
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>## Intent
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>One stakeholder-readable paragraph — what and why.
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>## Decisions
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>- Fixed technical choices that are NOT up for debate in this PR.
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>## Boundaries
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>### Allowed Changes
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>- `src/yaya/cli/commands/&lt;new&gt;.py`
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>- `tests/cli/test_&lt;new&gt;.py`
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>### Forbidden
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>- `src/yaya/core/updater.py`
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>- `pyproject.toml` dependencies section
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>## Completion Criteria
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>Scenario: happy path
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>  Test:
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>    Package: yaya
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>    Filter: tests/cli/test_&lt;new&gt;.py::test_happy
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>  Level: unit
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>  Given &lt;precondition&gt;
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>  When &lt;action&gt;
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>  Then &lt;observable outcome&gt;
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>Scenario: error case
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a>  Test:
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a>    Package: yaya
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>    Filter: tests/cli/test_&lt;new&gt;.py::test_error
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a>  Level: unit
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a>  Given &lt;precondition&gt;
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>  When &lt;invalid input&gt;
+<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a>  Then &lt;exit non-zero with JSON error + suggestion&gt;
+<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a>
+<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a>## Out of Scope
+<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a>
+<a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a>- Things deliberately deferred.
+</code></pre></div>
+<p>Minimum 3 scenarios: happy path + error + edge case. Every scenario
+MUST have a <code>Test:</code> block binding it to a concrete test function.</p>
 <h2 id="developer-workflow">Developer workflow<a class="headerlink" href="#developer-workflow" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 1. Author contract (or accept one written by a design agent)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">$EDITOR</span><span class="w"> </span>specs/&lt;slug&gt;.spec.md
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">$EDITOR</span><span class="w"> </span>specs/&lt;slug&gt;.spec
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># 2. Pull context before coding (contract + codebase sketch)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>agent-spec<span class="w"> </span>plan<span class="w"> </span>specs/&lt;slug&gt;.spec.md
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># 2. Iterate; re-lint until clean</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>agent-spec<span class="w"> </span>lint<span class="w"> </span>specs/&lt;slug&gt;.spec
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># 3. Implement inside the issue worktree</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="c1"># 4. Verify locally — lint + BDD compliance + report</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>agent-spec<span class="w"> </span>lifecycle<span class="w"> </span>specs/&lt;slug&gt;.spec.md
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="c1"># 4. Verify locally (full lifecycle)</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>just<span class="w"> </span>check-specs
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># 5. PR description from the contract</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>agent-spec<span class="w"> </span>explain<span class="w"> </span>specs/&lt;slug&gt;.spec.md<span class="w"> </span>&gt;<span class="w"> </span>/tmp/pr-body.md
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--body-file<span class="w"> </span>/tmp/pr-body.md
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># 5. Before PR: ensure `just check` is green (it runs check-specs too)</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>just<span class="w"> </span>check<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>just<span class="w"> </span><span class="nb">test</span>
 </code></pre></div>
-<p>CI runs <code>agent-spec guard</code> on staged changes — boundary violations or
-unbound scenarios fail the build.</p>
+<p>Pre-commit runs <code>agent-spec lint</code> automatically on any staged
+<code>.spec</code> file.</p>
 <h2 id="contract-authoring-rules">Contract authoring rules<a class="headerlink" href="#contract-authoring-rules" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Intent is stakeholder-readable.</strong> No code, no jargon the user didn't use.</li>
-<li><strong>Decisions are <em>decisions</em>, not suggestions.</strong> If it's still open, it
-  does not belong here — brainstorm elsewhere.</li>
-<li><strong>Boundaries are narrow.</strong> Prefer listing explicit allowed paths. A spec
-  that "allows everything" is useless for <code>guard</code>.</li>
+<li><strong>Decisions are <em>decisions</em>, not suggestions.</strong> If it's still open,
+  it does not belong here — brainstorm elsewhere.</li>
+<li><strong>Boundaries are narrow.</strong> List explicit allowed paths. A spec that
+  "allows everything" is useless once boundary enforcement is on.</li>
 <li><strong>Scenarios are observable.</strong> Assert on exit code, stdout JSON shape,
   file-on-disk state — never on "the function was called".</li>
-<li><strong>One contract, one issue.</strong> Split large work into stacked contracts;
-  see <a href="../workflow/#stacked-prs">stacked-prs</a>.</li>
+<li><strong>One contract, one issue.</strong> Split large work into stacked
+  contracts; see <a href="../workflow/">workflow.md</a>.</li>
 </ul>
 <h2 id="relationship-to-the-org-bdd-issue-template">Relationship to the org BDD issue template<a class="headerlink" href="#relationship-to-the-org-bdd-issue-template" title="Permanent link">&para;</a></h2>
-<p><code>rararulab/.github/ISSUE_TEMPLATE/bdd_task.yml</code> captures the same four
-sections (Description / Plan Spec / Feature file / Design spec). Use the
-issue template to open the issue; copy its Gherkin block into
-<code>specs/&lt;slug&gt;.spec.md</code> so <code>agent-spec</code> can verify it.</p>
+<p><code>rararulab/.github/ISSUE_TEMPLATE/bdd_task.yml</code> captures the same
+sections (Description / Plan Spec / Feature file / Design spec). Use
+the issue template to open the issue; translate its scenarios into
+the <code>specs/&lt;slug&gt;.spec</code> format above.</p>
 <h2 id="what-not-to-do">What NOT To Do<a class="headerlink" href="#what-not-to-do" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Do NOT open a feature PR without a <code>.spec.md</code> (trivia excepted).</li>
-<li>Do NOT change scope mid-PR without updating the contract in the same commit.</li>
-<li>Do NOT write scenarios without a <code>Test:</code> selector — <code>guard</code> will flag them
-  as unbound.</li>
-<li>Do NOT relax <code>Boundaries</code> to make the build pass — revisit scope instead.</li>
-<li>Do NOT skip <code>agent-spec lifecycle</code> before requesting review.</li>
+<li>Do NOT open a feature PR without a <code>.spec</code> (trivia excepted).</li>
+<li>Do NOT change scope mid-PR without updating the contract in the
+  same commit.</li>
+<li>Do NOT write scenarios without a <code>Test:</code> selector — lint flags them.</li>
+<li>Do NOT relax <code>Boundaries</code> to make the build pass — revisit scope
+  instead.</li>
+<li>Do NOT use the old <code>.spec.md</code> extension. The tool parses
+  <code>.spec</code> files with YAML frontmatter.</li>
 </ul>
 </section>
 

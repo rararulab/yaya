@@ -27,6 +27,25 @@ User request
   └─ PRs reviewed + merged independently on GitHub
 ```
 
+## Subagent dispatch template — required `Read first` items
+
+Every prompt that dispatches a coding subagent MUST include this list,
+in order:
+
+1. `GOAL.md` — product anchor.
+2. `AGENT.md` — root agent index.
+3. **`docs/wiki/lessons-learned.md`** — recurring review findings to avoid.
+4. The authoritative contract for the area of work (e.g.
+   `docs/dev/plugin-protocol.md` for kernel/plugin work).
+5. Folder-local `AGENT.md` for every folder the subagent will touch.
+6. `docs/dev/workflow.md`, `testing.md`, `code-comments.md`,
+   `agent-spec.md`, `maintaining-agent-md.md` as relevant.
+7. The GitHub issue itself (`gh issue view <N>`).
+
+Skipping item 3 causes the subagent to re-commit known anti-patterns;
+every review round that uncovers a new hazard **appends a bullet** to
+the wiki doc in the same PR.
+
 Large features that cannot be decomposed into independent issues use
 **stacked PRs**: one epic issue, sub-issues branched off `feat/{name}`,
 final summary PR to `main`.

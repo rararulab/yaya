@@ -87,9 +87,9 @@ def test_public_catalog_matches_protocol_document() -> None:
             {"provider", "model", "messages", "params"},
             {"tools"},
         ),
-        (LlmCallResponsePayload, {"usage"}, {"text", "tool_calls"}),
-        (LlmCallErrorPayload, {"error"}, {"retry_after_s"}),
-        (ToolCallResultPayload, {"id", "ok"}, {"value", "error"}),
+        (LlmCallResponsePayload, {"usage"}, {"text", "tool_calls", "request_id"}),
+        (LlmCallErrorPayload, {"error"}, {"retry_after_s", "request_id"}),
+        (ToolCallResultPayload, {"id", "ok"}, {"value", "error", "request_id"}),
     ],
 )
 def test_typed_dict_required_optional_partition(

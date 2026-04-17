@@ -174,18 +174,30 @@ class LlmCallRequestPayload(TypedDict):
 
 
 class LlmCallResponsePayload(TypedDict):
-    """``llm.call.response`` — provider's completion result."""
+    """``llm.call.response`` — provider's completion result.
+
+    ``request_id`` mirrors the originating ``llm.call.request`` event id so the
+    kernel agent loop (see ``yaya.kernel.loop``) can correlate concurrent
+    in-flight calls. Optional for backwards compatibility with hand-crafted
+    fixtures but required in practice for the loop to observe the response.
+    """
 
     usage: Usage
     text: NotRequired[str]
     tool_calls: NotRequired[list[ToolCall]]
+    request_id: NotRequired[str]
 
 
 class LlmCallErrorPayload(TypedDict):
-    """``llm.call.error`` — provider failure with optional retry hint."""
+    """``llm.call.error`` — provider failure with optional retry hint.
+
+    ``request_id`` mirrors the originating ``llm.call.request`` event id for
+    agent-loop correlation (see :class:`yaya.kernel.loop.AgentLoop`).
+    """
 
     error: str
     retry_after_s: NotRequired[float]
+    request_id: NotRequired[str]
 
 
 # --- Tool execution --------------------------------------------------------
@@ -208,12 +220,19 @@ class ToolCallStartPayload(TypedDict):
 
 
 class ToolCallResultPayload(TypedDict):
-    """``tool.call.result`` — tool plugin's outcome."""
+    """``tool.call.result`` — tool plugin's outcome.
+
+    ``request_id`` mirrors the originating ``tool.call.request`` event id so
+    the agent loop can correlate per-call results when multiple tools run
+    back-to-back. The ``id`` field remains the stable logical tool-call id
+    assigned by the LLM.
+    """
 
     id: str
     ok: bool
     value: NotRequired[Any]
     error: NotRequired[str]
+    request_id: NotRequired[str]
 
 
 # --- Memory ----------------------------------------------------------------
@@ -233,9 +252,14 @@ class MemoryWritePayload(TypedDict):
 
 
 class MemoryResultPayload(TypedDict):
-    """``memory.result`` — memory plugin's hits list."""
+    """``memory.result`` — memory plugin's hits list.
+
+    ``request_id`` mirrors the originating ``memory.query`` event id so the
+    agent loop can correlate concurrent queries on the same session.
+    """
 
     hits: list[MemoryEntry]
+    request_id: NotRequired[str]
 
 
 # --- Strategy --------------------------------------------------------------
@@ -253,9 +277,14 @@ class StrategyDecideResponsePayload(TypedDict, total=False):
     ``next`` is one of ``"llm" | "tool" | "memory" | "done"``; additional keys
     describe the arguments for that step (kept as an open dict at the kernel
     level — strategy plugins own their own schema).
+
+    ``request_id`` mirrors the originating ``strategy.decide.request`` event
+    id so the agent loop can correlate the decision with the specific step
+    it requested.
     """
 
     next: Literal["llm", "tool", "memory", "done"]
+    request_id: str
 
 
 # --- Plugin lifecycle ------------------------------------------------------

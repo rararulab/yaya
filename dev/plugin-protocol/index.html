@@ -842,13 +842,23 @@ required in practice for the kernel loop to observe a response.</p>
 <h2 id="plugin-failure-model">Plugin failure model<a class="headerlink" href="#plugin-failure-model" title="Permanent link">&para;</a></h2>
 <ul>
 <li>A plugin raising from <code>on_event</code> produces <code>plugin.error</code> and the
-  kernel continues. Repeated failures (threshold configurable) unload
-  the plugin and emit <code>plugin.removed</code>.</li>
+  kernel continues. Each <code>plugin.error</code> attributed to a plugin
+  increments its failure counter; a successful <code>on_event</code> invocation
+  resets the counter to zero, so <strong>N <em>consecutive</em> failures</strong> — not N
+  cumulative — triggers unload and emits <code>plugin.removed</code>. Default
+  N = 3, configurable on the registry.</li>
 <li>A plugin hanging in <code>on_event</code> past a deadline (default 30s, per
   category) is cancelled; the same counter increments.</li>
 <li><code>on_load</code> failure prevents registration; the plugin is marked
   <code>status: failed</code> in <code>yaya plugin list</code> with the stack trace in its
   state directory.</li>
+<li>Status ladder reported by <code>yaya plugin list</code> / <code>snapshot()</code>:
+  <code>loaded → unloading → failed</code> for the threshold path (transient
+  <code>unloading</code> between threshold breach and <code>on_unload</code> completion);
+  <code>loaded → unloaded</code> for orderly <code>stop()</code> / <code>remove()</code>. <code>unloading</code>
+  is observable so operators see in-flight unloads and so the registry
+  can reject duplicate unload tasks from rival <code>plugin.error</code> events
+  during the race window.</li>
 <li><strong>The kernel never crashes because a plugin did</strong>. If the kernel
   itself raises, <code>kernel.error</code> fires, and <code>yaya serve</code> exits non-zero.</li>
 </ul>

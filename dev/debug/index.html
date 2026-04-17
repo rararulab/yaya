@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.8.0">
+    
+    <meta name="description" content="A Python AI agent built with engineering rigor."> 
+    
+    <meta name="author" content="rararulab"> 
+    
+    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/debug/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>Debug Playbook - yaya</title>
+
+
+<link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../../css/normalize.css" rel="stylesheet">
+<link href="../../css/terminal.css" rel="stylesheet">
+<link href="../../css/theme.css" rel="stylesheet">
+<link href="../../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../../css/theme.footer.css" rel="stylesheet">
+<!-- dark color palette -->
+<link href="../../css/palettes/dark.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+
+
+    
+    <link href="../../assets/_mkdocstrings.css" rel="stylesheet">  
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "../..",
+    shortcuts = "{}";
+</script>
+<script src="../../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://rararulab.github.io/yaya/" class="no-style">yaya</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../.." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../../goal/" class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Goal</span>
+                    </a>
+                    <meta property="position" content="1">
+                </li>
+                
+                
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="2">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../..">Home</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../goal/">Goal</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Wiki</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../wiki/lessons-learned/">Lessons Learned</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">User Guide</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/install/">Install</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/usage/">Usage</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Development</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../architecture/">Architecture</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../no-agent-frameworks/">No Third-Party Agent Frameworks</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../workflow/">Workflow</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../multi-agent/">Multi-Agent</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../maintaining-agent-md/">Maintaining AGENT.md</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../cli/">CLI Conventions</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../agent-friendly-cli/">Agent-Friendly CLI (org spec)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../web-ui/">Web UI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../testing/">Testing</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../agent-spec/">Agent Spec (BDD Contracts)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../code-comments/">Code Comments & Docstrings</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../release/">Release</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+    </ul>
+</nav><hr>
+<nav>
+    <ul>
+        <li><a href="#debug-playbook">Debug Playbook</a></li>
+        <li><a href="#where-are-the-logs">Where are the logs?</a></li><li><a href="#ids-that-matter">IDs that matter</a></li><li><a href="#debug-by-symptom">Debug by symptom</a></li><li><a href="#what-every-log-line-should-look-like">What every log line should look like</a></li><li><a href="#filing-a-bug">Filing a bug</a></li><li><a href="#common-mistakes">Common mistakes</a></li><li><a href="#see-also">See also</a></li>
+    </ul>
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="debug-playbook">Debug Playbook<a class="headerlink" href="#debug-playbook" title="Permanent link">&para;</a></h1>
+<p>yaya is designed so that every problem shows up in logs. Two concepts
+make this work:</p>
+<ol>
+<li><strong>Every bus event is logged</strong> at DEBUG level with a stable, parseable
+   structure.</li>
+<li><strong>Correlation IDs</strong> thread through every log line, so one turn is
+   grep-able end-to-end across kernel and plugins.</li>
+</ol>
+<p>This document is the first place to look when something is wrong. It
+is written for both humans and AI agents investigating a report — the
+"symptoms → search → interpret" playbooks below are meant to be
+followed mechanically.</p>
+<h2 id="where-are-the-logs">Where are the logs?<a class="headerlink" href="#where-are-the-logs" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Sink</th>
+<th>Level</th>
+<th>Location</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>stderr</td>
+<td>INFO by default</td>
+<td>the terminal running <code>yaya serve</code></td>
+<td>quick tailing</td>
+</tr>
+<tr>
+<td>file</td>
+<td>DEBUG always</td>
+<td><code>$XDG_STATE_HOME/yaya/logs/yaya.log</code> (fallback <code>~/.local/state/yaya/logs/yaya.log</code>)</td>
+<td>everything — source of truth</td>
+</tr>
+<tr>
+<td>JSON</td>
+<td>whatever you set</td>
+<td>set <code>YAYA_LOG_JSON=1</code></td>
+<td>agent / <code>jq</code> consumption</td>
+</tr>
+</tbody>
+</table>
+<p>Rotation: 10 MiB × 5 backups. Older turns may be in <code>yaya.log.1..5</code>;
+use <code>less +G yaya.log*</code> to tail across rotations.</p>
+<h2 id="ids-that-matter">IDs that matter<a class="headerlink" href="#ids-that-matter" title="Permanent link">&para;</a></h2>
+<p>Every log line is bound with whichever of these apply. When you file a
+bug or hand off a trace, quote the IDs.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Comes from</th>
+<th>Groups</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session_id</code></td>
+<td><code>SessionContext</code> (#36)</td>
+<td>one chat thread across turns and devices</td>
+</tr>
+<tr>
+<td><code>turn_id</code></td>
+<td><code>AgentLoop</code> (#12)</td>
+<td>one user message → final assistant message</td>
+</tr>
+<tr>
+<td><code>tool_call_id</code></td>
+<td>LLM response / <code>Tool</code> contract (#27)</td>
+<td>one tool invocation</td>
+</tr>
+<tr>
+<td><code>approval_id</code></td>
+<td><code>ApprovalRuntime</code> (#28)</td>
+<td>one HITL prompt + response</td>
+</tr>
+<tr>
+<td><code>plugin</code></td>
+<td><code>KernelContext.logger</code></td>
+<td>which plugin emitted the line</td>
+</tr>
+<tr>
+<td><code>connection_id</code></td>
+<td><code>ConnectionHandle</code> (#36)</td>
+<td>which WebSocket / Telegram client</td>
+</tr>
+<tr>
+<td><code>request_id</code></td>
+<td>LLM vendor response header</td>
+<td>one API call to OpenAI / Anthropic</td>
+</tr>
+</tbody>
+</table>
+<p>Rule: if a log line during an active turn is missing <code>session_id</code> +
+<code>turn_id</code>, that is a bug — open an issue.</p>
+<h2 id="debug-by-symptom">Debug by symptom<a class="headerlink" href="#debug-by-symptom" title="Permanent link">&para;</a></h2>
+<h3 id="the-assistant-said-nothing">"The assistant said nothing"<a class="headerlink" href="#the-assistant-said-nothing" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p>Find the latest <code>turn_id</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>grep &quot;session.turn.started&quot; yaya.log | tail -1
+</code></pre></div>
+</li>
+<li>
+<p>Filter the whole turn:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>grep &quot;turn_id=&lt;id&gt;&quot; yaya.log
+</code></pre></div>
+</li>
+<li>
+<p>Walk the canonical sequence; the first missing step is the failure:</p>
+<ul>
+<li><code>user.message.received</code> — did the message reach the kernel?</li>
+<li><code>strategy.decide.request</code> / <code>.response</code> — did the strategy plugin
+  make a decision?</li>
+<li><code>llm.call.request</code> / <code>.delta</code> / <code>.response</code> — did the provider
+  respond?</li>
+<li><code>assistant.message.done</code> — was the terminating emit reached?</li>
+</ul>
+</li>
+</ol>
+<h3 id="tool-call-didnt-run">"Tool call didn't run"<a class="headerlink" href="#tool-call-didnt-run" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p>Find the <code>tool_call_id</code> the LLM proposed:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>grep &quot;llm.call.response&quot; yaya.log | grep &quot;tool_call&quot;
+</code></pre></div>
+</li>
+<li>
+<p>Trace it forward:</p>
+<ul>
+<li><code>approval.request</code> — was the user prompted?</li>
+<li><code>approval.response</code> — did they approve, reject, or was it cancelled?</li>
+<li><code>tool.call.request</code> — was the tool dispatched?</li>
+<li><code>tool.call.result</code> — did it return?</li>
+<li><code>tool.error</code> — validation or execution error? Read its <code>kind</code> field.</li>
+</ul>
+</li>
+</ol>
+<h3 id="plugin-crashed">"Plugin crashed"<a class="headerlink" href="#plugin-crashed" title="Permanent link">&para;</a></h3>
+<p>Every <code>PluginError</code> surfaces three ways:</p>
+<ul>
+<li>A <code>plugin.error</code> event on the bus (visible in tape and in logs).</li>
+<li>A log line at <code>ERROR</code> level with <code>plugin=&lt;name&gt;</code> and full traceback.</li>
+<li>An increment of the plugin's failure counter.</li>
+</ul>
+<p>Investigate:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>grep &quot;plugin.error&quot; yaya.log
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>grep &quot;plugin=&lt;name&gt;&quot; yaya.log | grep ERROR
+</code></pre></div>
+<p>After 3 consecutive failures the plugin auto-unloads; confirm with a
+<code>plugin.removed</code> entry in the log. Fix the root cause, then
+<code>yaya plugin install &lt;name&gt;</code> to re-register.</p>
+<h3 id="session-is-stuck-mid-turn">"Session is stuck mid-turn"<a class="headerlink" href="#session-is-stuck-mid-turn" title="Permanent link">&para;</a></h3>
+<p>Inspect the live context:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>yaya session show &lt;session-id&gt; --live
+</code></pre></div>
+<p>Common causes:</p>
+<ul>
+<li><code>approval.request</code> with no matching <code>approval.response</code> → user never
+  answered. Check the web UI for a pending approval card.</li>
+<li><code>llm.call.request</code> with no <code>.response</code> → upstream provider hang. Check
+  the vendor status page with the <code>request_id</code>.</li>
+<li><code>session.turn.queued</code> pileup while <code>session.turn.started</code> has no
+  matching <code>session.turn.done</code> → a turn is genuinely stuck.</li>
+</ul>
+<p>If truly hung: SIGINT the kernel; <code>yaya session resume &lt;id&gt;</code> on
+restart. The tape preserves everything; only the live
+<code>SessionContext</code> is lost, and it is always reconstructible from tape.</p>
+<h3 id="answers-contradict-earlier-turns">"Answers contradict earlier turns"<a class="headerlink" href="#answers-contradict-earlier-turns" title="Permanent link">&para;</a></h3>
+<p>Compaction (#29) dropped context that mattered. Dump the tape:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>yaya session show &lt;session-id&gt; --format jsonl | less
+</code></pre></div>
+<p>Look for <code>anchor</code> entries with <code>kind=compaction/&lt;n&gt;</code>; the <code>state</code> field
+there is the summary the LLM sees going forward. If the summary lost
+a detail, tune <code>compaction.threshold</code> or raise
+<code>compaction.max_preserved_messages</code> in config.</p>
+<h3 id="llm-provider-errors">"LLM provider errors"<a class="headerlink" href="#llm-provider-errors" title="Permanent link">&para;</a></h3>
+<p>Provider SDK errors are mapped to typed events (#26). Filter:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>grep &quot;llm.call.error&quot; yaya.log | grep turn_id=&lt;id&gt;
+</code></pre></div>
+<p>Interpret the <code>kind</code>:</p>
+<table>
+<thead>
+<tr>
+<th><code>kind</code></th>
+<th>Meaning</th>
+<th>First move</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>connection</code></td>
+<td>Network-level failure</td>
+<td>check connectivity, vendor status</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>Provider didn't respond in time</td>
+<td>raise <code>llm.timeout</code> in config; inspect load</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>HTTP 4xx / 5xx from vendor</td>
+<td>use <code>request_id</code> on vendor dashboard</td>
+</tr>
+<tr>
+<td><code>empty</code></td>
+<td>Vendor returned nothing usable</td>
+<td>check tokens / rate limit / prompt shape</td>
+</tr>
+<tr>
+<td><code>other</code></td>
+<td>Unclassified</td>
+<td>read the full traceback at ERROR level</td>
+</tr>
+</tbody>
+</table>
+<h3 id="two-tabs-show-different-things">"Two tabs show different things"<a class="headerlink" href="#two-tabs-show-different-things" title="Permanent link">&para;</a></h3>
+<p>Each browser tab is a <code>ConnectionHandle</code> on one <code>SessionContext</code> (#36).
+All connections on one session receive <code>broadcast_to_session</code> fanout.</p>
+<p>Checks:</p>
+<ul>
+<li><code>session.context.attached</code> has both connection_ids for the same
+  session_id?</li>
+<li>Outbound events carry a <code>session_id</code>? (Events without one are not
+  fanned out.)</li>
+<li>Neither WS closed silently? Search for
+  <code>session.context.detached</code> with the laggy tab's connection_id.</li>
+</ul>
+<h3 id="everything-feels-slow">"Everything feels slow"<a class="headerlink" href="#everything-feels-slow" title="Permanent link">&para;</a></h3>
+<p>Every bus event is logged with <code>ts_start</code> and <code>ts_end</code> in DEBUG mode
+(the kernel records timing around each handler call).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>grep &quot;handler=slow&quot; yaya.log
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a># or programmatically:
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>grep &quot;event=&quot; yaya.log | jq &#39;select(.duration_ms &gt; 500)&#39;
+</code></pre></div>
+<ul>
+<li>Slow <code>llm.call</code> → provider side; consider a smaller model or prompt.</li>
+<li>Slow tool → the plugin's <code>run()</code> is blocking the event loop; fix the
+  plugin to be properly async.</li>
+<li>Slow startup → cold-start regression.</li>
+</ul>
+<h3 id="plugin-cannot-be-installed-entry-point-missing">"Plugin cannot be installed / entry-point missing"<a class="headerlink" href="#plugin-cannot-be-installed-entry-point-missing" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Check <code>yaya plugin list --json</code> — does the plugin appear?</li>
+<li>
+<p>If not, check the discovery log:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>grep &quot;entry_point=yaya.plugins.v1&quot; yaya.log
+</code></pre></div>
+</li>
+<li>
+<p>If it appears but status is <code>failed</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>grep &quot;plugin=&lt;name&gt;&quot; yaya.log | grep &quot;on_load&quot;
+</code></pre></div>
+<p><code>on_load</code> raised — read the traceback. Common causes: missing config
+section, missing dependency, permission error on state dir.</p>
+</li>
+</ol>
+<h2 id="what-every-log-line-should-look-like">What every log line should look like<a class="headerlink" href="#what-every-log-line-should-look-like" title="Permanent link">&para;</a></h2>
+<p>Human mode:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>2026-04-17T12:34:56.789Z | DEBUG    | plugin=llm_openai session=wksp-ab::default turn=t-01H... | llm.call.request model=gpt-4o tokens_estimate=1234
+</code></pre></div>
+<p>JSON mode (<code>YAYA_LOG_JSON=1</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-17T12:34:56.789Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;DEBUG&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;msg&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm.call.request&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">&quot;plugin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm_openai&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">  </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;wksp-ab::default&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span><span class="nt">&quot;turn_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;t-01H...&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">  </span><span class="nt">&quot;tokens_estimate&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1234</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="p">}</span>
+</code></pre></div>
+<p>Secret fields (names matching <code>.*(token|key|secret|password).*</code>) are
+redacted at serialisation time; the raw values never land in logs.</p>
+<h2 id="filing-a-bug">Filing a bug<a class="headerlink" href="#filing-a-bug" title="Permanent link">&para;</a></h2>
+<p>Attach:</p>
+<ul>
+<li>The <code>turn_id</code> and <code>session_id</code>.</li>
+<li>The log slice: <code>grep "turn_id=&lt;id&gt;" yaya.log &gt; slice.log</code>.</li>
+<li>The tape dump: <code>yaya session show &lt;session_id&gt; --format jsonl &gt; tape.jsonl</code>.</li>
+<li>Output of <code>yaya version</code> and <code>yaya plugin list --json</code>.</li>
+</ul>
+<p>Do <strong>not</strong> attach the full <code>config.toml</code> — the log redactor blanks
+tokens, but the config file is raw.</p>
+<h2 id="common-mistakes">Common mistakes<a class="headerlink" href="#common-mistakes" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Grepping without an ID.</strong> Logs are dense. Always narrow by
+   <code>turn_id</code>, <code>session_id</code>, or <code>plugin</code> first.</li>
+<li><strong>Trusting stderr alone.</strong> stderr defaults to INFO. Anything
+   interesting lives in the DEBUG file sink.</li>
+<li><strong>Confusing <code>Session</code> with <code>SessionContext</code>.</strong> <code>Session</code> (#32) is
+   the tape — durable, never lost. <code>SessionContext</code> (#36) is the live
+   connection state — evicted after idle. Data you cannot find in
+   stderr is almost always still in the tape.</li>
+<li><strong>Restarting to "fix" a stuck turn instead of reading the logs.</strong>
+   A stuck turn almost always has a clear missing-event signature in
+   the log. Find it; file an issue if the missing event is a kernel
+   bug.</li>
+<li><strong>Reading tape without <code>--format jsonl</code>.</strong> The default human render
+   strips detail; structured view is the source of truth.</li>
+</ol>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>logging + error taxonomy</code> contract: issue #30.</li>
+<li><code>session + tape</code> primitives: issue #32.</li>
+<li><code>session context</code> runtime: issue #36.</li>
+<li>Tool / approval / LLM contracts: issues #27 / #28 / #26.</li>
+<li>The closed event catalog: <code>docs/dev/plugin-protocol.md</code>.</li>
+</ul>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+            
+            <p class="text-center text-muted">Copyright (c) 2026 <a href="https://github.com/rararulab">rararulab</a> contributors.</p>
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal" aria-label="Close">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>

@@ -338,10 +338,15 @@ class KernelShutdownPayload(TypedDict):
 
 
 class KernelErrorPayload(TypedDict):
-    """``kernel.error`` — the kernel itself failed; ``yaya serve`` exits non-zero."""
+    """``kernel.error`` — the kernel itself failed; ``yaya serve`` exits non-zero.
+
+    Optional ``detail`` carries structured context (e.g. the offending
+    strategy ``next`` value, raw tool args) for machine-parsing by adapters.
+    """
 
     source: str
     message: str
+    detail: NotRequired[dict[str, Any]]
 
 
 # ---------------------------------------------------------------------------

@@ -101,7 +101,7 @@ class Event(TypedDict):
 |---|---|
 | `kernel.ready` | `{ version: str }` |
 | `kernel.shutdown` | `{ reason: str }` |
-| `kernel.error` | `{ source: str, message: str }` |
+| `kernel.error` | `{ source: str, message: str, detail?: dict }` |
 
 ### Extension namespace
 

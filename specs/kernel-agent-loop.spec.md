@@ -78,8 +78,9 @@ Scenario: Max-iterations guard
   And the turn ends without assistant.message.done
   Test: tests/kernel/test_loop.py::test_max_iterations_guard
 
-Scenario: Interrupt ends the turn cleanly
-  Given an AgentLoop mid-turn waiting on a tool.call.result
+Scenario: Interrupt ends the turn cleanly (idle-worker precondition)
+  Given an AgentLoop mid-turn awaiting a tool.call.result
+  And the session worker is idle (no handler currently executing)
   When a user.interrupt event is published for the same session
   Then the current turn aborts
   And no further tool.call.request is emitted for that turn

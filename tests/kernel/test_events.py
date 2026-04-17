@@ -8,6 +8,7 @@ from yaya.kernel.events import (
     PUBLIC_EVENT_KINDS,
     AssistantMessageDonePayload,
     Event,
+    KernelErrorPayload,
     LlmCallErrorPayload,
     LlmCallRequestPayload,
     LlmCallResponsePayload,
@@ -90,6 +91,7 @@ def test_public_catalog_matches_protocol_document() -> None:
         (LlmCallResponsePayload, {"usage"}, {"text", "tool_calls", "request_id"}),
         (LlmCallErrorPayload, {"error"}, {"retry_after_s", "request_id"}),
         (ToolCallResultPayload, {"id", "ok"}, {"value", "error", "request_id"}),
+        (KernelErrorPayload, {"source", "message"}, {"detail"}),
     ],
 )
 def test_typed_dict_required_optional_partition(

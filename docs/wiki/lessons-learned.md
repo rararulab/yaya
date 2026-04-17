@@ -286,6 +286,29 @@ hooks with `--no-verify`.
 
 ---
 
+## 15. Silent "no request_id" drops hang plugin authors
+
+**Symptom** — A plugin forgets to echo ``request_id`` on its response
+event. The agent loop hangs for ``step_timeout_s`` (60 s default), then
+surfaces ``kernel.error: step_timeout`` with no indication the real
+cause was a missing correlation field.
+
+**Root cause** — ``_RequestTracker.resolve`` silently returns when the
+incoming event has no ``request_id``, treating it as "maybe a rogue
+response from outside the loop". That silent path is indistinguishable
+from "correlation id doesn't match any in-flight request", so the loop
+waits for a response that will never match.
+
+**Rule** — When a protocol-defined correlation field is missing, log a
+WARNING that names the offending event kind and source. "Late arrival
+for a cancelled turn" is debug-level; "missing required correlation
+field" is warning-level. The 60-second wait is not the error — the
+silence is.
+
+**Reference** — PR #38, ``src/yaya/kernel/loop.py`` ``_RequestTracker.resolve``.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

@@ -46,6 +46,14 @@ Skipping item 3 causes the subagent to re-commit known anti-patterns;
 every review round that uncovers a new hazard **appends a bullet** to
 the wiki doc in the same PR.
 
+- **Always create the worktree from a fresh `origin/main`**:
+  ```bash
+  git fetch origin
+  git worktree add .worktrees/issue-{N}-{slug} -b issue-{N}-{slug} origin/main
+  ```
+  A worktree based on a stale local `main` can miss doc/rule updates (like
+  the lessons-learned wiki) that other PRs have just landed.
+
 Large features that cannot be decomposed into independent issues use
 **stacked PRs**: one epic issue, sub-issues branched off `feat/{name}`,
 final summary PR to `main`.

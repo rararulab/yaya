@@ -9,6 +9,7 @@ loop's correlation mechanism resolves each step.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -637,3 +638,131 @@ async def test_llm_error_surfaces_kernel_error() -> None:
     assert len(errors) == 1
     assert errors[0].payload["source"] == "agent_loop"
     assert "llm_error" in errors[0].payload["message"]
+
+
+# ---------------------------------------------------------------------------
+# P2 #3 regression: missing request_id on a response logs a WARNING.
+# ---------------------------------------------------------------------------
+
+
+async def test_response_without_request_id_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A response event with no ``request_id`` logs a WARNING, not silence."""
+    bus = EventBus()
+    loop = AgentLoop(bus)
+    await loop.start()
+    with caplog.at_level(logging.WARNING, logger="yaya.kernel.loop"):
+        await bus.publish(
+            new_event(
+                "memory.result",
+                {"hits": []},
+                session_id="s-warn",
+                source="rogue-memory",
+            )
+        )
+        await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert any("request_id" in rec.getMessage() and rec.levelno == logging.WARNING for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# P2 #5 regression: non-numeric ``k`` in memory.query defaults to 5.
+# ---------------------------------------------------------------------------
+
+
+async def test_memory_query_with_nonnumeric_k_defaults_to_5() -> None:
+    """A strategy passing a non-numeric ``k`` must not crash the loop."""
+    bus = EventBus()
+    strategy = FakeStrategy(
+        bus,
+        script=[
+            {"next": "memory", "query": "q", "k": "not-a-number"},
+            {"next": "llm", "provider": "fake", "model": "m"},
+            {"next": "done"},
+        ],
+    )
+    memory = FakeMemory(bus, hits=[])
+    llm = FakeLLM(bus, text="ok")
+    strategy.subscribe()
+    memory.subscribe()
+    llm.subscribe()
+
+    memory_queries: list[Event] = []
+
+    async def watch_query(ev: Event) -> None:
+        memory_queries.append(ev)
+
+    bus.subscribe("memory.query", watch_query, source="probe")
+
+    dones: list[Event] = []
+
+    async def on_done(ev: Event) -> None:
+        dones.append(ev)
+
+    bus.subscribe("assistant.message.done", on_done, source="probe")
+
+    loop = AgentLoop(bus, LoopConfig(step_timeout_s=2.0))
+    await loop.start()
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "hi"},
+            session_id="s-k",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert len(memory_queries) == 1
+    assert memory_queries[0].payload["k"] == 5
+    assert len(dones) == 1
+
+
+# ---------------------------------------------------------------------------
+# P2 #7 regression: assistant.message.done carries the LLM's last tool_calls.
+# ---------------------------------------------------------------------------
+
+
+async def test_assistant_done_carries_last_llm_tool_calls() -> None:
+    """When the LLM response includes tool_calls, they propagate to done."""
+    bus = EventBus()
+    strategy = FakeStrategy(
+        bus,
+        script=[
+            {"next": "llm", "provider": "fake", "model": "m"},
+            {"next": "done"},
+        ],
+    )
+    expected_calls = [{"id": "c1", "name": "search", "args": {"q": "hi"}}]
+    llm = FakeLLM(bus, text="answer", tool_calls=expected_calls)
+    strategy.subscribe()
+    llm.subscribe()
+
+    dones: list[Event] = []
+
+    async def on_done(ev: Event) -> None:
+        dones.append(ev)
+
+    bus.subscribe("assistant.message.done", on_done, source="probe")
+
+    loop = AgentLoop(bus, LoopConfig(step_timeout_s=2.0))
+    await loop.start()
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "hi"},
+            session_id="s-tc",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert len(dones) == 1
+    assert dones[0].payload["tool_calls"] == expected_calls

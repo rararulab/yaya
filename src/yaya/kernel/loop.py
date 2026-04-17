@@ -47,6 +47,13 @@ The loop breaks that chain by spawning the turn task with an **empty**
 task, ``publish`` therefore awaits delivery as a top-level caller would,
 which is exactly the step-by-step progression the loop needs.
 
+Note: the turn task runs under an EMPTY ``contextvars.Context``. This
+resets every ContextVar, not just ``_IN_WORKER``. Adapters or plugins
+that rely on ContextVar inheritance for distributed tracing, request
+ids, or logging context must propagate those via event payloads (e.g.
+an ``x.tracing.span_id`` extension field), not via ContextVars. The
+turn task is an intentional context boundary.
+
 Subscription scope
 ------------------
 The loop subscribes to: ``user.message.received``, ``user.interrupt``,
@@ -56,6 +63,28 @@ hands the event to :class:`_RequestTracker`, which resolves the matching
 future by ``payload.request_id``. Responses whose id is not tracked are
 ignored (they may belong to a plugin bypassing the loop, or be late
 arrivals after a cancelled turn).
+
+Interrupt delivery latency
+--------------------------
+``user.interrupt`` is an ordinary public event; it rides the same
+per-session FIFO as every other event on its session (see
+``docs/dev/plugin-protocol.md``). When a handler is stuck (e.g., a
+hung tool plugin), the session worker is inside that handler's
+``on_event`` call and cannot deliver the interrupt until the handler
+finishes or the bus's per-handler timeout fires (30 s default). UIs
+that expect instant Ctrl+C should surface this as "interrupt sent,
+waiting up to 30 s" until a fast-interrupt control channel lands
+(tracked for 0.2+).
+
+Performance notes
+-----------------
+* ``memory.write`` is emitted after the turn's ``assistant.message.done``
+  and awaited to completion before the turn task returns. A slow memory
+  plugin delays the session's next ``user.message.received`` by the
+  memory plugin's handler latency. Memory plugins are expected to be
+  fast (sqlite INSERT scale). If a plugin is known to be slow, the
+  strategy should omit ``write_memory`` and fire writes via a skill
+  plugin instead.
 
 Layering
 --------
@@ -135,9 +164,22 @@ class _RequestTracker:
         """
         request_id = ev.payload.get("request_id")
         if not isinstance(request_id, str):
+            _logger.warning(
+                "response event kind=%r from source=%r carries no 'request_id'; "
+                "plugin must echo the originating request.id",
+                ev.kind,
+                ev.source,
+            )
             return
         fut = self._pending.pop(request_id, None)
-        if fut is not None and not fut.done():
+        if fut is None:
+            _logger.debug(
+                "untracked response kind=%r request_id=%r (late arrival or cancelled turn)",
+                ev.kind,
+                request_id,
+            )
+            return
+        if not fut.done():
             fut.set_result(ev)
 
     def discard(self, request_id: str) -> None:
@@ -164,6 +206,7 @@ class _TurnState:
     messages: list[Message]
     last_tool_result: dict[str, Any] | None = None
     last_llm_text: str = ""
+    last_tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 class AgentLoop:
@@ -318,7 +361,7 @@ class AgentLoop:
         """
         next_step = decision.payload.get("next")
         if next_step == "done":
-            await self._publish_assistant_done(session_id, state.last_llm_text, [])
+            await self._publish_assistant_done(session_id, state.last_llm_text, state.last_tool_calls)
             await self._maybe_write_memory(session_id, decision)
             return True
         if next_step == "memory":
@@ -334,6 +377,8 @@ class AgentLoop:
                 )
                 return True
             state.last_llm_text = response.payload.get("text", "") or state.last_llm_text
+            raw_tool_calls = response.payload.get("tool_calls")
+            state.last_tool_calls = list(raw_tool_calls) if isinstance(raw_tool_calls, list) else []
             state.messages.append({"role": "assistant", "content": state.last_llm_text})
             return False
         if next_step == "tool":
@@ -341,7 +386,11 @@ class AgentLoop:
             result = await self._call_tool(session_id, tool_call)
             state.last_tool_result = dict(result.payload)
             return False
-        await self._emit_kernel_error(session_id, f"unknown_strategy_next: {next_step!r}")
+        await self._emit_kernel_error(
+            session_id,
+            "unknown_strategy_next",
+            detail={"next": repr(next_step)},
+        )
         return True
 
     # -- per-step helpers -------------------------------------------------------
@@ -373,7 +422,10 @@ class AgentLoop:
         """Run a ``memory.query`` round-trip using the strategy's parameters."""
         query = str(decision.payload.get("query", ""))
         k_raw = decision.payload.get("k", 5)
-        k = int(k_raw) if isinstance(k_raw, int | str) else 5
+        try:
+            k = int(k_raw) if k_raw is not None else 5
+        except TypeError, ValueError:
+            k = 5
         req = new_event(
             "memory.query",
             {"query": query, "k": k},
@@ -396,10 +448,10 @@ class AgentLoop:
         loop assembles the message list it has been accumulating.
         """
         payload: dict[str, Any] = {
-            "provider": str(decision.payload.get("provider", "")),
-            "model": str(decision.payload.get("model", "")),
+            "provider": decision.payload.get("provider") or "",
+            "model": decision.payload.get("model") or "",
             "messages": list(messages),
-            "params": dict(decision.payload.get("params", {})),
+            "params": dict(decision.payload.get("params") or {}),
         }
         tools = decision.payload.get("tools")
         if tools is not None:
@@ -477,16 +529,32 @@ class AgentLoop:
         try:
             await self._bus.publish(req)
             return await asyncio.wait_for(fut, timeout=self._config.step_timeout_s)
-        except TimeoutError, asyncio.CancelledError:
+        except BaseException:
             self._tracker.discard(req.id)
             raise
 
-    async def _emit_kernel_error(self, session_id: str, message: str) -> None:
-        """Publish ``kernel.error`` tagged with ``source="agent_loop"``."""
+    async def _emit_kernel_error(
+        self,
+        session_id: str,
+        message: str,
+        *,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        """Publish ``kernel.error`` tagged with ``source="agent_loop"``.
+
+        Args:
+            session_id: Session whose turn produced the error.
+            message: Short machine-readable error tag (e.g. ``"step_timeout"``).
+            detail: Optional structured context (e.g. the offending strategy
+                ``next`` value, raw tool args) for adapters to parse.
+        """
+        payload: dict[str, Any] = {"source": "agent_loop", "message": message}
+        if detail is not None:
+            payload["detail"] = detail
         await self._bus.publish(
             new_event(
                 "kernel.error",
-                {"source": "agent_loop", "message": message},
+                payload,
                 session_id=session_id,
                 source=_SOURCE,
             )

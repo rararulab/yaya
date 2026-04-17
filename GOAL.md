@@ -7,13 +7,14 @@ no longer holds, update `GOAL.md` in the **same** PR and justify it.
 
 ## North Star
 
-yaya is a **lightweight, kernel-style agent that grows itself.** A single
-Python process (`yaya serve`) exposes an event-driven kernel whose
-plugins are the only way features get added. The default entrypoint is a
-local web UI built with
-[`@mariozechner/pi-web-ui`](https://github.com/badlogic/pi-mono/tree/main/packages/web-ui)
-that opens in the browser and speaks WebSocket to the kernel. yaya can
-author and install its own plugins on demand — that is the product.
+yaya is a **lightweight, kernel-style agent that grows itself.** The
+kernel is the product: an event bus, a plugin registry, and a fixed
+agent loop that acts as the scheduler. Everything else — **every user
+surface, every LLM provider, every tool, every skill, every memory
+backend, every next-action strategy** — is a plugin. Running `yaya
+serve` boots the kernel and loads the bundled `web` adapter plugin;
+users interact through a browser at `http://127.0.0.1:<port>`. yaya
+can author and install its own plugins on demand — that is the product.
 
 ## Problem
 
@@ -22,110 +23,164 @@ opinionated, and closed. Adding a capability means forking the product or
 waiting for upstream. **Users adapt to the agent, not the other way around.**
 
 yaya inverts that: when the user asks for a capability yaya does not have,
-yaya writes the plugin, installs it into itself, and the next request uses
-it. Self-hosting growth is the product.
+yaya writes the plugin, installs it, and the next request uses it.
+Self-hosting growth is the product.
 
 ## Users & Jobs
 
 - **Primary**: power users and developers who want an agent they can
   extend in minutes, not quarters.
 - **Typical session (5 minutes)**: run `yaya serve`, browser opens to
-  `http://127.0.0.1:<port>`, describe a task in chat. yaya either handles
-  it with existing plugins or drafts a plugin, installs it, reloads the
-  kernel, and completes the task with the new capability live.
-- **Secondary**: plugin authors who want a minimal, stable kernel to build
-  against without ceremony.
-
-## Product Principles (priority order)
-
-1. **Kernel stays small.** If a feature could be a plugin, it is a plugin.
-   The core ships an event bus, a plugin loader, a web-server shell, and
-   nothing else.
-2. **Self-hosting growth.** yaya ships the machinery to extend yaya.
-   Plugin authoring is a first-class **agent** capability, not an
-   afterthought for humans.
-3. **Single-process, local-first.** One Python process. No required
-   backend, no account. Default bind: `127.0.0.1`. A remote LLM is a
-   plugin, not a dependency.
-4. **Events are the contract.** Plugins subscribe to event types; the
-   kernel routes. The web UI is just another subscriber over WebSocket.
-   No hidden globals, no direct plugin-to-plugin coupling.
-5. **Fail loud, degrade gracefully.** A broken plugin taints only itself;
-   the kernel keeps running. The web UI keeps rendering whatever events
-   still arrive.
-6. **Readable > clever.** A new plugin author understands the kernel in
-   one sitting.
-7. **Ship assets, not toolchains.** The web UI is pre-built to static
-   assets and bundled into the Python wheel. End users install with
-   `pip` and need no Node, npm, or browser plugin.
-
-## Non-Goals (explicit)
-
-- **NOT** an IDE or language server. yaya is an agent with a local web UI.
-- **NOT** a hosted web service. Through 1.0, `yaya serve` binds
-  `127.0.0.1` only. No public-internet deployment, no auth layer, no
-  multi-tenant mode. Anyone who wants that runs it behind their own
-  reverse proxy at their own risk.
-- **NOT** a cloud service. No hosted control plane, no account, no
-  telemetry-by-default.
-- **NOT** a general-purpose LLM-app framework. The scope is "an agent
-  that grows itself", not arbitrary orchestration.
-- **NOT** a Claude Code / Cursor replacement for teams that want a
-  curated product. yaya is for users who want to own their agent.
+  `http://127.0.0.1:<port>`, describe a task. yaya handles it with
+  installed plugins or drafts a new plugin, installs it, reloads, and
+  completes the task with the new capability live.
+- **Secondary**: plugin authors who want a minimal, stable kernel —
+  and a clear plugin protocol — to build against.
 
 ## Runtime shape
 
 ```
-yaya serve
-└── one Python process (uvicorn + FastAPI in-process)
-    ├── GET /             → pre-built UI shell (HTML)
-    ├── GET /assets/*     → static JS/CSS from importlib.resources
-    ├── WS  /ws           → kernel event bus ↔ web UI (the contract)
-    └── API /plugins/*    → list / install / remove / reload
+                ADAPTERS                      TOOLS
+             (plugins)                     (plugins)
+          web / tui / tg                bash / fs / http ...
+                │                             ▲
+                ▼                             │
+        ┌───────────── KERNEL (yaya) ─────────────┐
+        │    event bus  ·  plugin registry        │
+        │    agent loop (the scheduler)           │
+        │    built-in CLI (self-bootstrap only):  │
+        │       serve · version · update · hello  │
+        │       · plugin {list, install, remove}  │
+        └─────┬─────────┬────────────┬────────────┘
+              ▼         ▼            ▼
+         STRATEGIES  SKILLS      MEMORY
+         (plugins)  (plugins)   (plugins)
+         ReAct /    domain-     sqlite / vec / ...
+         plan-exec  specific
+         / ...
+                         │
+                         ▼
+                   LLM PROVIDERS
+                    (plugins)
+                openai / anthropic /
+                ollama / lmstudio / ...
 ```
 
-The web UI is **consumed** as `@mariozechner/pi-web-ui` (npm dependency
-in `src/yaya/web/package.json`). yaya provides its own shell and talks
-to the Python kernel over WebSocket; yaya does **not** embed
-`pi-agent-core` or any JS/TS agent runtime.
+Kernel = OS. Events = syscalls. Plugins = drivers + userland.
 
-## Command surface (minimum)
+## Product Principles (priority order)
+
+1. **Kernel stays small.** The kernel ships only the event bus, the
+   plugin registry, the agent loop, and the minimum CLI required to
+   bootstrap and manage plugins. **If it could be a plugin, it is a
+   plugin** — including every user surface, every LLM provider, every
+   strategy, every memory backend.
+2. **Adapters are plugins from day 1.** Web, TUI, Telegram, Slack —
+   all implement the same adapter contract. `yaya serve` boots the
+   kernel and loads the bundled `web` adapter plugin. We dogfood the
+   protocol so it is never "special" for core.
+3. **Closed event set at 1.0.** A finite, versioned catalog of event
+   kinds (see `docs/dev/plugin-protocol.md`).
+   Plugin-private payloads use the `x.<plugin>.<kind>` extension
+   namespace — they route through the bus but do not pollute the
+   public contract.
+4. **Agent loop is the scheduler.** Loop shape is fixed and lives in
+   the kernel. Per-step decisions (next action, retry, stop condition)
+   are delegated to a `strategy` plugin category. ReAct / plan-execute
+   / reflexion are each a strategy plugin.
+5. **Self-hosting growth.** yaya ships the machinery to extend yaya.
+   Plugin authoring is a first-class **agent** capability, not an
+   afterthought for humans.
+6. **Single-process, local-first.** One Python process. No required
+   backend, no account. Default bind: `127.0.0.1`. A remote LLM is a
+   provider plugin, not a dependency.
+7. **Fail loud, degrade gracefully.** A broken plugin taints only
+   itself; the kernel keeps running. The event bus drops that plugin's
+   subscriptions and surfaces a `plugin.error` event.
+8. **Readable > clever.** A new plugin author understands the kernel
+   and the protocol in one sitting.
+9. **Ship assets, not toolchains.** The bundled web adapter is
+   pre-built to static assets and shipped in the Python wheel. End
+   users install with `pip` — no Node, no npm, no browser extension
+   at install or run time.
+
+## Non-Goals (explicit)
+
+- **NOT** an IDE or language server. yaya is an agent with pluggable
+  surfaces; the default surface is a local web UI.
+- **NOT** a hosted web service. Through 1.0, `yaya serve` binds
+  `127.0.0.1` only. No public bind flag, no auth layer, no multi-tenant
+  mode. Anyone who wants that runs yaya behind their own reverse proxy
+  at their own risk.
+- **NOT** a cloud service. No hosted control plane, no account, no
+  telemetry-by-default.
+- **NOT** a general-purpose LLM-app framework. The scope is "an agent
+  that grows itself"; the plugin protocol serves that scope, not
+  arbitrary orchestration.
+- **NOT** an agent runtime with pluggable loop *shapes*. The loop is
+  fixed; only its *decisions* are pluggable via strategy plugins.
+
+## Command surface (1.0, kernel built-ins only)
 
 | Command | Purpose |
 |---------|---------|
-| `yaya serve` | Default. Starts the single-process server; opens browser. |
-| `yaya version` | Print version. |
-| `yaya plugin list` | List installed plugins. |
-| `yaya plugin install <src>` | Install from path / URL / registry. |
+| `yaya serve` | **Default.** Boot kernel; load bundled `web` adapter plugin; open browser. |
+| `yaya version` | Print kernel + loaded-plugin versions. |
+| `yaya update` | Self-update the yaya binary/wheel. |
+| `yaya hello` | Smoke-test: boot kernel, emit a synthetic event round-trip, print OK. |
+| `yaya plugin list` | List installed plugins with category and status. |
+| `yaya plugin install <src>` | Install a plugin (pip package / path / registry URL). |
 | `yaya plugin remove <name>` | Uninstall. |
 
-Everything else — including `hello` and `update` — ships as a plugin, not
-a built-in subcommand.
+Everything else — adapters, tools, skills, memory, LLM providers,
+strategies — is a plugin. Adding a new built-in subcommand requires a
+GOAL.md amendment.
+
+## Plugin categories (1.0 closed set)
+
+| Category | Subscribes to | Emits |
+|---|---|---|
+| **adapter** | `assistant.message.*`, `tool.call.start` | `user.message.received`, `user.interrupt` |
+| **tool** | `tool.call.request` | `tool.call.result` |
+| **llm-provider** | `llm.call.request` | `llm.call.response`, `llm.call.error` |
+| **strategy** | `strategy.decide.request` | `strategy.decide.response` |
+| **memory** | `memory.query`, `memory.write` | `memory.result` |
+| **skill** | `user.message.received` (filtered) | any of the above via kernel |
+
+Full event catalog lives in
+`docs/dev/plugin-protocol.md` and is the
+authoritative 1.0 contract.
 
 ## Milestones
 
-- **0.1 — kernel live in browser** — event bus, plugin loader, `yaya
-  serve`, web UI shell rendering plugin output. 2–3 seed plugins
-  (`version`, `update`, `hello`) as reference plugins. Each has a
-  `specs/<name>.spec.md` contract.
-- **0.5 — self-authoring plugin** — in the web UI chat, "I want X"
-  produces `specs/<x>.spec.md`, scaffolds a plugin, installs it locally,
-  reloads the kernel, UI picks up the new capability without restart.
-- **1.0 — stable ABIs frozen** — plugin Python ABI (event shapes,
-  lifecycle, permissions) and WebSocket UI protocol are both frozen.
-  Plugins and UIs written against 1.0 keep working across 1.x.
-- **2.0 — plugin registry + sandboxing** — discovery, install, share;
-  plugins run in a capability-restricted sandbox by default.
+- **0.1 — kernel live end-to-end**: kernel (event bus + registry +
+  fixed agent loop), plugin protocol v0, bundled plugins covering one
+  of each category (web adapter · one LLM provider · one tool · one
+  strategy · one memory), `yaya serve` opens a browser chat that
+  round-trips a real LLM call through the bus.
+- **0.5 — self-authoring plugin**: in the web UI, "I want X" produces
+  a `specs/<x>.spec.md`, scaffolds a plugin (correct category,
+  subscribes to the right events), installs it locally, reloads the
+  kernel, UI picks up the new capability without restart.
+- **1.0 — protocol freeze**: event taxonomy, plugin ABI, strategy
+  interface, adapter contract, and the web↔kernel WS schema are all
+  frozen. Plugins written against 1.0 keep working across 1.x.
+- **2.0 — marketplace + sandbox**: plugin registry (discovery + install
+  from a curated index), signed plugins, capability-restricted sandbox
+  execution by default.
 
 ## Success Metrics
 
-- **Time-to-first-plugin** for a new user: ≤5 minutes from `pip install`
-  to a working custom plugin authored through the web UI.
-- **Kernel size budget** (Python LOC outside plugins and web shell):
-  stays under <!-- TODO: confirm target, e.g. 2000 LOC --> through 1.0.
-  Enforced in CI.
+- **Time-to-first-plugin** for a new user: ≤5 minutes from `pip install
+  yaya` to a working custom plugin authored through the web UI.
+- **Seed release (0.1) plugin count**: exactly one of each category
+  (web adapter + 1 LLM provider + 1 tool + 1 strategy + 1 memory).
+  Deliberately minimal to prove the protocol.
+- **Kernel size budget** (Python LOC in `src/yaya/kernel/` +
+  `src/yaya/cli/`, excluding plugins and the web shell): stays under
+  <!-- TODO: confirm target, e.g. 2000 LOC --> through 1.0. Enforced in CI.
 - **Self-authoring rate**: ≥30% of plugins in the wild authored through
-  yaya's own self-authoring loop (health metric for principle #2).
+  yaya's own self-authoring loop (health metric for principle #5).
 - **Cold start**: `yaya serve` to interactive chat in the browser in
   ≤<!-- TODO: confirm, e.g. 500ms cold, 150ms warm -->.
 - **Wheel size**: bundled web assets + Python package stays under
@@ -135,7 +190,11 @@ a built-in subcommand.
 
 - A monolith where features accumulate in the kernel to "avoid plugin
   boilerplate".
-- An agent locked to one LLM vendor or one runtime.
+- A kernel with special cases for the bundled plugins. Bundled plugins
+  load through the **same protocol** as third-party plugins.
+- An agent with a fork of the event bus for "internal events" that
+  third-party plugins cannot subscribe to.
+- An agent locked to one LLM vendor, one runtime, or one UI.
 - A hosted SaaS with accounts, billing, and a control plane.
 - A polyglot dual-runtime beast that needs Node **at run time** on the
   user's machine.
@@ -143,10 +202,11 @@ a built-in subcommand.
 
 ## Governance of this document
 
-- Changing North Star, Principles, Non-Goals, or Anti-Vision requires
-  owner review and a dedicated issue labelled `governance`.
-- Milestones and Success Metrics may be refined in ordinary PRs with
-  justification in the PR body.
+- Changing North Star, Principles, Non-Goals, Anti-Vision, or the
+  closed event taxonomy requires owner review and a dedicated issue
+  labelled `governance`.
+- Milestones, Success Metrics, and the plugin category table may be
+  refined in ordinary PRs with justification in the PR body.
 - Every `docs/dev/*.md` and folder-local `AGENT.md` must be consistent
-  with `GOAL.md`. When they conflict, `GOAL.md` wins — fix the downstream
-  doc in the same PR that introduced the conflict.
+  with `GOAL.md`. When they conflict, `GOAL.md` wins — fix the
+  downstream doc in the same PR that introduced the conflict.

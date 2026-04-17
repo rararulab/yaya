@@ -12,20 +12,24 @@ One file per subcommand. Each exports `register(app: typer.Typer) -> None`.
 
 ## Constraints
 Current commands (1.0 surface — see [GOAL.md](../../../../GOAL.md)):
-- `serve.py` — default entrypoint; boots kernel + FastAPI + web UI in one process.
-- `version.py` — prints `__version__` (also available via `--version`).
-- `plugin.py` — `plugin list / install / remove`; delegates to `yaya.kernel.plugins`.
+- `serve.py` — boot kernel; load bundled `web` adapter plugin; open browser.
+- `version.py` — prints kernel + loaded-plugin versions (also `--version`).
+- `update.py` — self-update the yaya binary/wheel; delegates to `yaya.core.updater`.
+- `hello.py` — smoke-test: boot kernel, emit a synthetic event round-trip, print OK.
+- `plugin.py` — `plugin list / install / remove`; delegates to `yaya.kernel.registry`.
 
 Adding a new built-in command requires a GOAL.md amendment. All other
-features ship as plugins.
+features (adapters, tools, skills, memory, LLM providers, strategies)
+ship as plugins.
 
 Rules:
 - Module exports exactly `register(app)` at top-level side-effect scope — nothing else runs at import.
-- Body pattern: (1) parse args, (2) call `yaya.core.*` for logic, (3) render with `emit_ok`/`emit_error`, (4) non-zero exit on failure.
+- Body pattern: (1) parse args, (2) call into `yaya.kernel.*` or `yaya.core.*`, (3) render with `emit_ok`/`emit_error`, (4) non-zero exit on failure.
 - Destructive commands require `--dry-run` and `--yes`.
 
 ## Interaction (patterns)
-- Do NOT put business logic here — it belongs in `yaya.core.*`.
+- Do NOT put business logic here — it belongs in `yaya.kernel.*` or `yaya.core.*`.
+- Do NOT import from `yaya.plugins.*` — commands drive the kernel, not plugins directly.
 - Do NOT call `print` / `typer.echo` / `Console().print`.
 - Register the new module in `../__init__.py` — otherwise it won't be discoverable.
 - Error paths must emit a `suggestion` field in JSON mode.

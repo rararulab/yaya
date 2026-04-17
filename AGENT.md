@@ -10,15 +10,18 @@
 
 ## 1. Philosophy
 
-yaya is a **lightweight, kernel-style agent that grows itself**. A single
-Python process (`yaya serve`) exposes an event-driven kernel; the default
-surface is a local web UI built on
-[`@mariozechner/pi-web-ui`](https://github.com/badlogic/pi-mono/tree/main/packages/web-ui)
-speaking WebSocket to the kernel. Everything else is a plugin.
-Engineering rigor is non-negotiable: every change small, traceable,
-reviewed, and covered by tests. No spaghetti, no dead code, no
-undocumented public surface. See [GOAL.md](GOAL.md) for the full product
-anchor (North Star · Principles · Non-Goals · Anti-Vision).
+yaya is a **lightweight, kernel-style agent that grows itself**. The
+kernel ships an event bus, a plugin registry, and a fixed agent loop
+(the scheduler). **Every user surface, every LLM provider, every
+tool, every skill, every memory backend, every strategy is a
+plugin** — including the ones we bundle. `yaya serve` boots the
+kernel and loads the bundled `web` adapter plugin; bundled plugins
+load through the **same protocol** as third-party plugins, no
+special case. Engineering rigor is non-negotiable: every change
+small, traceable, reviewed, and covered by tests. See
+[GOAL.md](GOAL.md) for the product anchor and
+[docs/dev/plugin-protocol.md](docs/dev/plugin-protocol.md) for the
+authoritative event and ABI contract.
 
 ## 2. Style Anchors
 
@@ -83,12 +86,13 @@ Read local first, save tokens. Every code/test/scripts folder has its own
 **Folder indexes**:
 
 - [src/yaya/AGENT.md](src/yaya/AGENT.md) · [src/yaya/cli/AGENT.md](src/yaya/cli/AGENT.md) · [src/yaya/cli/commands/AGENT.md](src/yaya/cli/commands/AGENT.md) · [src/yaya/core/AGENT.md](src/yaya/core/AGENT.md)
-- `src/yaya/kernel/AGENT.md` · `src/yaya/web/AGENT.md` · `src/yaya/plugins/AGENT.md` (created when each subpackage lands — see [docs/dev/web-ui.md](docs/dev/web-ui.md) and [docs/dev/architecture.md](docs/dev/architecture.md))
+- `src/yaya/kernel/AGENT.md` · `src/yaya/plugins/AGENT.md` · `src/yaya/plugins/web/AGENT.md` (created when each subpackage lands — see [docs/dev/plugin-protocol.md](docs/dev/plugin-protocol.md), [docs/dev/architecture.md](docs/dev/architecture.md), [docs/dev/web-ui.md](docs/dev/web-ui.md))
 - [tests/AGENT.md](tests/AGENT.md) · [scripts/AGENT.md](scripts/AGENT.md)
 
 **Topic docs** (pull only when needed):
 
 - [docs/dev/architecture.md](docs/dev/architecture.md) · [docs/dev/workflow.md](docs/dev/workflow.md) · [docs/dev/multi-agent.md](docs/dev/multi-agent.md) · [docs/dev/maintaining-agent-md.md](docs/dev/maintaining-agent-md.md)
+- [docs/dev/plugin-protocol.md](docs/dev/plugin-protocol.md) — **authoritative** event catalog + plugin ABI + category table.
 - [docs/dev/cli.md](docs/dev/cli.md) · [docs/dev/agent-friendly-cli.md](docs/dev/agent-friendly-cli.md) · [docs/dev/web-ui.md](docs/dev/web-ui.md) · [docs/dev/testing.md](docs/dev/testing.md) · [docs/dev/agent-spec.md](docs/dev/agent-spec.md) · [docs/dev/code-comments.md](docs/dev/code-comments.md) · [docs/dev/release.md](docs/dev/release.md)
 
 **Org baseline** (canonical, `gh api repos/rararulab/.github/contents/...`):

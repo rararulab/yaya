@@ -1,7 +1,13 @@
-# Web UI
+# Web Adapter Plugin
 
-yaya's default surface is a local web UI served by `yaya serve` from a
-single Python process. The UI is built on
+The web UI is an **adapter plugin** named `web`, bundled with yaya and
+loaded by default when you run `yaya serve`. It is not a kernel
+subpackage — it lives under `src/yaya/plugins/web/` and loads through
+the same protocol as any third-party adapter (see
+[plugin-protocol.md](plugin-protocol.md)). The kernel has no special
+case for it.
+
+The browser UI is built on
 [`@mariozechner/pi-web-ui`](https://github.com/badlogic/pi-mono/tree/main/packages/web-ui)
 (Lit web components + TailwindCSS v4).
 
@@ -9,72 +15,95 @@ single Python process. The UI is built on
 
 ```
 yaya serve
-└── one Python process (uvicorn + FastAPI)
-    ├── GET /             → pre-built UI shell (HTML)
-    ├── GET /assets/*     → static JS/CSS (importlib.resources)
-    ├── WS  /ws           → kernel event bus ↔ UI (the contract)
-    └── API /plugins/*    → list / install / remove / reload
+└── one Python process
+    ├── kernel boot (bus · registry · agent loop)
+    │     └── discover + load bundled plugin "web" (and any others
+    │         registered via yaya.plugins.v1 entry point)
+    └── "web" adapter plugin started:
+          ├── uvicorn + FastAPI (ASGI)
+          ├── GET /            → pre-built UI shell (HTML)
+          ├── GET /assets/*    → static JS/CSS (importlib.resources)
+          ├── WS  /ws          → adapter ↔ kernel bridge (over the event bus)
+          └── API /plugins/*   → thin proxies to the registry
 ```
 
 - Default bind: `127.0.0.1:<port>` (port picked from env / CLI flag /
   first-free). Non-goal: public-internet deployment (see
   [GOAL.md](../goal.md)).
 - `yaya serve --no-open` suppresses the automatic browser launch.
-- The agent loop runs in Python. The browser is a **renderer and input
-  device**, not an agent runtime. We do **not** embed `pi-agent-core` or
-  any JS/TS agent.
+- The agent loop runs in the Python **kernel**. The browser is a
+  renderer and input device, nothing more. We do **not** embed
+  `pi-agent-core` or any JS/TS agent runtime.
+
+## Role in the plugin protocol
+
+The `web` plugin is an `adapter` (see
+[plugin-protocol.md](plugin-protocol.md#plugin-categories-closed-set)):
+
+| | |
+|---|---|
+| Subscribes | `assistant.message.*`, `tool.call.start`, `plugin.*`, `kernel.*` |
+| Emits | `user.message.received`, `user.interrupt` |
+| ABI extras | `adapter_id = "web"` |
+
+Each WebSocket client gets its own `session_id`. The adapter
+translates kernel events into WS frames to the browser and browser
+frames back into `user.message.received` events on the bus.
 
 ## Source layout
 
 ```
-src/yaya/web/
-├── package.json          # npm workspace — declares @mariozechner/pi-web-ui
+src/yaya/plugins/web/
+├── pyproject.toml       # ships as a Python subpackage; registers entry point
+├── __init__.py          # exposes `plugin: Plugin`
+├── server.py            # FastAPI app + WebSocket bridge
+├── package.json         # npm: @mariozechner/pi-web-ui (build-time dep)
 ├── tsconfig.json
 ├── vite.config.ts
-├── src/                  # our shell: wires pi-web-ui components to the WS event bus
+├── src/                 # our shell wiring pi-web-ui to the WS schema
 │   ├── main.ts
-│   ├── ws-client.ts      # thin WebSocket client speaking yaya's event protocol
-│   └── components/       # yaya-specific Lit components composing pi-web-ui primitives
+│   ├── ws-client.ts     # thin WS client speaking the yaya event schema
+│   └── components/      # yaya-specific Lit components
 ├── index.html
-└── static/               # *build output* — do NOT edit by hand
+└── static/              # *build output* — ships in the wheel
     ├── index.html
     ├── assets/*.js
     └── assets/*.css
 ```
 
-`static/` is git-tracked so end users who install the wheel get the UI
-without needing Node. CI verifies `static/` is up-to-date with `src/`
-(see below).
+`static/` is git-tracked so end users who install the wheel get the
+UI without Node. CI verifies `static/` is up-to-date with `src/`.
 
 ## Dependency policy
 
-- pi-web-ui is consumed **as an npm dependency** (`package.json`) — not
-  vendored, not forked. Upgrades go through ordinary `npm update` PRs.
-- `vendor/pi-mono/` in the repo is **reference only** — a pinned mirror
-  for agents and humans to read. Do NOT import from it; the build must
-  resolve through npm.
-- Peer dependencies (`@mariozechner/mini-lit`, `lit`) live in yaya's own
-  `package.json` and are pinned.
+- pi-web-ui is consumed **as an npm dependency** (`package.json`) —
+  not vendored, not forked. Upgrades go through ordinary `npm update`
+  PRs.
+- `vendor/pi-mono/` in the repo is **reference only** — a pinned
+  mirror for humans and agents to read. Do NOT import from it; the
+  build must resolve through npm.
+- Peer dependencies (`@mariozechner/mini-lit`, `lit`) live in the
+  plugin's own `package.json` and are pinned.
 
 ## Build pipeline
 
-yaya ships two toolchains; only the Python half is required at install
-time.
+yaya ships two toolchains; only the Python half is required at
+install time.
 
-- **Install time (user-facing)**: `pip install yaya`. Pure Python. The
-  wheel already contains `src/yaya/web/static/`.
+- **Install time (user-facing)**: `pip install yaya`. Pure Python.
+  The wheel already contains `src/yaya/plugins/web/static/`.
 - **Build time (contributor)**: Node + npm. `just web-build` runs
-  `npm ci && npm run build` inside `src/yaya/web/` and writes into
-  `static/`. The wheel's build step (`hatchling`) includes `static/`
-  as package data.
+  `npm ci && npm run build` inside `src/yaya/plugins/web/` and writes
+  into `static/`. The wheel's build step (`hatchling`) includes
+  `static/` as package data.
 - **Dev loop**: `just web-dev` starts Vite's dev server with HMR on a
-  separate port, proxied by `yaya serve --dev` to the Python backend.
+  separate port, proxied by `yaya serve --dev` to the Python kernel.
   Two processes during development, one at release.
 
 ### just recipes
 
 ```bash
-just web-install    # npm ci inside src/yaya/web
+just web-install    # npm ci inside src/yaya/plugins/web
 just web-build      # npm run build → static/
 just web-dev        # vite dev server (HMR)
 just web-check      # biome + tsc --noEmit
@@ -83,48 +112,48 @@ just web-check      # biome + tsc --noEmit
 ### CI rules
 
 - `just web-check` runs on every PR.
-- `just web-build` runs and CI **fails if `static/` changed** — i.e. the
+- `just web-build` runs and CI **fails if `static/` changed** — the
   PR author must commit the built assets alongside source changes.
-  Rationale: keeps the wheel reproducible; avoids Node in the release
-  pipeline.
+  Rationale: keeps the wheel reproducible; avoids Node in the
+  release pipeline.
 - Wheel-size budget (see [GOAL.md](../goal.md) success metrics) is
   asserted on the built artifact.
 
-## WebSocket event protocol (overview)
+## WebSocket schema
 
-The contract between kernel and UI is a stream of events. Shapes live in
-`src/yaya/kernel/events.py` (Python, authoritative) and
-`src/yaya/web/src/events.ts` (TypeScript, generated or hand-maintained
-in lock-step).
+The WS schema is a thin serialization of the public event set. The
+authoritative catalog lives in `src/yaya/kernel/events.py`; the TS
+mirror lives at `src/yaya/plugins/web/src/events.ts`. **Any change to
+`events.py` updates the TS side in the same PR** — CI compares a JSON
+Schema export of the Python catalog against the TS types.
 
-**Mandatory pairing**: any change to `events.py` updates the TS side in
-the same PR. A mismatch fails CI (checksum compare between Python JSON
-schema export and the TS type file).
+Frames flow in both directions:
 
-Minimal event kinds:
-
-| Kind | Direction | Payload |
+| WS frame | Direction | Kernel event |
 |---|---|---|
-| `user.message` | UI → kernel | `{ text, attachments? }` |
-| `assistant.message.delta` | kernel → UI | streaming text chunk |
-| `assistant.message.done` | kernel → UI | final message + tool calls |
-| `tool.call.start` | kernel → UI | `{ id, name, args }` |
-| `tool.call.result` | kernel → UI | `{ id, ok, value \| error }` |
-| `plugin.installed` | kernel → UI | `{ name, version }` |
-| `plugin.reloaded` | kernel → UI | `{ names }` |
-| `kernel.error` | kernel → UI | `{ source, message }` |
+| `{type: "user.message", text, attachments?}` | browser → adapter | `user.message.received` |
+| `{type: "user.interrupt"}` | browser → adapter | `user.interrupt` |
+| `{type: "assistant.delta", content}` | adapter → browser | `assistant.message.delta` |
+| `{type: "assistant.done", content, tool_calls}` | adapter → browser | `assistant.message.done` |
+| `{type: "tool.start", id, name, args}` | adapter → browser | `tool.call.start` |
+| `{type: "tool.result", id, ok, value?, error?}` | adapter → browser | `tool.call.result` |
+| `{type: "plugin.loaded", ...}` | adapter → browser | `plugin.loaded` |
+| `{type: "kernel.error", source, message}` | adapter → browser | `kernel.error` |
 
-Full catalog with JSON Schema lives next to `events.py` and is surfaced
-in [agent-spec.md](agent-spec.md) contracts.
+Extension events (`x.<plugin>.<kind>`) are forwarded transparently so
+plugin-private UI surfaces can receive their private events without
+kernel involvement.
 
 ## What NOT To Do
 
+- Do NOT special-case the web plugin in kernel code. It must register
+  and receive events through the same ABI as third-party adapters.
 - Do NOT import from `vendor/pi-mono/` — use the npm package.
-- Do NOT embed `pi-agent-core` or any JS/TS agent runtime. The agent is
-  Python; the browser renders.
+- Do NOT embed `pi-agent-core` or any JS/TS agent runtime. The agent
+  is Python; the browser renders.
 - Do NOT add a build step that requires Node **at install time** —
   users get a pre-built wheel.
-- Do NOT introduce an auth layer or a public-bind default to "make it
-  easier to deploy". That is a 2.x conversation at earliest.
+- Do NOT introduce an auth layer or a public-bind default. That is a
+  2.x conversation at earliest.
 - Do NOT couple UI components directly to kernel internals — the
-  WebSocket event protocol is the only contract.
+  event catalog is the only contract.

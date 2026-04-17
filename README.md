@@ -33,7 +33,8 @@ Full site: **<https://rararulab.github.io/yaya/>**
 ### Development (for contributors and coding agents)
 
 - [AGENT.md](AGENT.md) — agent entry index.
-- [docs/dev/architecture.md](docs/dev/architecture.md)
+- [docs/dev/architecture.md](docs/dev/architecture.md) — kernel + plugins layout.
+- [docs/dev/plugin-protocol.md](docs/dev/plugin-protocol.md) — event catalog + plugin ABI (authoritative).
 - [docs/dev/workflow.md](docs/dev/workflow.md) — issue → worktree → PR.
 - [docs/dev/multi-agent.md](docs/dev/multi-agent.md)
 - [docs/dev/cli.md](docs/dev/cli.md)

@@ -17,6 +17,7 @@ nav:
       - Usage: guide/usage.md
   - Development:
       - Architecture: dev/architecture.md
+      - Plugin Protocol: dev/plugin-protocol.md
       - Workflow: dev/workflow.md
       - Multi-Agent: dev/multi-agent.md
       - Maintaining AGENT.md: dev/maintaining-agent-md.md

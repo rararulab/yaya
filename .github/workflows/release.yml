@@ -14,7 +14,7 @@ jobs:
     name: Validate tag
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
@@ -30,7 +30,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-env
       - name: Build distributions
         run: uvx --from build pyproject-build --installer uv
@@ -61,7 +61,7 @@ jobs:
             ext: ".exe"
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-env
       - name: Build onefile binary (PyInstaller)
         run: uv run pyinstaller yaya.spec --clean --noconfirm
@@ -117,7 +117,7 @@ jobs:
     needs: [build-bin, build-wheel]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
           path: downloads

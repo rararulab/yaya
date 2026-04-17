@@ -583,12 +583,12 @@ multiple packages.</p>
 <tr>
 <td><code>llm.call.response</code></td>
 <td>provider → kernel</td>
-<td><code>{ text?: str, tool_calls?: list[ToolCall], usage: Usage }</code></td>
+<td><code>{ text?: str, tool_calls?: list[ToolCall], usage: Usage, request_id?: str }</code></td>
 </tr>
 <tr>
 <td><code>llm.call.error</code></td>
 <td>provider → kernel</td>
-<td><code>{ error: str, retry_after_s?: float }</code></td>
+<td><code>{ error: str, retry_after_s?: float, request_id?: str }</code></td>
 </tr>
 </tbody>
 </table>
@@ -615,7 +615,7 @@ multiple packages.</p>
 <tr>
 <td><code>tool.call.result</code></td>
 <td>tool → kernel</td>
-<td><code>{ id: str, ok: bool, value?: Any, error?: str }</code></td>
+<td><code>{ id: str, ok: bool, value?: Any, error?: str, request_id?: str }</code></td>
 </tr>
 </tbody>
 </table>
@@ -642,7 +642,7 @@ multiple packages.</p>
 <tr>
 <td><code>memory.result</code></td>
 <td>memory → kernel</td>
-<td><code>{ hits: list[MemoryEntry] }</code></td>
+<td><code>{ hits: list[MemoryEntry], request_id?: str }</code></td>
 </tr>
 </tbody>
 </table>
@@ -664,7 +664,7 @@ multiple packages.</p>
 <tr>
 <td><code>strategy.decide.response</code></td>
 <td>strategy → kernel</td>
-<td><code>{ next: "llm" \| "tool" \| "memory" \| "done", ... }</code></td>
+<td><code>{ next: "llm" \| "tool" \| "memory" \| "done", request_id?: str, ... }</code></td>
 </tr>
 </tbody>
 </table>
@@ -714,7 +714,7 @@ multiple packages.</p>
 </tr>
 <tr>
 <td><code>kernel.error</code></td>
-<td><code>{ source: str, message: str }</code></td>
+<td><code>{ source: str, message: str, detail?: dict }</code></td>
 </tr>
 </tbody>
 </table>
@@ -825,6 +825,20 @@ and a state directory under <code>&lt;XDG_DATA_HOME&gt;/yaya/plugins/&lt;name&gt
 <p>Strategies control: which tools to offer, when to call memory, when to
 stop. Strategies <strong>do not</strong> change the ordering of the sequence —
 that is the kernel's contract with adapters.</p>
+<h3 id="correlation-via-event-id">Correlation via event id<a class="headerlink" href="#correlation-via-event-id" title="Permanent link">&para;</a></h3>
+<p>Request/response pairs (<code>strategy.decide.*</code>, <code>llm.call.*</code>,
+<code>memory.query</code> / <code>memory.result</code>, <code>tool.call.request</code> /
+<code>tool.call.result</code>) are correlated by the <strong>originating event's <code>id</code></strong>:
+when a plugin responds, it MUST mirror the request event's <code>id</code> back on
+its response payload as <code>request_id</code>. The kernel's agent loop stamps a
+fresh event id on each outbound request and awaits the response whose
+<code>request_id</code> equals that id. This is how concurrent in-flight calls on
+the same session are matched to the right awaiter without introducing a
+separate correlation channel. <code>request_id</code> is an additive optional
+field on the five response payloads above (<code>strategy.decide.response</code>,
+<code>llm.call.response</code>, <code>llm.call.error</code>, <code>memory.result</code>,
+<code>tool.call.result</code>) — compatible with hand-crafted test fixtures, but
+required in practice for the kernel loop to observe a response.</p>
 <h2 id="plugin-failure-model">Plugin failure model<a class="headerlink" href="#plugin-failure-model" title="Permanent link">&para;</a></h2>
 <ul>
 <li>A plugin raising from <code>on_event</code> produces <code>plugin.error</code> and the

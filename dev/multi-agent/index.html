@@ -494,6 +494,14 @@ in order:</p>
 <p>Skipping item 3 causes the subagent to re-commit known anti-patterns;
 every review round that uncovers a new hazard <strong>appends a bullet</strong> to
 the wiki doc in the same PR.</p>
+<ul>
+<li><strong>Always create the worktree from a fresh <code>origin/main</code></strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>fetch<span class="w"> </span>origin
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>worktree<span class="w"> </span>add<span class="w"> </span>.worktrees/issue-<span class="o">{</span>N<span class="o">}</span>-<span class="o">{</span>slug<span class="o">}</span><span class="w"> </span>-b<span class="w"> </span>issue-<span class="o">{</span>N<span class="o">}</span>-<span class="o">{</span>slug<span class="o">}</span><span class="w"> </span>origin/main
+</code></pre></div>
+  A worktree based on a stale local <code>main</code> can miss doc/rule updates (like
+  the lessons-learned wiki) that other PRs have just landed.</li>
+</ul>
 <p>Large features that cannot be decomposed into independent issues use
 <strong>stacked PRs</strong>: one epic issue, sub-issues branched off <code>feat/{name}</code>,
 final summary PR to <code>main</code>.</p>

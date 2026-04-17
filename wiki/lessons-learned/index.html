@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#agent-lessons-learned">Agent Lessons Learned</a></li>
-        <li><a href="#1-asynciolock-is-not-reentrant-never-serialize-per-key-fifo-with-a-shared-lock">1. asyncio.Lock is not reentrant — never serialize per-key FIFO with a shared lock</a></li><li><a href="#2-heuristic-external-vs-reentrant-must-detect-any-worker-context-not-just-the-targets">2. Heuristic "external-vs-reentrant" must detect any worker context, not just the target's</a></li><li><a href="#3-except-baseexception-swallows-asynciocancellederror">3. except BaseException swallows asyncio.CancelledError</a></li><li><a href="#4-typeddict-totalfalse-is-the-wrong-default-for-payloads-whose-fields-split-requiredoptional">4. TypedDict total=False is the wrong default for payloads whose fields split required/optional</a></li><li><a href="#5-from-__future__-import-annotations-breaks-notrequired-partitioning">5. from __future__ import annotations breaks NotRequired partitioning</a></li><li><a href="#6-unbounded-per-key-dicts-leak-in-long-running-async-processes">6. Unbounded per-key dicts leak in long-running async processes</a></li><li><a href="#7-default-dataclass-__eq__-breaks-identity-based-listremove">7. Default dataclass __eq__ breaks identity-based list.remove</a></li><li><a href="#8-subagent-findings-for-the-next-issue-are-usually-bugs-in-this-pr">8. Subagent "findings for the next issue" are usually bugs in THIS PR</a></li><li><a href="#9-no-speculative-state-for-future-extensions">9. No speculative state "for future extensions"</a></li><li><a href="#10-silent-no-op-primitives-are-a-ux-bug">10. Silent no-op primitives are a UX bug</a></li><li><a href="#11-empirical-probes-beat-static-reasoning">11. Empirical probes beat static reasoning</a></li><li><a href="#12-code-review-rounds-re-enter-until-genuinely-clean">12. Code-review rounds re-enter until genuinely clean</a></li><li><a href="#13-document-non-obvious-design-decisions-in-the-specs-decisions">13. Document non-obvious design decisions in the spec's ## Decisions</a></li><li><a href="#14-pre-commit-hook-drift-just-check-all-is-currently-broken">14. Pre-commit hook drift: just check-all is currently broken</a></li><li><a href="#how-to-use-this-doc">How to use this doc</a></li>
+        <li><a href="#1-asynciolock-is-not-reentrant-never-serialize-per-key-fifo-with-a-shared-lock">1. asyncio.Lock is not reentrant — never serialize per-key FIFO with a shared lock</a></li><li><a href="#2-heuristic-external-vs-reentrant-must-detect-any-worker-context-not-just-the-targets">2. Heuristic "external-vs-reentrant" must detect any worker context, not just the target's</a></li><li><a href="#3-except-baseexception-swallows-asynciocancellederror">3. except BaseException swallows asyncio.CancelledError</a></li><li><a href="#4-typeddict-totalfalse-is-the-wrong-default-for-payloads-whose-fields-split-requiredoptional">4. TypedDict total=False is the wrong default for payloads whose fields split required/optional</a></li><li><a href="#5-from-__future__-import-annotations-breaks-notrequired-partitioning">5. from __future__ import annotations breaks NotRequired partitioning</a></li><li><a href="#6-unbounded-per-key-dicts-leak-in-long-running-async-processes">6. Unbounded per-key dicts leak in long-running async processes</a></li><li><a href="#7-default-dataclass-__eq__-breaks-identity-based-listremove">7. Default dataclass __eq__ breaks identity-based list.remove</a></li><li><a href="#8-subagent-findings-for-the-next-issue-are-usually-bugs-in-this-pr">8. Subagent "findings for the next issue" are usually bugs in THIS PR</a></li><li><a href="#9-no-speculative-state-for-future-extensions">9. No speculative state "for future extensions"</a></li><li><a href="#10-silent-no-op-primitives-are-a-ux-bug">10. Silent no-op primitives are a UX bug</a></li><li><a href="#11-empirical-probes-beat-static-reasoning">11. Empirical probes beat static reasoning</a></li><li><a href="#12-code-review-rounds-re-enter-until-genuinely-clean">12. Code-review rounds re-enter until genuinely clean</a></li><li><a href="#13-document-non-obvious-design-decisions-in-the-specs-decisions">13. Document non-obvious design decisions in the spec's ## Decisions</a></li><li><a href="#14-pre-commit-hook-drift-just-check-all-is-currently-broken">14. Pre-commit hook drift: just check-all is currently broken</a></li><li><a href="#15-silent-no-request_id-drops-hang-plugin-authors">15. Silent "no request_id" drops hang plugin authors</a></li><li><a href="#16-reviewers-verify-the-flagged-pattern-is-actually-wrong">16. Reviewers: verify the flagged pattern is actually wrong</a></li><li><a href="#how-to-use-this-doc">How to use this doc</a></li>
     </ul>
 </nav>
 </aside>
@@ -650,10 +650,51 @@ pin is bumped. Open a follow-up chore issue to fix it; do NOT skip
 hooks with <code>--no-verify</code>.</p>
 <p><strong>Reference</strong> — PR #21 subagent reports; <code>.pre-commit-config.yaml</code>.</p>
 <hr />
+<h2 id="15-silent-no-request_id-drops-hang-plugin-authors">15. Silent "no request_id" drops hang plugin authors<a class="headerlink" href="#15-silent-no-request_id-drops-hang-plugin-authors" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — A plugin forgets to echo <code>request_id</code> on its response
+event. The agent loop hangs for <code>step_timeout_s</code> (60 s default), then
+surfaces <code>kernel.error: step_timeout</code> with no indication the real
+cause was a missing correlation field.</p>
+<p><strong>Root cause</strong> — <code>_RequestTracker.resolve</code> silently returns when the
+incoming event has no <code>request_id</code>, treating it as "maybe a rogue
+response from outside the loop". That silent path is indistinguishable
+from "correlation id doesn't match any in-flight request", so the loop
+waits for a response that will never match.</p>
+<p><strong>Rule</strong> — When a protocol-defined correlation field is missing, log a
+WARNING that names the offending event kind and source. "Late arrival
+for a cancelled turn" is debug-level; "missing required correlation
+field" is warning-level. The 60-second wait is not the error — the
+silence is.</p>
+<p><strong>Reference</strong> — PR #38, <code>src/yaya/kernel/loop.py</code> <code>_RequestTracker.resolve</code>.</p>
+<hr />
+<h2 id="16-reviewers-verify-the-flagged-pattern-is-actually-wrong">16. Reviewers: verify the flagged pattern is actually wrong<a class="headerlink" href="#16-reviewers-verify-the-flagged-pattern-is-actually-wrong" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — PR #38 round-2 review flagged <code>except TypeError, ValueError:</code>
+(without parentheses) as an "unidiomatic hazard" and asked the author
+to parenthesize it. The request was bogus: PEP 758 (accepted in
+Python 3.12) makes unparenthesized multi-type <code>except</code> clauses valid
+and semantically identical to the parenthesized form. Worse, ruff
+with <code>target-version = "py314"</code> actively <strong>normalizes</strong> the
+parenthesized form back to unparenthesized, so committing the
+"fix" would have failed <code>ruff format --check</code> in CI.</p>
+<p><strong>Root cause</strong> — Reviewer applied pre-3.12 Python style intuition
+without re-checking the language spec + the ruff formatter config
+in <code>pyproject.toml</code>. Pattern-level lints are especially vulnerable
+to this — "looks wrong to me" often means "unfamiliar to me".</p>
+<p><strong>Rule</strong> — Before filing a pattern-level finding: (a) confirm the
+current Python version (<code>pyproject.toml</code> <code>requires-python</code>), (b)
+confirm the configured ruff/mypy target-version would flag it on its
+own, (c) test the diff in a scratch file with <code>ruff format</code> and
+<code>ruff check</code> to see what CI actually enforces. If the formatter
+disagrees with the finding, the finding is wrong — trust the
+formatter, not intuition.</p>
+<p><strong>Reference</strong> — PR #38 review round 2 (aborted). Cf. lesson #11
+(empirical probes beat static reasoning) — it applies to reviewers
+too, not just authors.</p>
+<hr />
 <h2 id="how-to-use-this-doc">How to use this doc<a class="headerlink" href="#how-to-use-this-doc" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Before starting a PR that touches the kernel, event bus, plugin ABI,
-  agent loop, or any async infrastructure: <strong>read entries 1–13</strong>.</li>
+  agent loop, or any async infrastructure: <strong>read every entry</strong>.</li>
 <li>When dispatching a subagent: reference this doc in the prompt's
   "Read first" list.</li>
 <li>When a review turn surfaces a hazard that is <strong>not</strong> listed here:

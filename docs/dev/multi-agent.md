@@ -7,8 +7,9 @@ Coordination happens through GitHub, not chat context.
 
 1. **One agent, one worktree, one branch, one PR.** Agents never share a
    working tree.
-2. **Shared state is the issue tracker.** Discussion, status, and hand-off
-   happen in issue/PR comments — `@claude`, `@codex` mentions route work.
+2. **Shared state is the issue tracker.** Discussion, status, plans, and
+   hand-off happen in issue/PR comments — `@claude`, `@codex` mentions route
+   work.
 3. **No cross-branch edits.** An agent never pushes to another agent's
    branch. Hand-off = comment + new PR.
 4. **Parallelism condition**: issues are dispatched in parallel only when
@@ -16,6 +17,9 @@ Coordination happens through GitHub, not chat context.
    stacked PRs (`rararulab/.github/docs/stacked-prs.md`).
 5. **Identity is a label.** Every issue and PR carries `agent:claude` or
    `agent:codex` so authorship is auditable.
+6. **No shadow task records.** Do not create `.agents/tasks/`, story files,
+   or local task databases for agent work. Use the GitHub issue, PR body, and
+   comments as the durable hand-off record.
 
 ## Dispatch pattern
 
@@ -41,6 +45,7 @@ in order:
 6. `docs/dev/workflow.md`, `testing.md`, `code-comments.md`,
    `agent-spec.md`, `maintaining-agent-md.md` as relevant.
 7. The GitHub issue itself (`gh issue view <N>`).
+8. The issue's `Agent Task Packet` section and the latest issue comments.
 
 Skipping item 3 causes the subagent to re-commit known anti-patterns;
 every review round that uncovers a new hazard **appends a bullet** to
@@ -57,6 +62,23 @@ the wiki doc in the same PR.
 Large features that cannot be decomposed into independent issues use
 **stacked PRs**: one epic issue, sub-issues branched off `feat/{name}`,
 final summary PR to `main`.
+
+## Role hand-off records
+
+When agents split planning, implementation, and review, keep the hand-off in
+GitHub:
+
+- **Planner**: post the implementation plan as an issue comment. Include the
+  Agent Task Packet deltas if discovery changed the expected touch points,
+  validation commands, or forbidden areas.
+- **Implementer**: preserve what context was actually used in the PR body.
+  Call out deviations from the issue packet or BDD spec explicitly.
+- **Reviewer**: leave findings as PR review comments. If a finding exposes a
+  reusable hazard, append it to `docs/wiki/lessons-learned.md` in the fixing
+  PR.
+
+Do not hide hand-off notes in chat context. If the next agent needs it, it
+belongs in the issue or PR.
 
 ## Done criteria (per PR)
 

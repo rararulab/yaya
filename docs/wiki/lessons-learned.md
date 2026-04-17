@@ -259,7 +259,7 @@ affected subsequent issues.
 **Root cause** — Implementation-level decisions buried in code
 comments are invisible to the next agent reading only the spec.
 
-**Rule** — `specs/<slug>.spec.md`'s `## Decisions` section captures
+**Rule** — `specs/<slug>.spec`'s `## Decisions` section captures
 every **non-obvious** design choice that affects the external contract
 or downstream issues. One bullet per decision, with the **why**.
 

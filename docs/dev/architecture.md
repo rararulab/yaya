@@ -85,7 +85,7 @@ serialization of the event catalog, and mismatches fail CI.
 
 ## Specs live next to code
 
-Every non-trivial feature is backed by a `specs/<slug>.spec.md` BDD
+Every non-trivial feature is backed by a `specs/<slug>.spec` BDD
 contract verified with [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec).
 Scenarios bind to test functions via `Test:` selectors. Run
 `agent-spec lifecycle` before commit; CI runs `agent-spec guard` on

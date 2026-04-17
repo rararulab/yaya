@@ -90,6 +90,10 @@ Read local first, save tokens. Every code/test/scripts folder has its own
 - `src/yaya/kernel/AGENT.md` · `src/yaya/plugins/AGENT.md` · `src/yaya/plugins/web/AGENT.md` (created when each subpackage lands — see [docs/dev/plugin-protocol.md](docs/dev/plugin-protocol.md), [docs/dev/architecture.md](docs/dev/architecture.md), [docs/dev/web-ui.md](docs/dev/web-ui.md))
 - [tests/AGENT.md](tests/AGENT.md) · [scripts/AGENT.md](scripts/AGENT.md)
 
+**Wiki** (read before starting work — running log of hazards we already hit):
+
+- [docs/wiki/lessons-learned.md](docs/wiki/lessons-learned.md) — anti-patterns + review findings to avoid repeating.
+
 **Topic docs** (pull only when needed):
 
 - [docs/dev/architecture.md](docs/dev/architecture.md) · [docs/dev/workflow.md](docs/dev/workflow.md) · [docs/dev/multi-agent.md](docs/dev/multi-agent.md) · [docs/dev/maintaining-agent-md.md](docs/dev/maintaining-agent-md.md)

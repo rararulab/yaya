@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.8.0">
+    
+    <meta name="description" content="A Python AI agent built with engineering rigor."> 
+    
+    <meta name="author" content="rararulab"> 
+    
+    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/plugin-protocol/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>Plugin Protocol - yaya</title>
+
+
+<link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../../css/normalize.css" rel="stylesheet">
+<link href="../../css/terminal.css" rel="stylesheet">
+<link href="../../css/theme.css" rel="stylesheet">
+<link href="../../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../../css/theme.footer.css" rel="stylesheet">
+<!-- dark color palette -->
+<link href="../../css/palettes/dark.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+
+
+    
+    <link href="../../assets/_mkdocstrings.css" rel="stylesheet">  
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "../..",
+    shortcuts = "{}";
+</script>
+<script src="../../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://rararulab.github.io/yaya/" class="no-style">yaya</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../.." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../../goal/" class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Goal</span>
+                    </a>
+                    <meta property="position" content="1">
+                </li>
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="2">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../..">Home</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../goal/">Goal</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">User Guide</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/install/">Install</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/usage/">Usage</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        <span class="
+        
+    terminal-mkdocs-side-nav-item--active terminal-mkdocs-side-nav-section-no-index">Development</span>
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../architecture/">Architecture</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        <span class="terminal-mkdocs-side-nav-item--active">Plugin Protocol</span>
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../workflow/">Workflow</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../multi-agent/">Multi-Agent</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../maintaining-agent-md/">Maintaining AGENT.md</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../cli/">CLI Conventions</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../agent-friendly-cli/">Agent-Friendly CLI (org spec)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../web-ui/">Web UI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../testing/">Testing</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../agent-spec/">Agent Spec (BDD Contracts)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../code-comments/">Code Comments & Docstrings</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../release/">Release</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+    </ul>
+</nav><hr>
+<nav>
+    <ul>
+        <li><a href="#plugin-protocol-v0-10">Plugin Protocol (v0 → 1.0)</a></li>
+        <li><a href="#plugin-categories-closed-set">Plugin categories (closed set)</a></li><li><a href="#event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)</a></li><li><a href="#plugin-discovery-and-loading">Plugin discovery and loading</a></li><li><a href="#plugin-abi">Plugin ABI</a></li><li><a href="#agent-loop-kernel-owned">Agent loop (kernel-owned)</a></li><li><a href="#plugin-failure-model">Plugin failure model</a></li><li><a href="#security-posture-10">Security posture (1.0)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+    </ul>
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="plugin-protocol-v0-10">Plugin Protocol (v0 → 1.0)<a class="headerlink" href="#plugin-protocol-v0-10" title="Permanent link">&para;</a></h1>
+<p>yaya's kernel is deliberately small: an event bus, a plugin registry,
+and a fixed agent loop. <strong>Everything else is a plugin</strong> — every user
+surface, every LLM provider, every tool, every skill, every memory
+backend, every next-action strategy. This document is the authoritative
+contract.</p>
+<ul>
+<li><strong>v0</strong> is the 0.1 shape we ship with. Shapes may evolve in 0.x.</li>
+<li><strong>1.0</strong> freezes: event kinds, payload schemas, the registration ABI,
+  the strategy interface, the adapter contract, and the web↔kernel WS
+  schema. Plugins written against 1.0 keep working across 1.x.</li>
+</ul>
+<h2 id="plugin-categories-closed-set">Plugin categories (closed set)<a class="headerlink" href="#plugin-categories-closed-set" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Role</th>
+<th>Subscribes to</th>
+<th>Emits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>adapter</code></td>
+<td>User surface (web, TUI, Telegram, …). Translates external I/O to kernel events and renders outgoing events.</td>
+<td><code>assistant.message.*</code>, <code>tool.call.start</code>, <code>plugin.*</code>, <code>kernel.*</code></td>
+<td><code>user.message.received</code>, <code>user.interrupt</code></td>
+</tr>
+<tr>
+<td><code>tool</code></td>
+<td>Executes a discrete action (run shell, read file, HTTP).</td>
+<td><code>tool.call.request</code> (filtered by tool name)</td>
+<td><code>tool.call.result</code></td>
+</tr>
+<tr>
+<td><code>llm-provider</code></td>
+<td>Speaks to one LLM vendor (OpenAI, Anthropic, Ollama, …).</td>
+<td><code>llm.call.request</code> (filtered by provider id)</td>
+<td><code>llm.call.response</code>, <code>llm.call.error</code></td>
+</tr>
+<tr>
+<td><code>strategy</code></td>
+<td>Decides the agent loop's next step.</td>
+<td><code>strategy.decide.request</code></td>
+<td><code>strategy.decide.response</code></td>
+</tr>
+<tr>
+<td><code>memory</code></td>
+<td>Stores and retrieves conversational state.</td>
+<td><code>memory.query</code>, <code>memory.write</code></td>
+<td><code>memory.result</code></td>
+</tr>
+<tr>
+<td><code>skill</code></td>
+<td>Domain-specific behavior built on top of the other categories. Subscribes to user messages (filtered) and orchestrates via kernel events.</td>
+<td><code>user.message.received</code> (filtered)</td>
+<td>any public event via the kernel</td>
+</tr>
+</tbody>
+</table>
+<p>A plugin declares exactly one category. Multi-category plugins ship as
+multiple packages.</p>
+<h2 id="event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)<a class="headerlink" href="#event-taxonomy-v0-frozen-at-10" title="Permanent link">&para;</a></h2>
+<p>All events carry a common envelope:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Event</span><span class="p">(</span><span class="n">TypedDict</span><span class="p">):</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>              <span class="c1"># uuid, kernel-assigned on publish</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span>            <span class="c1"># dotted identifier — see catalog below</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span>      <span class="c1"># conversation scope; plugin-private events pick any stable id</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">ts</span><span class="p">:</span> <span class="nb">float</span>            <span class="c1"># kernel-assigned unix epoch seconds</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">source</span><span class="p">:</span> <span class="nb">str</span>          <span class="c1"># plugin name that emitted it (or &quot;kernel&quot;)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">payload</span><span class="p">:</span> <span class="nb">dict</span>        <span class="c1"># kind-specific; shapes below</span>
+</code></pre></div>
+<h3 id="public-event-kinds-closed">Public event kinds (closed)<a class="headerlink" href="#public-event-kinds-closed" title="Permanent link">&para;</a></h3>
+<h4 id="user-input-adapter-kernel">User input (adapter → kernel)<a class="headerlink" href="#user-input-adapter-kernel" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user.message.received</code></td>
+<td><code>{ text: str, attachments?: list[Attachment] }</code></td>
+</tr>
+<tr>
+<td><code>user.interrupt</code></td>
+<td><code>{}</code> (ends the current turn)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="assistant-output-kernel-adapters">Assistant output (kernel → adapters)<a class="headerlink" href="#assistant-output-kernel-adapters" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>assistant.message.delta</code></td>
+<td><code>{ content: str }</code> (streaming chunk)</td>
+</tr>
+<tr>
+<td><code>assistant.message.done</code></td>
+<td><code>{ content: str, tool_calls: list[ToolCall] }</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="llm-invocation-kernel-llm-provider">LLM invocation (kernel ↔ llm-provider)<a class="headerlink" href="#llm-invocation-kernel-llm-provider" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>direction</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>llm.call.request</code></td>
+<td>kernel → provider</td>
+<td><code>{ provider: str, model: str, messages: list[Message], tools?: list[ToolSchema], params: dict }</code></td>
+</tr>
+<tr>
+<td><code>llm.call.response</code></td>
+<td>provider → kernel</td>
+<td><code>{ text?: str, tool_calls?: list[ToolCall], usage: Usage }</code></td>
+</tr>
+<tr>
+<td><code>llm.call.error</code></td>
+<td>provider → kernel</td>
+<td><code>{ error: str, retry_after_s?: float }</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="tool-execution-kernel-tool">Tool execution (kernel ↔ tool)<a class="headerlink" href="#tool-execution-kernel-tool" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>direction</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tool.call.request</code></td>
+<td>kernel → tool</td>
+<td><code>{ id: str, name: str, args: dict }</code></td>
+</tr>
+<tr>
+<td><code>tool.call.start</code></td>
+<td>kernel → adapters (for UI)</td>
+<td><code>{ id: str, name: str, args: dict }</code></td>
+</tr>
+<tr>
+<td><code>tool.call.result</code></td>
+<td>tool → kernel</td>
+<td><code>{ id: str, ok: bool, value?: Any, error?: str }</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="memory-kernel-memory">Memory (kernel ↔ memory)<a class="headerlink" href="#memory-kernel-memory" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>direction</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>memory.query</code></td>
+<td>kernel → memory</td>
+<td><code>{ query: str, k: int }</code></td>
+</tr>
+<tr>
+<td><code>memory.write</code></td>
+<td>kernel → memory</td>
+<td><code>{ entry: MemoryEntry }</code></td>
+</tr>
+<tr>
+<td><code>memory.result</code></td>
+<td>memory → kernel</td>
+<td><code>{ hits: list[MemoryEntry] }</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="strategy-kernel-strategy">Strategy (kernel ↔ strategy)<a class="headerlink" href="#strategy-kernel-strategy" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>direction</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>strategy.decide.request</code></td>
+<td>kernel → strategy</td>
+<td><code>{ state: AgentLoopState }</code></td>
+</tr>
+<tr>
+<td><code>strategy.decide.response</code></td>
+<td>strategy → kernel</td>
+<td><code>{ next: "llm" \| "tool" \| "memory" \| "done", ... }</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="plugin-lifecycle-kernel-all">Plugin lifecycle (kernel → all)<a class="headerlink" href="#plugin-lifecycle-kernel-all" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>plugin.loaded</code></td>
+<td><code>{ name: str, version: str, category: str }</code></td>
+</tr>
+<tr>
+<td><code>plugin.reloaded</code></td>
+<td><code>{ name: str, version: str }</code></td>
+</tr>
+<tr>
+<td><code>plugin.removed</code></td>
+<td><code>{ name: str }</code></td>
+</tr>
+<tr>
+<td><code>plugin.error</code></td>
+<td><code>{ name: str, error: str }</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="kernel-kernel-all">Kernel (kernel → all)<a class="headerlink" href="#kernel-kernel-all" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kernel.ready</code></td>
+<td><code>{ version: str }</code></td>
+</tr>
+<tr>
+<td><code>kernel.shutdown</code></td>
+<td><code>{ reason: str }</code></td>
+</tr>
+<tr>
+<td><code>kernel.error</code></td>
+<td><code>{ source: str, message: str }</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="extension-namespace">Extension namespace<a class="headerlink" href="#extension-namespace" title="Permanent link">&para;</a></h3>
+<p>Plugins may emit and subscribe to events named <code>x.&lt;plugin&gt;.&lt;kind&gt;</code>.
+The kernel routes these through the same bus but <strong>does not interpret
+them and does not promise compatibility across versions</strong>. Use this
+namespace for plugin-private payloads (e.g., a <code>stats</code> skill plugin
+emitting <code>x.stats.token.counted</code>). Do not use <code>x.*</code> as a workaround
+for missing public events — propose a public event kind instead.</p>
+<h3 id="what-makes-the-set-closed">What makes the set "closed"<a class="headerlink" href="#what-makes-the-set-closed" title="Permanent link">&para;</a></h3>
+<ul>
+<li>A PR that introduces a new <strong>public</strong> event kind (anything not under
+  <code>x.&lt;plugin&gt;.&lt;kind&gt;</code>) is a <strong>governance</strong> change. It amends this
+  document, <code>GOAL.md</code>'s plugin category table, and the Python
+  <code>kernel/events.py</code> catalog in the same PR, and must carry the
+  <code>governance</code> label.</li>
+<li>A PR that changes the <strong>payload shape</strong> of an existing public kind
+  is a breaking change. Before 1.0, bump the minor version and note
+  the migration. After 1.0, it requires a new kind (<code>foo.v2</code>) with
+  both carried during a deprecation window.</li>
+</ul>
+<h2 id="plugin-discovery-and-loading">Plugin discovery and loading<a class="headerlink" href="#plugin-discovery-and-loading" title="Permanent link">&para;</a></h2>
+<p>Plugins are ordinary Python packages that expose a setuptools entry
+point in the <code>yaya.plugins.v1</code> group:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># your-plugin&#39;s pyproject.toml</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">[project]</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;yaya-tool-bash&quot;</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.1.0&quot;</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">[project.entry-points.</span><span class="s2">&quot;yaya.plugins.v1&quot;</span><span class="k">]</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">bash</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;yaya_tool_bash:plugin&quot;</span>
+</code></pre></div>
+<p><code>yaya_tool_bash:plugin</code> resolves to a <code>Plugin</code> object (see ABI below).</p>
+<p>The kernel discovers plugins in this order at boot:</p>
+<ol>
+<li><strong>Bundled</strong> — subpackages of <code>src/yaya/plugins/</code> declared in yaya's
+   own <code>pyproject.toml</code> under the same entry-point group. Bundled
+   plugins load through the <strong>same protocol</strong> as third-party plugins.
+   No special cases.</li>
+<li><strong>Installed</strong> — any package in the active environment exposing a
+   <code>yaya.plugins.v1</code> entry point (e.g., <code>pip install yaya-tool-bash</code>).</li>
+<li><strong>Local overrides</strong> — packages registered via <code>yaya plugin install
+   &lt;path&gt;</code> (dev mode) in the user state directory.</li>
+</ol>
+<p><code>yaya plugin install &lt;src&gt;</code> accepts:
+- A PyPI name: <code>yaya plugin install yaya-tool-bash</code> → shells to <code>pip install</code>.
+- A local path: <code>yaya plugin install ./my-plugin</code> → editable install.
+- A registry URL (2.0+): resolved through the future marketplace.</p>
+<h2 id="plugin-abi">Plugin ABI<a class="headerlink" href="#plugin-abi" title="Permanent link">&para;</a></h2>
+<p>Every plugin module exposes a <code>plugin</code> attribute conforming to this
+interface:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># pseudocode — authoritative Python lives in src/yaya/kernel/plugin.py</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">class</span><span class="w"> </span><span class="nc">Plugin</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>              <span class="c1"># globally unique, kebab-case</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">version</span><span class="p">:</span> <span class="nb">str</span>           <span class="c1"># semver</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">category</span><span class="p">:</span> <span class="n">Category</span>     <span class="c1"># one of the six categories above</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">requires</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>    <span class="c1"># other plugin names this depends on</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">subscriptions</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Event kinds this plugin subscribes to.</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="sd">        For `tool`, `llm-provider`, `strategy`, `memory`: the kernel</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="sd">        filters by the category&#39;s default routing rules (see below).</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="sd">        For `adapter` and `skill`: the plugin picks from the public</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="sd">        event set; filtering by session_id is the plugin&#39;s job.</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="sd">        &quot;&quot;&quot;</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">KernelContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Called once after registration, before any event delivery.&quot;&quot;&quot;</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ev</span><span class="p">:</span> <span class="n">Event</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">KernelContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle an event. Raise to surface a plugin.error.&quot;&quot;&quot;</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_unload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">KernelContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Called on hot-reload or kernel shutdown. Must be idempotent.&quot;&quot;&quot;</span>
+</code></pre></div>
+<p><code>KernelContext</code> gives the plugin an <code>emit(kind, payload, *,
+session_id)</code> method, a scoped logger, access to its configuration,
+and a state directory under <code>&lt;XDG_DATA_HOME&gt;/yaya/plugins/&lt;name&gt;/</code>.</p>
+<h3 id="category-specific-extras">Category-specific extras<a class="headerlink" href="#category-specific-extras" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>tool</code></strong> declares <code>tool_name: str</code> and <code>json_schema: dict</code> for
+  arguments. The kernel routes <code>tool.call.request</code> to the plugin whose
+  <code>tool_name</code> matches.</li>
+<li><strong><code>llm-provider</code></strong> declares <code>provider_id: str</code> (e.g., <code>"openai"</code>).
+  The kernel routes <code>llm.call.request</code> by <code>payload.provider</code>.</li>
+<li><strong><code>strategy</code></strong> declares <code>strategy_id: str</code>. Only one strategy is
+  active per session; <code>yaya serve --strategy &lt;id&gt;</code> (or a per-session
+  setting) selects it. Default: <code>react</code>.</li>
+<li><strong><code>memory</code></strong> declares whether it is a "short-term" or "long-term"
+  store. Kernel may route queries differently based on session age.</li>
+<li><strong><code>adapter</code></strong> declares <code>adapter_id: str</code>. An adapter may be
+  short-lived (one WebSocket session per user) or long-lived (Telegram
+  polling loop).</li>
+</ul>
+<h2 id="agent-loop-kernel-owned">Agent loop (kernel-owned)<a class="headerlink" href="#agent-loop-kernel-owned" title="Permanent link">&para;</a></h2>
+<p>The loop shape is fixed. Each turn runs this sequence:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>user.message.received
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  → strategy.decide.request  →  strategy.decide.response
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    → memory.query           →  memory.result (if requested)
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    → llm.call.request       →  llm.call.response
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>      → tool.call.request    →  tool.call.result   (repeat per tool)
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    → assistant.message.done
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>  → memory.write (if requested by strategy)
+</code></pre></div>
+<p>Strategies control: which tools to offer, when to call memory, when to
+stop. Strategies <strong>do not</strong> change the ordering of the sequence —
+that is the kernel's contract with adapters.</p>
+<h2 id="plugin-failure-model">Plugin failure model<a class="headerlink" href="#plugin-failure-model" title="Permanent link">&para;</a></h2>
+<ul>
+<li>A plugin raising from <code>on_event</code> produces <code>plugin.error</code> and the
+  kernel continues. Repeated failures (threshold configurable) unload
+  the plugin and emit <code>plugin.removed</code>.</li>
+<li>A plugin hanging in <code>on_event</code> past a deadline (default 30s, per
+  category) is cancelled; the same counter increments.</li>
+<li><code>on_load</code> failure prevents registration; the plugin is marked
+  <code>status: failed</code> in <code>yaya plugin list</code> with the stack trace in its
+  state directory.</li>
+<li><strong>The kernel never crashes because a plugin did</strong>. If the kernel
+  itself raises, <code>kernel.error</code> fires, and <code>yaya serve</code> exits non-zero.</li>
+</ul>
+<h2 id="security-posture-10">Security posture (1.0)<a class="headerlink" href="#security-posture-10" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Plugins run in-process as trusted code. There is no sandbox in 1.0.</li>
+<li><code>yaya plugin install</code> surfaces a confirmation prompt showing the
+  source (PyPI / path / URL) and declared category.</li>
+<li>The future sandbox (2.0) will restrict plugins by category-default
+  capability sets (e.g., <code>tool</code> plugins get no network unless they
+  declare it).</li>
+</ul>
+<h2 id="what-not-to-do">What NOT To Do<a class="headerlink" href="#what-not-to-do" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Do NOT add a special code path for bundled plugins. They must load,
+  subscribe, and fail through the same protocol as third-party plugins.</li>
+<li>Do NOT emit public event kinds from plugin-private code paths. Use
+  the <code>x.&lt;plugin&gt;.&lt;kind&gt;</code> namespace.</li>
+<li>Do NOT introduce a parallel event channel (e.g., a "fast path" for
+  adapter events). The bus is the bus.</li>
+<li>Do NOT let plugins import from <code>src/yaya/cli/</code> or from each other
+  directly. Cross-plugin communication happens through events.</li>
+<li>Do NOT break the agent loop's event ordering contract in a strategy
+  plugin. Strategies decide <em>content</em>, not <em>order</em>.</li>
+</ul>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+            
+            <p class="text-center text-muted">Copyright (c) 2026 <a href="https://github.com/rararulab">rararulab</a> contributors.</p>
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal" aria-label="Close">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>

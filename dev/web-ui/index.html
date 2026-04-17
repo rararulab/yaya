@@ -249,6 +249,19 @@
     
         
         
+            <a class="terminal-mkdocs-side-nav-item" href="../plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
             <a class="terminal-mkdocs-side-nav-item" href="../workflow/">Workflow</a>
         
     
@@ -379,79 +392,120 @@
 </nav><hr>
 <nav>
     <ul>
-        <li><a href="#web-ui">Web UI</a></li>
-        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#dependency-policy">Dependency policy</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#websocket-event-protocol-overview">WebSocket event protocol (overview)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#web-adapter-plugin">Web Adapter Plugin</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#dependency-policy">Dependency policy</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
             <main id="terminal-mkdocs-main-content">
 <section id="mkdocs-terminal-content">
-    <h1 id="web-ui">Web UI<a class="headerlink" href="#web-ui" title="Permanent link">&para;</a></h1>
-<p>yaya's default surface is a local web UI served by <code>yaya serve</code> from a
-single Python process. The UI is built on
+    <h1 id="web-adapter-plugin">Web Adapter Plugin<a class="headerlink" href="#web-adapter-plugin" title="Permanent link">&para;</a></h1>
+<p>The web UI is an <strong>adapter plugin</strong> named <code>web</code>, bundled with yaya and
+loaded by default when you run <code>yaya serve</code>. It is not a kernel
+subpackage — it lives under <code>src/yaya/plugins/web/</code> and loads through
+the same protocol as any third-party adapter (see
+<a href="../plugin-protocol/">plugin-protocol.md</a>). The kernel has no special
+case for it.</p>
+<p>The browser UI is built on
 <a href="https://github.com/badlogic/pi-mono/tree/main/packages/web-ui"><code>@mariozechner/pi-web-ui</code></a>
 (Lit web components + TailwindCSS v4).</p>
 <h2 id="runtime-shape">Runtime shape<a class="headerlink" href="#runtime-shape" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya serve
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>└── one Python process (uvicorn + FastAPI)
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    ├── GET /             → pre-built UI shell (HTML)
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    ├── GET /assets/*     → static JS/CSS (importlib.resources)
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    ├── WS  /ws           → kernel event bus ↔ UI (the contract)
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    └── API /plugins/*    → list / install / remove / reload
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>└── one Python process
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    ├── kernel boot (bus · registry · agent loop)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    │     └── discover + load bundled plugin &quot;web&quot; (and any others
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    │         registered via yaya.plugins.v1 entry point)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    └── &quot;web&quot; adapter plugin started:
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>          ├── uvicorn + FastAPI (ASGI)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>          ├── GET /            → pre-built UI shell (HTML)
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>          ├── GET /assets/*    → static JS/CSS (importlib.resources)
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>          ├── WS  /ws          → adapter ↔ kernel bridge (over the event bus)
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>          └── API /plugins/*   → thin proxies to the registry
 </code></pre></div>
 <ul>
 <li>Default bind: <code>127.0.0.1:&lt;port&gt;</code> (port picked from env / CLI flag /
   first-free). Non-goal: public-internet deployment (see
   <a href="../../goal/">GOAL.md</a>).</li>
 <li><code>yaya serve --no-open</code> suppresses the automatic browser launch.</li>
-<li>The agent loop runs in Python. The browser is a <strong>renderer and input
-  device</strong>, not an agent runtime. We do <strong>not</strong> embed <code>pi-agent-core</code> or
-  any JS/TS agent.</li>
+<li>The agent loop runs in the Python <strong>kernel</strong>. The browser is a
+  renderer and input device, nothing more. We do <strong>not</strong> embed
+  <code>pi-agent-core</code> or any JS/TS agent runtime.</li>
 </ul>
+<h2 id="role-in-the-plugin-protocol">Role in the plugin protocol<a class="headerlink" href="#role-in-the-plugin-protocol" title="Permanent link">&para;</a></h2>
+<p>The <code>web</code> plugin is an <code>adapter</code> (see
+<a href="../plugin-protocol/#plugin-categories-closed-set">plugin-protocol.md</a>):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Subscribes</td>
+<td><code>assistant.message.*</code>, <code>tool.call.start</code>, <code>plugin.*</code>, <code>kernel.*</code></td>
+</tr>
+<tr>
+<td>Emits</td>
+<td><code>user.message.received</code>, <code>user.interrupt</code></td>
+</tr>
+<tr>
+<td>ABI extras</td>
+<td><code>adapter_id = "web"</code></td>
+</tr>
+</tbody>
+</table>
+<p>Each WebSocket client gets its own <code>session_id</code>. The adapter
+translates kernel events into WS frames to the browser and browser
+frames back into <code>user.message.received</code> events on the bus.</p>
 <h2 id="source-layout">Source layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>src/yaya/web/
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── package.json          # npm workspace — declares @mariozechner/pi-web-ui
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>├── tsconfig.json
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>├── vite.config.ts
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>├── src/                  # our shell: wires pi-web-ui components to the WS event bus
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>│   ├── main.ts
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>│   ├── ws-client.ts      # thin WebSocket client speaking yaya&#39;s event protocol
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>│   └── components/       # yaya-specific Lit components composing pi-web-ui primitives
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>├── index.html
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>└── static/               # *build output* — do NOT edit by hand
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    ├── index.html
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    ├── assets/*.js
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    └── assets/*.css
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>src/yaya/plugins/web/
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── pyproject.toml       # ships as a Python subpackage; registers entry point
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>├── __init__.py          # exposes `plugin: Plugin`
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>├── server.py            # FastAPI app + WebSocket bridge
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>├── package.json         # npm: @mariozechner/pi-web-ui (build-time dep)
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>├── tsconfig.json
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>├── vite.config.ts
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>├── src/                 # our shell wiring pi-web-ui to the WS schema
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>│   ├── main.ts
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>│   ├── ws-client.ts     # thin WS client speaking the yaya event schema
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>│   └── components/      # yaya-specific Lit components
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>├── index.html
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>└── static/              # *build output* — ships in the wheel
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    ├── index.html
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    ├── assets/*.js
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    └── assets/*.css
 </code></pre></div>
-<p><code>static/</code> is git-tracked so end users who install the wheel get the UI
-without needing Node. CI verifies <code>static/</code> is up-to-date with <code>src/</code>
-(see below).</p>
+<p><code>static/</code> is git-tracked so end users who install the wheel get the
+UI without Node. CI verifies <code>static/</code> is up-to-date with <code>src/</code>.</p>
 <h2 id="dependency-policy">Dependency policy<a class="headerlink" href="#dependency-policy" title="Permanent link">&para;</a></h2>
 <ul>
-<li>pi-web-ui is consumed <strong>as an npm dependency</strong> (<code>package.json</code>) — not
-  vendored, not forked. Upgrades go through ordinary <code>npm update</code> PRs.</li>
-<li><code>vendor/pi-mono/</code> in the repo is <strong>reference only</strong> — a pinned mirror
-  for agents and humans to read. Do NOT import from it; the build must
-  resolve through npm.</li>
-<li>Peer dependencies (<code>@mariozechner/mini-lit</code>, <code>lit</code>) live in yaya's own
-  <code>package.json</code> and are pinned.</li>
+<li>pi-web-ui is consumed <strong>as an npm dependency</strong> (<code>package.json</code>) —
+  not vendored, not forked. Upgrades go through ordinary <code>npm update</code>
+  PRs.</li>
+<li><code>vendor/pi-mono/</code> in the repo is <strong>reference only</strong> — a pinned
+  mirror for humans and agents to read. Do NOT import from it; the
+  build must resolve through npm.</li>
+<li>Peer dependencies (<code>@mariozechner/mini-lit</code>, <code>lit</code>) live in the
+  plugin's own <code>package.json</code> and are pinned.</li>
 </ul>
 <h2 id="build-pipeline">Build pipeline<a class="headerlink" href="#build-pipeline" title="Permanent link">&para;</a></h2>
-<p>yaya ships two toolchains; only the Python half is required at install
-time.</p>
+<p>yaya ships two toolchains; only the Python half is required at
+install time.</p>
 <ul>
-<li><strong>Install time (user-facing)</strong>: <code>pip install yaya</code>. Pure Python. The
-  wheel already contains <code>src/yaya/web/static/</code>.</li>
+<li><strong>Install time (user-facing)</strong>: <code>pip install yaya</code>. Pure Python.
+  The wheel already contains <code>src/yaya/plugins/web/static/</code>.</li>
 <li><strong>Build time (contributor)</strong>: Node + npm. <code>just web-build</code> runs
-  <code>npm ci &amp;&amp; npm run build</code> inside <code>src/yaya/web/</code> and writes into
-  <code>static/</code>. The wheel's build step (<code>hatchling</code>) includes <code>static/</code>
-  as package data.</li>
+  <code>npm ci &amp;&amp; npm run build</code> inside <code>src/yaya/plugins/web/</code> and writes
+  into <code>static/</code>. The wheel's build step (<code>hatchling</code>) includes
+  <code>static/</code> as package data.</li>
 <li><strong>Dev loop</strong>: <code>just web-dev</code> starts Vite's dev server with HMR on a
-  separate port, proxied by <code>yaya serve --dev</code> to the Python backend.
+  separate port, proxied by <code>yaya serve --dev</code> to the Python kernel.
   Two processes during development, one at release.</li>
 </ul>
 <h3 id="just-recipes">just recipes<a class="headerlink" href="#just-recipes" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>just<span class="w"> </span>web-install<span class="w">    </span><span class="c1"># npm ci inside src/yaya/web</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>just<span class="w"> </span>web-install<span class="w">    </span><span class="c1"># npm ci inside src/yaya/plugins/web</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>just<span class="w"> </span>web-build<span class="w">      </span><span class="c1"># npm run build → static/</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>just<span class="w"> </span>web-dev<span class="w">        </span><span class="c1"># vite dev server (HMR)</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>just<span class="w"> </span>web-check<span class="w">      </span><span class="c1"># biome + tsc --noEmit</span>
@@ -459,86 +513,87 @@ time.</p>
 <h3 id="ci-rules">CI rules<a class="headerlink" href="#ci-rules" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>just web-check</code> runs on every PR.</li>
-<li><code>just web-build</code> runs and CI <strong>fails if <code>static/</code> changed</strong> — i.e. the
+<li><code>just web-build</code> runs and CI <strong>fails if <code>static/</code> changed</strong> — the
   PR author must commit the built assets alongside source changes.
-  Rationale: keeps the wheel reproducible; avoids Node in the release
-  pipeline.</li>
+  Rationale: keeps the wheel reproducible; avoids Node in the
+  release pipeline.</li>
 <li>Wheel-size budget (see <a href="../../goal/">GOAL.md</a> success metrics) is
   asserted on the built artifact.</li>
 </ul>
-<h2 id="websocket-event-protocol-overview">WebSocket event protocol (overview)<a class="headerlink" href="#websocket-event-protocol-overview" title="Permanent link">&para;</a></h2>
-<p>The contract between kernel and UI is a stream of events. Shapes live in
-<code>src/yaya/kernel/events.py</code> (Python, authoritative) and
-<code>src/yaya/web/src/events.ts</code> (TypeScript, generated or hand-maintained
-in lock-step).</p>
-<p><strong>Mandatory pairing</strong>: any change to <code>events.py</code> updates the TS side in
-the same PR. A mismatch fails CI (checksum compare between Python JSON
-schema export and the TS type file).</p>
-<p>Minimal event kinds:</p>
+<h2 id="websocket-schema">WebSocket schema<a class="headerlink" href="#websocket-schema" title="Permanent link">&para;</a></h2>
+<p>The WS schema is a thin serialization of the public event set. The
+authoritative catalog lives in <code>src/yaya/kernel/events.py</code>; the TS
+mirror lives at <code>src/yaya/plugins/web/src/events.ts</code>. <strong>Any change to
+<code>events.py</code> updates the TS side in the same PR</strong> — CI compares a JSON
+Schema export of the Python catalog against the TS types.</p>
+<p>Frames flow in both directions:</p>
 <table>
 <thead>
 <tr>
-<th>Kind</th>
+<th>WS frame</th>
 <th>Direction</th>
-<th>Payload</th>
+<th>Kernel event</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>user.message</code></td>
-<td>UI → kernel</td>
-<td><code>{ text, attachments? }</code></td>
+<td><code>{type: "user.message", text, attachments?}</code></td>
+<td>browser → adapter</td>
+<td><code>user.message.received</code></td>
 </tr>
 <tr>
+<td><code>{type: "user.interrupt"}</code></td>
+<td>browser → adapter</td>
+<td><code>user.interrupt</code></td>
+</tr>
+<tr>
+<td><code>{type: "assistant.delta", content}</code></td>
+<td>adapter → browser</td>
 <td><code>assistant.message.delta</code></td>
-<td>kernel → UI</td>
-<td>streaming text chunk</td>
 </tr>
 <tr>
+<td><code>{type: "assistant.done", content, tool_calls}</code></td>
+<td>adapter → browser</td>
 <td><code>assistant.message.done</code></td>
-<td>kernel → UI</td>
-<td>final message + tool calls</td>
 </tr>
 <tr>
+<td><code>{type: "tool.start", id, name, args}</code></td>
+<td>adapter → browser</td>
 <td><code>tool.call.start</code></td>
-<td>kernel → UI</td>
-<td><code>{ id, name, args }</code></td>
 </tr>
 <tr>
+<td><code>{type: "tool.result", id, ok, value?, error?}</code></td>
+<td>adapter → browser</td>
 <td><code>tool.call.result</code></td>
-<td>kernel → UI</td>
-<td><code>{ id, ok, value \| error }</code></td>
 </tr>
 <tr>
-<td><code>plugin.installed</code></td>
-<td>kernel → UI</td>
-<td><code>{ name, version }</code></td>
+<td><code>{type: "plugin.loaded", ...}</code></td>
+<td>adapter → browser</td>
+<td><code>plugin.loaded</code></td>
 </tr>
 <tr>
-<td><code>plugin.reloaded</code></td>
-<td>kernel → UI</td>
-<td><code>{ names }</code></td>
-</tr>
-<tr>
+<td><code>{type: "kernel.error", source, message}</code></td>
+<td>adapter → browser</td>
 <td><code>kernel.error</code></td>
-<td>kernel → UI</td>
-<td><code>{ source, message }</code></td>
 </tr>
 </tbody>
 </table>
-<p>Full catalog with JSON Schema lives next to <code>events.py</code> and is surfaced
-in <a href="../agent-spec/">agent-spec.md</a> contracts.</p>
+<p>Extension events (<code>x.&lt;plugin&gt;.&lt;kind&gt;</code>) are forwarded transparently so
+plugin-private UI surfaces can receive their private events without
+kernel involvement.</p>
 <h2 id="what-not-to-do">What NOT To Do<a class="headerlink" href="#what-not-to-do" title="Permanent link">&para;</a></h2>
 <ul>
+<li>Do NOT special-case the web plugin in kernel code. It must register
+  and receive events through the same ABI as third-party adapters.</li>
 <li>Do NOT import from <code>vendor/pi-mono/</code> — use the npm package.</li>
-<li>Do NOT embed <code>pi-agent-core</code> or any JS/TS agent runtime. The agent is
-  Python; the browser renders.</li>
+<li>Do NOT embed <code>pi-agent-core</code> or any JS/TS agent runtime. The agent
+  is Python; the browser renders.</li>
 <li>Do NOT add a build step that requires Node <strong>at install time</strong> —
   users get a pre-built wheel.</li>
-<li>Do NOT introduce an auth layer or a public-bind default to "make it
-  easier to deploy". That is a 2.x conversation at earliest.</li>
+<li>Do NOT introduce an auth layer or a public-bind default. That is a
+  2.x conversation at earliest.</li>
 <li>Do NOT couple UI components directly to kernel internals — the
-  WebSocket event protocol is the only contract.</li>
+  event catalog is the only contract.</li>
 </ul>
 </section>
 

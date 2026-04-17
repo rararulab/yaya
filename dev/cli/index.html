@@ -249,6 +249,19 @@
     
         
         
+            <a class="terminal-mkdocs-side-nav-item" href="../plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
             <a class="terminal-mkdocs-side-nav-item" href="../workflow/">Workflow</a>
         
     
@@ -380,18 +393,18 @@
 <nav>
     <ul>
         <li><a href="#cli-conventions">CLI Conventions</a></li>
-        <li><a href="#command-surface-10">Command surface (1.0)</a></li><li><a href="#pattern">Pattern</a></li><li><a href="#yaya-serve-specifics">yaya serve specifics</a></li><li><a href="#json-mode-json">JSON mode (--json)</a></li><li><a href="#extending-the-cli-checklist">Extending the CLI — checklist</a></li>
+        <li><a href="#command-surface-10-kernel-built-ins-only">Command surface (1.0, kernel built-ins only)</a></li><li><a href="#pattern">Pattern</a></li><li><a href="#yaya-serve-specifics">yaya serve specifics</a></li><li><a href="#yaya-plugin-specifics">yaya plugin specifics</a></li><li><a href="#json-mode-json">JSON mode (--json)</a></li><li><a href="#extending-the-cli-checklist-rarely-used">Extending the CLI — checklist (rarely used)</a></li>
     </ul>
 </nav>
 </aside>
             <main id="terminal-mkdocs-main-content">
 <section id="mkdocs-terminal-content">
     <h1 id="cli-conventions">CLI Conventions<a class="headerlink" href="#cli-conventions" title="Permanent link">&para;</a></h1>
-<p>yaya's default experience is the web UI (<code>yaya serve</code>). The CLI stays
-minimal and scripting-friendly. Canonical org spec:
-<code>rararulab/.github/docs/agent-friendly-cli.md</code> — yaya follows it strictly.
+<p>yaya's default experience is the web adapter (<code>yaya serve</code>). The CLI is
+minimal — it exists only to bootstrap the kernel and manage plugins.
+Canonical org spec: <code>rararulab/.github/docs/agent-friendly-cli.md</code>.
 This file captures yaya-specific mechanics.</p>
-<h2 id="command-surface-10">Command surface (1.0)<a class="headerlink" href="#command-surface-10" title="Permanent link">&para;</a></h2>
+<h2 id="command-surface-10-kernel-built-ins-only">Command surface (1.0, kernel built-ins only)<a class="headerlink" href="#command-surface-10-kernel-built-ins-only" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -402,19 +415,27 @@ This file captures yaya-specific mechanics.</p>
 <tbody>
 <tr>
 <td><code>yaya serve</code></td>
-<td><strong>Default.</strong> Start the single-process web server; open browser.</td>
+<td><strong>Default.</strong> Boot kernel; load bundled <code>web</code> adapter plugin; open browser.</td>
 </tr>
 <tr>
 <td><code>yaya version</code></td>
-<td>Print version.</td>
+<td>Print kernel + loaded-plugin versions.</td>
+</tr>
+<tr>
+<td><code>yaya update</code></td>
+<td>Self-update the yaya binary/wheel.</td>
+</tr>
+<tr>
+<td><code>yaya hello</code></td>
+<td>Smoke-test: boot kernel, emit a synthetic event round-trip, print OK.</td>
 </tr>
 <tr>
 <td><code>yaya plugin list</code></td>
-<td>List installed plugins.</td>
+<td>List installed plugins with category and status.</td>
 </tr>
 <tr>
 <td><code>yaya plugin install &lt;src&gt;</code></td>
-<td>Install from path / URL / registry.</td>
+<td>Install a plugin (pip package / path / registry URL).</td>
 </tr>
 <tr>
 <td><code>yaya plugin remove &lt;name&gt;</code></td>
@@ -422,22 +443,28 @@ This file captures yaya-specific mechanics.</p>
 </tr>
 </tbody>
 </table>
-<p>Everything else — <code>hello</code>, <code>update</code>, future integrations — ships as a
-plugin. Adding a built-in subcommand requires a GOAL.md amendment.</p>
+<p>Everything else — adapters (other than <code>web</code>), tools, skills, memory,
+LLM providers, strategies — is a plugin.</p>
+<p><strong>Adding a new built-in CLI subcommand requires a GOAL.md amendment.</strong>
+The built-ins above are the self-bootstrap surface; new capability
+belongs in plugins.</p>
 <h2 id="pattern">Pattern<a class="headerlink" href="#pattern" title="Permanent link">&para;</a></h2>
 <p>Every CLI subcommand:</p>
 <ol>
-<li>Builds a result in <code>core/</code> or <code>kernel/</code> (pure logic, no printing, no <code>sys.exit</code>).</li>
-<li>Calls <code>emit_ok</code> / <code>emit_error</code> from <code>yaya.cli.output</code> — never <code>print</code>,
-   <code>typer.echo</code>, or <code>Console().print</code> directly.</li>
+<li>Builds a result by calling into <code>kernel/</code> (for <code>serve</code>, <code>hello</code>,
+   <code>plugin *</code>) or <code>core/</code> (for <code>version</code>, <code>update</code>). Pure logic, no
+   printing, no <code>sys.exit</code>.</li>
+<li>Calls <code>emit_ok</code> / <code>emit_error</code> from <code>yaya.cli.output</code> — never
+   <code>print</code>, <code>typer.echo</code>, or <code>Console().print</code> directly.</li>
 <li>Exits non-zero on failure; <code>fatal()</code> is the one-liner helper.</li>
 </ol>
 <h2 id="yaya-serve-specifics"><code>yaya serve</code> specifics<a class="headerlink" href="#yaya-serve-specifics" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya<span class="w"> </span>serve<span class="w">                       </span><span class="c1"># bind 127.0.0.1:&lt;auto&gt;, open browser</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">7456</span><span class="w">            </span><span class="c1"># fixed port</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--no-open<span class="w">              </span><span class="c1"># do not launch browser</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--dev<span class="w">                  </span><span class="c1"># proxy to `vite dev` for UI HMR</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--json<span class="w">                 </span><span class="c1"># JSON lifecycle events on stdout (addr, pid, shutdown)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">7456</span><span class="w">           </span><span class="c1"># fixed port</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--no-open<span class="w">             </span><span class="c1"># do not launch browser</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--dev<span class="w">                 </span><span class="c1"># proxy to `vite dev` for UI HMR</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--strategy<span class="w"> </span>&lt;id&gt;<span class="w">       </span><span class="c1"># pick the active strategy plugin (default: react)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>yaya<span class="w"> </span>serve<span class="w"> </span>--json<span class="w">                </span><span class="c1"># JSON lifecycle events on stdout (addr, pid, shutdown)</span>
 </code></pre></div>
 <ul>
 <li>Bind is always <code>127.0.0.1</code> through 1.0 (see <a href="../../goal/">GOAL.md</a>).
@@ -445,30 +472,49 @@ plugin. Adding a built-in subcommand requires a GOAL.md amendment.</p>
 <li>Exit cleanly on <code>SIGINT</code> / <code>SIGTERM</code>; emit a final
   <code>{"ok": true, "action": "shutdown", ...}</code> under <code>--json</code>.</li>
 <li>Kernel startup errors exit non-zero with a <code>suggestion</code> field.</li>
+<li>Plugin load failures surface as <code>plugin.error</code> events but do NOT
+  fail the serve command — the kernel keeps running (see
+  <a href="../plugin-protocol/#plugin-failure-model">plugin-protocol.md</a>).</li>
+</ul>
+<h2 id="yaya-plugin-specifics"><code>yaya plugin</code> specifics<a class="headerlink" href="#yaya-plugin-specifics" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>yaya<span class="w"> </span>plugin<span class="w"> </span>list<span class="w">                       </span><span class="c1"># all discovered plugins, category, status</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>yaya<span class="w"> </span>plugin<span class="w"> </span>install<span class="w"> </span>yaya-tool-bash<span class="w">     </span><span class="c1"># pip resolve from PyPI</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>yaya<span class="w"> </span>plugin<span class="w"> </span>install<span class="w"> </span>./my-plugin<span class="w">        </span><span class="c1"># editable install from path</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>yaya<span class="w"> </span>plugin<span class="w"> </span>install<span class="w"> </span>--json<span class="w"> </span>&lt;src&gt;<span class="w">       </span><span class="c1"># machine-readable output</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>yaya<span class="w"> </span>plugin<span class="w"> </span>remove<span class="w"> </span>yaya-tool-bash
+</code></pre></div>
+<ul>
+<li><code>install</code> shells to <code>pip install</code> under the hood and refreshes the
+  registry without requiring a <code>yaya serve</code> restart for third-party
+  plugins (implementation detail — see
+  <a href="../plugin-protocol/#plugin-discovery-and-loading">plugin-protocol.md</a>).</li>
+<li>Removing a bundled plugin is an error — the CLI rejects it with a
+  <code>suggestion</code> pointing at <code>yaya plugin disable</code> (reserved for 0.5+).</li>
 </ul>
 <h2 id="json-mode-json">JSON mode (<code>--json</code>)<a class="headerlink" href="#json-mode-json" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Stdout carries <code>{"ok": bool, ...}</code>. Contract enforced by <code>cli/output.py</code>.</li>
+<li>Stdout carries <code>{"ok": bool, ...}</code>. Contract enforced by
+  <code>cli/output.py</code>.</li>
 <li>Success: <code>{"ok": true, "action": "&lt;verb&gt;", ...data}</code>.</li>
 <li>Error: <code>{"ok": false, "error": "...", "suggestion": "...", ...data}</code>.</li>
 <li>Human logs / warnings go to <strong>stderr</strong> (<code>warn(...)</code>).</li>
 </ul>
-<h2 id="extending-the-cli-checklist">Extending the CLI — checklist<a class="headerlink" href="#extending-the-cli-checklist" title="Permanent link">&para;</a></h2>
-<p>Adding a new CLI command is a GOAL.md amendment (see surface above). If
-approved, follow this:</p>
+<h2 id="extending-the-cli-checklist-rarely-used">Extending the CLI — checklist (rarely used)<a class="headerlink" href="#extending-the-cli-checklist-rarely-used" title="Permanent link">&para;</a></h2>
+<p>Adding a new built-in CLI command is a <strong>GOAL.md amendment</strong>. If the
+amendment is approved:</p>
 <ul class="task-list">
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Amend GOAL.md's "Command surface" in the same PR.</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Create <code>src/yaya/cli/commands/&lt;name&gt;.py</code> exposing <code>register(app)</code>.</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Register it in <code>src/yaya/cli/__init__.py</code>.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Body pattern: build a structured result in <code>core/</code> or <code>kernel/</code>,
-      then <code>emit_ok</code> / <code>emit_error</code>. No direct printing.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Body pattern: build a structured result in <code>kernel/</code> or
+      <code>core/</code>, then <code>emit_ok</code> / <code>emit_error</code>. No direct printing.</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Add <code>epilog=EXAMPLES</code> with at least one runnable example.</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Destructive? Add <code>--dry-run</code> and <code>--yes</code>.</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Error paths must emit a <code>suggestion</code> and exit non-zero.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Add <code>tests/cli/test_&lt;name&gt;.py</code> covering text mode, <code>--json</code>, and
-      at least one failure path (exit code + JSON shape).</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Network/disk work: add <code>tests/core/test_&lt;module&gt;.py</code> with
-      <code>pytest-httpx</code> mocks — no real network in tests.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Add <code>tests/cli/test_&lt;name&gt;.py</code> covering text mode, <code>--json</code>,
+      and at least one failure path (exit code + JSON shape).</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Network/disk work: <code>pytest-httpx</code> mocks — no real network in
+      tests.</li>
 </ul>
 </section>
 

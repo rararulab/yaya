@@ -247,6 +247,19 @@
     
         
         
+            <a class="terminal-mkdocs-side-nav-item" href="../plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
             <a class="terminal-mkdocs-side-nav-item" href="../workflow/">Workflow</a>
         
     
@@ -380,60 +393,86 @@
 <nav>
     <ul>
         <li><a href="#architecture">Architecture</a></li>
-        <li><a href="#runtime">Runtime</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#layering-rules">Layering rules</a></li><li><a href="#kernel-ui-contract">Kernel ↔ UI contract</a></li><li><a href="#specs-live-next-to-code">Specs live next to code</a></li><li><a href="#code-style">Code style</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#layering-rules">Layering rules</a></li><li><a href="#kernel-adapter-contract">Kernel ↔ adapter contract</a></li><li><a href="#specs-live-next-to-code">Specs live next to code</a></li><li><a href="#code-style">Code style</a></li>
     </ul>
 </nav>
 </aside>
             <main id="terminal-mkdocs-main-content">
 <section id="mkdocs-terminal-content">
     <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
-<p>Clean-architecture layering. Outer layers depend on inner, never the reverse.</p>
-<h2 id="runtime">Runtime<a class="headerlink" href="#runtime" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya serve   (one Python process)
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>└── uvicorn + FastAPI in-process
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    ├── HTTP  /           → pre-built web UI shell
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    ├── HTTP  /assets/*   → static JS/CSS (importlib.resources)
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    ├── WS    /ws         → kernel event bus ↔ UI (the contract)
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    └── API   /plugins/*  → list / install / remove / reload
+<p>yaya is a small kernel with plugins orbiting it. The kernel owns the
+event bus, the plugin registry, and a fixed agent loop. <strong>Every user
+surface, every LLM provider, every tool, every skill, every memory
+backend, every strategy is a plugin</strong> — including the ones we bundle.
+See <a href="../../goal/">GOAL.md</a> for the product anchor and
+<a href="../plugin-protocol/">plugin-protocol.md</a> for the authoritative contract.</p>
+<h2 id="runtime-shape">Runtime shape<a class="headerlink" href="#runtime-shape" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>                ADAPTERS                      TOOLS
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>             (plugins)                     (plugins)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>          web / tui / tg                bash / fs / http ...
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                │                             ▲
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>                ▼                             │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        ┌───────────── KERNEL (yaya) ─────────────┐
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        │    event bus  ·  plugin registry        │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        │    agent loop (the scheduler)           │
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        │    built-in CLI: serve / version /      │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        │      update / hello / plugin {...}      │
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        └─────┬─────────┬────────────┬────────────┘
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>              ▼         ▼            ▼
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>         STRATEGIES  SKILLS      MEMORY
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>         (plugins)  (plugins)   (plugins)
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>                         │
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                         ▼
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                   LLM PROVIDERS
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                    (plugins)
 </code></pre></div>
-<p>Single process. Default bind <code>127.0.0.1</code>. No Node at install or run time —
-the web UI is pre-built and bundled in the wheel. See <a href="../../goal/">GOAL.md</a>.</p>
+<p><code>yaya serve</code> = kernel boots → loads bundled <code>web</code> adapter plugin →
+opens browser at <code>http://127.0.0.1:&lt;port&gt;</code>. One Python process.
+Default bind <code>127.0.0.1</code>. No Node at install or run time — the web
+adapter's UI assets are pre-built and shipped in the wheel.</p>
 <h2 id="source-layout">Source layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>src/yaya/
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  __init__.py       # versioned public API
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  __main__.py       # python -m yaya → cli.app
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  cli/              # Typer entrypoints: serve / version / plugin
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    commands/       # one file per subcommand
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    output.py       # shared rendering helpers (for CLI, not the web UI)
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  kernel/           # event bus, plugin loader, event schemas (events.py)
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  web/              # FastAPI app + WebSocket bridge + static/ (built assets)
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    package.json    # consumes @mariozechner/pi-web-ui from npm
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    src/            # TypeScript shell (dev-time only)
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    static/         # build output — ships in the wheel
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>  plugins/          # seed plugins shipped in-tree (version, update, hello)
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>  core/             # shared pure-logic helpers (updater, etc.)
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>tests/              # mirrors src/ one-to-one
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>specs/              # BDD contracts (agent-spec) per feature
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  __init__.py         # versioned public API
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  __main__.py         # python -m yaya → cli.app
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  cli/                # Typer entrypoints: serve / version / update / hello / plugin
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    commands/         # one file per subcommand
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    output.py         # shared rendering helpers (CLI only — not web UI)
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  kernel/             # the kernel — the entire product core lives here
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    bus.py            # event bus: pub/sub, ordering, backpressure
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    registry.py       # plugin discovery, lifecycle, failure accounting
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    loop.py           # fixed agent loop; calls out to strategy / llm / tool / memory
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    plugin.py         # Plugin ABI (Protocol), KernelContext, Category enum
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    events.py         # closed event-kind catalog + TypedDict payloads (authoritative)
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>  plugins/            # bundled plugins — load through the same protocol as third-party
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    web/              # web adapter (FastAPI WS bridge + pi-web-ui static assets)
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>      package.json    # npm: consumes @mariozechner/pi-web-ui
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>      src/            # TypeScript shell (dev-time only)
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>      static/         # build output — ships in the wheel
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    llm_openai/       # seed llm-provider plugin
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>    tool_bash/        # seed tool plugin
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>    strategy_react/   # seed strategy plugin
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    memory_sqlite/    # seed memory plugin
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>  core/               # shared pure-logic helpers (updater, etc.)
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>tests/                # mirrors src/ one-to-one
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>specs/                # BDD contracts (agent-spec) per feature
 </code></pre></div>
 <h2 id="layering-rules">Layering rules<a class="headerlink" href="#layering-rules" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>core/</code> and <code>kernel/</code> have <strong>zero</strong> imports from <code>cli/</code> or <code>web/</code>.
-  Verified by ruff's import rules and tests.</li>
-<li><code>kernel/</code> is the innermost layer. <code>web/</code> and <code>cli/</code> are both adapters
-  that drive the kernel; <code>plugins/</code> are subscribers to kernel events.</li>
-<li>Every subpackage under <code>src/yaya/</code> has its own <code>AGENT.md</code> describing
-  its purpose, invariants, and "do not" list
-  (see <code>rararulab/.github/docs/agent-md.md</code>).</li>
-<li>Every public (non-underscore) callable/class has a docstring explaining
-  <strong>why</strong>, not <strong>what</strong>. Private helpers document only non-obvious invariants.</li>
-<li><code>src/yaya/__init__.py</code> exposes the versioned public API; nothing else
-  is importable from outside the package.</li>
+<li><code>kernel/</code> has <strong>zero</strong> imports from <code>cli/</code>, <code>plugins/</code>, or <code>core/</code>.
+  It defines the protocol; everything else depends on it.</li>
+<li><code>plugins/*</code> import from <code>kernel/</code> only. Cross-plugin communication
+  <strong>must</strong> go through events — no direct Python imports between plugin
+  subpackages.</li>
+<li><code>cli/</code> imports from <code>kernel/</code> (to boot it) and from <code>core/</code> (shared
+  helpers). Never from <code>plugins/*</code>.</li>
+<li><code>core/</code> is the shared utility layer; it has no kernel knowledge.</li>
+<li>Every subpackage under <code>src/yaya/</code> has its own <code>AGENT.md</code>.</li>
 </ul>
-<h2 id="kernel-ui-contract">Kernel ↔ UI contract<a class="headerlink" href="#kernel-ui-contract" title="Permanent link">&para;</a></h2>
-<p>The WebSocket event protocol is the <strong>only</strong> coupling between Python and
-the browser. Python is authoritative; the TS types in <code>web/src/events.ts</code>
-mirror <code>kernel/events.py</code> and CI fails on drift. See
-<a href="../web-ui/">web-ui.md</a> for the event catalog.</p>
+<h2 id="kernel-adapter-contract">Kernel ↔ adapter contract<a class="headerlink" href="#kernel-adapter-contract" title="Permanent link">&para;</a></h2>
+<p>Adapters speak the public event set (see
+<a href="../plugin-protocol/">plugin-protocol.md</a>). The web adapter layers a
+WebSocket protocol on top of those events — the WS schema is a thin
+serialization of the event catalog, and mismatches fail CI.</p>
 <h2 id="specs-live-next-to-code">Specs live next to code<a class="headerlink" href="#specs-live-next-to-code" title="Permanent link">&para;</a></h2>
 <p>Every non-trivial feature is backed by a <code>specs/&lt;slug&gt;.spec.md</code> BDD
 contract verified with <a href="https://github.com/ZhangHanDong/agent-spec"><code>ZhangHanDong/agent-spec</code></a>.
@@ -444,9 +483,9 @@ staged changes. See <a href="../agent-spec/">agent-spec.md</a>.</p>
 <p>Python follows the <a href="https://google.github.io/styleguide/pyguide.html">Google Python Style Guide</a>
 with yaya overlays in <a href="../code-comments/">code-comments.md</a>. Enforced by
 <code>ruff</code> (lint + format) and <code>mypy --strict</code>.</p>
-<p>TypeScript under <code>src/yaya/web/</code> follows <code>vendor/pi-mono/AGENTS.md</code>
-conventions (no <code>any</code>, no dynamic imports for types, biome for
-lint/format). Enforced by <code>just web-check</code>.</p>
+<p>TypeScript under <code>src/yaya/plugins/web/</code> follows
+<code>vendor/pi-mono/AGENTS.md</code> conventions (no <code>any</code>, no dynamic imports
+for types, biome for lint/format). Enforced by <code>just web-check</code>.</p>
 </section>
 
             </main>

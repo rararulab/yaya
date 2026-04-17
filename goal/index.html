@@ -251,6 +251,19 @@
     
         
         
+            <a class="terminal-mkdocs-side-nav-item" href="../dev/plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
             <a class="terminal-mkdocs-side-nav-item" href="../dev/workflow/">Workflow</a>
         
     
@@ -384,7 +397,7 @@
 <nav>
     <ul>
         <li><a href="#goalmd-yaya">GOAL.md — yaya</a></li>
-        <li><a href="#north-star">North Star</a></li><li><a href="#problem">Problem</a></li><li><a href="#users-jobs">Users &amp; Jobs</a></li><li><a href="#product-principles-priority-order">Product Principles (priority order)</a></li><li><a href="#non-goals-explicit">Non-Goals (explicit)</a></li><li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#command-surface-minimum">Command surface (minimum)</a></li><li><a href="#milestones">Milestones</a></li><li><a href="#success-metrics">Success Metrics</a></li><li><a href="#anti-vision-what-yaya-refuses-to-become">Anti-Vision (what yaya refuses to become)</a></li><li><a href="#governance-of-this-document">Governance of this document</a></li>
+        <li><a href="#north-star">North Star</a></li><li><a href="#problem">Problem</a></li><li><a href="#users-jobs">Users &amp; Jobs</a></li><li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#product-principles-priority-order">Product Principles (priority order)</a></li><li><a href="#non-goals-explicit">Non-Goals (explicit)</a></li><li><a href="#command-surface-10-kernel-built-ins-only">Command surface (1.0, kernel built-ins only)</a></li><li><a href="#plugin-categories-10-closed-set">Plugin categories (1.0 closed set)</a></li><li><a href="#milestones">Milestones</a></li><li><a href="#success-metrics">Success Metrics</a></li><li><a href="#anti-vision-what-yaya-refuses-to-become">Anti-Vision (what yaya refuses to become)</a></li><li><a href="#governance-of-this-document">Governance of this document</a></li>
     </ul>
 </nav>
 </aside>
@@ -396,81 +409,112 @@ surface area — is checked against this document. If a PR conflicts with
 <code>GOAL.md</code> and the principle still holds, reject the PR. If the principle
 no longer holds, update <code>GOAL.md</code> in the <strong>same</strong> PR and justify it.</p>
 <h2 id="north-star">North Star<a class="headerlink" href="#north-star" title="Permanent link">&para;</a></h2>
-<p>yaya is a <strong>lightweight, kernel-style agent that grows itself.</strong> A single
-Python process (<code>yaya serve</code>) exposes an event-driven kernel whose
-plugins are the only way features get added. The default entrypoint is a
-local web UI built with
-<a href="https://github.com/badlogic/pi-mono/tree/main/packages/web-ui"><code>@mariozechner/pi-web-ui</code></a>
-that opens in the browser and speaks WebSocket to the kernel. yaya can
-author and install its own plugins on demand — that is the product.</p>
+<p>yaya is a <strong>lightweight, kernel-style agent that grows itself.</strong> The
+kernel is the product: an event bus, a plugin registry, and a fixed
+agent loop that acts as the scheduler. Everything else — <strong>every user
+surface, every LLM provider, every tool, every skill, every memory
+backend, every next-action strategy</strong> — is a plugin. Running <code>yaya
+serve</code> boots the kernel and loads the bundled <code>web</code> adapter plugin;
+users interact through a browser at <code>http://127.0.0.1:&lt;port&gt;</code>. yaya
+can author and install its own plugins on demand — that is the product.</p>
 <h2 id="problem">Problem<a class="headerlink" href="#problem" title="Permanent link">&para;</a></h2>
 <p>Existing coding agents (Claude Code, Cursor, Aider, Codex) are heavy,
 opinionated, and closed. Adding a capability means forking the product or
 waiting for upstream. <strong>Users adapt to the agent, not the other way around.</strong></p>
 <p>yaya inverts that: when the user asks for a capability yaya does not have,
-yaya writes the plugin, installs it into itself, and the next request uses
-it. Self-hosting growth is the product.</p>
+yaya writes the plugin, installs it, and the next request uses it.
+Self-hosting growth is the product.</p>
 <h2 id="users-jobs">Users &amp; Jobs<a class="headerlink" href="#users-jobs" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Primary</strong>: power users and developers who want an agent they can
   extend in minutes, not quarters.</li>
 <li><strong>Typical session (5 minutes)</strong>: run <code>yaya serve</code>, browser opens to
-  <code>http://127.0.0.1:&lt;port&gt;</code>, describe a task in chat. yaya either handles
-  it with existing plugins or drafts a plugin, installs it, reloads the
-  kernel, and completes the task with the new capability live.</li>
-<li><strong>Secondary</strong>: plugin authors who want a minimal, stable kernel to build
-  against without ceremony.</li>
+  <code>http://127.0.0.1:&lt;port&gt;</code>, describe a task. yaya handles it with
+  installed plugins or drafts a new plugin, installs it, reloads, and
+  completes the task with the new capability live.</li>
+<li><strong>Secondary</strong>: plugin authors who want a minimal, stable kernel —
+  and a clear plugin protocol — to build against.</li>
 </ul>
+<h2 id="runtime-shape">Runtime shape<a class="headerlink" href="#runtime-shape" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>                ADAPTERS                      TOOLS
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>             (plugins)                     (plugins)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>          web / tui / tg                bash / fs / http ...
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                │                             ▲
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>                ▼                             │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        ┌───────────── KERNEL (yaya) ─────────────┐
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        │    event bus  ·  plugin registry        │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        │    agent loop (the scheduler)           │
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        │    built-in CLI (self-bootstrap only):  │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        │       serve · version · update · hello  │
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        │       · plugin {list, install, remove}  │
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        └─────┬─────────┬────────────┬────────────┘
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>              ▼         ▼            ▼
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>         STRATEGIES  SKILLS      MEMORY
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>         (plugins)  (plugins)   (plugins)
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>         ReAct /    domain-     sqlite / vec / ...
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>         plan-exec  specific
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>         / ...
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                         │
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>                         ▼
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>                   LLM PROVIDERS
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>                    (plugins)
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>                openai / anthropic /
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>                ollama / lmstudio / ...
+</code></pre></div>
+<p>Kernel = OS. Events = syscalls. Plugins = drivers + userland.</p>
 <h2 id="product-principles-priority-order">Product Principles (priority order)<a class="headerlink" href="#product-principles-priority-order" title="Permanent link">&para;</a></h2>
 <ol>
-<li><strong>Kernel stays small.</strong> If a feature could be a plugin, it is a plugin.
-   The core ships an event bus, a plugin loader, a web-server shell, and
-   nothing else.</li>
+<li><strong>Kernel stays small.</strong> The kernel ships only the event bus, the
+   plugin registry, the agent loop, and the minimum CLI required to
+   bootstrap and manage plugins. <strong>If it could be a plugin, it is a
+   plugin</strong> — including every user surface, every LLM provider, every
+   strategy, every memory backend.</li>
+<li><strong>Adapters are plugins from day 1.</strong> Web, TUI, Telegram, Slack —
+   all implement the same adapter contract. <code>yaya serve</code> boots the
+   kernel and loads the bundled <code>web</code> adapter plugin. We dogfood the
+   protocol so it is never "special" for core.</li>
+<li><strong>Closed event set at 1.0.</strong> A finite, versioned catalog of event
+   kinds (see <code>docs/dev/plugin-protocol.md</code>).
+   Plugin-private payloads use the <code>x.&lt;plugin&gt;.&lt;kind&gt;</code> extension
+   namespace — they route through the bus but do not pollute the
+   public contract.</li>
+<li><strong>Agent loop is the scheduler.</strong> Loop shape is fixed and lives in
+   the kernel. Per-step decisions (next action, retry, stop condition)
+   are delegated to a <code>strategy</code> plugin category. ReAct / plan-execute
+   / reflexion are each a strategy plugin.</li>
 <li><strong>Self-hosting growth.</strong> yaya ships the machinery to extend yaya.
    Plugin authoring is a first-class <strong>agent</strong> capability, not an
    afterthought for humans.</li>
 <li><strong>Single-process, local-first.</strong> One Python process. No required
    backend, no account. Default bind: <code>127.0.0.1</code>. A remote LLM is a
-   plugin, not a dependency.</li>
-<li><strong>Events are the contract.</strong> Plugins subscribe to event types; the
-   kernel routes. The web UI is just another subscriber over WebSocket.
-   No hidden globals, no direct plugin-to-plugin coupling.</li>
-<li><strong>Fail loud, degrade gracefully.</strong> A broken plugin taints only itself;
-   the kernel keeps running. The web UI keeps rendering whatever events
-   still arrive.</li>
-<li><strong>Readable &gt; clever.</strong> A new plugin author understands the kernel in
-   one sitting.</li>
-<li><strong>Ship assets, not toolchains.</strong> The web UI is pre-built to static
-   assets and bundled into the Python wheel. End users install with
-   <code>pip</code> and need no Node, npm, or browser plugin.</li>
+   provider plugin, not a dependency.</li>
+<li><strong>Fail loud, degrade gracefully.</strong> A broken plugin taints only
+   itself; the kernel keeps running. The event bus drops that plugin's
+   subscriptions and surfaces a <code>plugin.error</code> event.</li>
+<li><strong>Readable &gt; clever.</strong> A new plugin author understands the kernel
+   and the protocol in one sitting.</li>
+<li><strong>Ship assets, not toolchains.</strong> The bundled web adapter is
+   pre-built to static assets and shipped in the Python wheel. End
+   users install with <code>pip</code> — no Node, no npm, no browser extension
+   at install or run time.</li>
 </ol>
 <h2 id="non-goals-explicit">Non-Goals (explicit)<a class="headerlink" href="#non-goals-explicit" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>NOT</strong> an IDE or language server. yaya is an agent with a local web UI.</li>
+<li><strong>NOT</strong> an IDE or language server. yaya is an agent with pluggable
+  surfaces; the default surface is a local web UI.</li>
 <li><strong>NOT</strong> a hosted web service. Through 1.0, <code>yaya serve</code> binds
-  <code>127.0.0.1</code> only. No public-internet deployment, no auth layer, no
-  multi-tenant mode. Anyone who wants that runs it behind their own
-  reverse proxy at their own risk.</li>
+  <code>127.0.0.1</code> only. No public bind flag, no auth layer, no multi-tenant
+  mode. Anyone who wants that runs yaya behind their own reverse proxy
+  at their own risk.</li>
 <li><strong>NOT</strong> a cloud service. No hosted control plane, no account, no
   telemetry-by-default.</li>
 <li><strong>NOT</strong> a general-purpose LLM-app framework. The scope is "an agent
-  that grows itself", not arbitrary orchestration.</li>
-<li><strong>NOT</strong> a Claude Code / Cursor replacement for teams that want a
-  curated product. yaya is for users who want to own their agent.</li>
+  that grows itself"; the plugin protocol serves that scope, not
+  arbitrary orchestration.</li>
+<li><strong>NOT</strong> an agent runtime with pluggable loop <em>shapes</em>. The loop is
+  fixed; only its <em>decisions</em> are pluggable via strategy plugins.</li>
 </ul>
-<h2 id="runtime-shape">Runtime shape<a class="headerlink" href="#runtime-shape" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya serve
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>└── one Python process (uvicorn + FastAPI in-process)
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    ├── GET /             → pre-built UI shell (HTML)
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    ├── GET /assets/*     → static JS/CSS from importlib.resources
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    ├── WS  /ws           → kernel event bus ↔ web UI (the contract)
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    └── API /plugins/*    → list / install / remove / reload
-</code></pre></div>
-<p>The web UI is <strong>consumed</strong> as <code>@mariozechner/pi-web-ui</code> (npm dependency
-in <code>src/yaya/web/package.json</code>). yaya provides its own shell and talks
-to the Python kernel over WebSocket; yaya does <strong>not</strong> embed
-<code>pi-agent-core</code> or any JS/TS agent runtime.</p>
-<h2 id="command-surface-minimum">Command surface (minimum)<a class="headerlink" href="#command-surface-minimum" title="Permanent link">&para;</a></h2>
+<h2 id="command-surface-10-kernel-built-ins-only">Command surface (1.0, kernel built-ins only)<a class="headerlink" href="#command-surface-10-kernel-built-ins-only" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -481,19 +525,27 @@ to the Python kernel over WebSocket; yaya does <strong>not</strong> embed
 <tbody>
 <tr>
 <td><code>yaya serve</code></td>
-<td>Default. Starts the single-process server; opens browser.</td>
+<td><strong>Default.</strong> Boot kernel; load bundled <code>web</code> adapter plugin; open browser.</td>
 </tr>
 <tr>
 <td><code>yaya version</code></td>
-<td>Print version.</td>
+<td>Print kernel + loaded-plugin versions.</td>
+</tr>
+<tr>
+<td><code>yaya update</code></td>
+<td>Self-update the yaya binary/wheel.</td>
+</tr>
+<tr>
+<td><code>yaya hello</code></td>
+<td>Smoke-test: boot kernel, emit a synthetic event round-trip, print OK.</td>
 </tr>
 <tr>
 <td><code>yaya plugin list</code></td>
-<td>List installed plugins.</td>
+<td>List installed plugins with category and status.</td>
 </tr>
 <tr>
 <td><code>yaya plugin install &lt;src&gt;</code></td>
-<td>Install from path / URL / registry.</td>
+<td>Install a plugin (pip package / path / registry URL).</td>
 </tr>
 <tr>
 <td><code>yaya plugin remove &lt;name&gt;</code></td>
@@ -501,43 +553,100 @@ to the Python kernel over WebSocket; yaya does <strong>not</strong> embed
 </tr>
 </tbody>
 </table>
-<p>Everything else — including <code>hello</code> and <code>update</code> — ships as a plugin, not
-a built-in subcommand.</p>
+<p>Everything else — adapters, tools, skills, memory, LLM providers,
+strategies — is a plugin. Adding a new built-in subcommand requires a
+GOAL.md amendment.</p>
+<h2 id="plugin-categories-10-closed-set">Plugin categories (1.0 closed set)<a class="headerlink" href="#plugin-categories-10-closed-set" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Subscribes to</th>
+<th>Emits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>adapter</strong></td>
+<td><code>assistant.message.*</code>, <code>tool.call.start</code></td>
+<td><code>user.message.received</code>, <code>user.interrupt</code></td>
+</tr>
+<tr>
+<td><strong>tool</strong></td>
+<td><code>tool.call.request</code></td>
+<td><code>tool.call.result</code></td>
+</tr>
+<tr>
+<td><strong>llm-provider</strong></td>
+<td><code>llm.call.request</code></td>
+<td><code>llm.call.response</code>, <code>llm.call.error</code></td>
+</tr>
+<tr>
+<td><strong>strategy</strong></td>
+<td><code>strategy.decide.request</code></td>
+<td><code>strategy.decide.response</code></td>
+</tr>
+<tr>
+<td><strong>memory</strong></td>
+<td><code>memory.query</code>, <code>memory.write</code></td>
+<td><code>memory.result</code></td>
+</tr>
+<tr>
+<td><strong>skill</strong></td>
+<td><code>user.message.received</code> (filtered)</td>
+<td>any of the above via kernel</td>
+</tr>
+</tbody>
+</table>
+<p>Full event catalog lives in
+<code>docs/dev/plugin-protocol.md</code> and is the
+authoritative 1.0 contract.</p>
 <h2 id="milestones">Milestones<a class="headerlink" href="#milestones" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>0.1 — kernel live in browser</strong> — event bus, plugin loader, <code>yaya
-  serve</code>, web UI shell rendering plugin output. 2–3 seed plugins
-  (<code>version</code>, <code>update</code>, <code>hello</code>) as reference plugins. Each has a
-  <code>specs/&lt;name&gt;.spec.md</code> contract.</li>
-<li><strong>0.5 — self-authoring plugin</strong> — in the web UI chat, "I want X"
-  produces <code>specs/&lt;x&gt;.spec.md</code>, scaffolds a plugin, installs it locally,
-  reloads the kernel, UI picks up the new capability without restart.</li>
-<li><strong>1.0 — stable ABIs frozen</strong> — plugin Python ABI (event shapes,
-  lifecycle, permissions) and WebSocket UI protocol are both frozen.
-  Plugins and UIs written against 1.0 keep working across 1.x.</li>
-<li><strong>2.0 — plugin registry + sandboxing</strong> — discovery, install, share;
-  plugins run in a capability-restricted sandbox by default.</li>
+<li><strong>0.1 — kernel live end-to-end</strong>: kernel (event bus + registry +
+  fixed agent loop), plugin protocol v0, bundled plugins covering one
+  of each category (web adapter · one LLM provider · one tool · one
+  strategy · one memory), <code>yaya serve</code> opens a browser chat that
+  round-trips a real LLM call through the bus.</li>
+<li><strong>0.5 — self-authoring plugin</strong>: in the web UI, "I want X" produces
+  a <code>specs/&lt;x&gt;.spec.md</code>, scaffolds a plugin (correct category,
+  subscribes to the right events), installs it locally, reloads the
+  kernel, UI picks up the new capability without restart.</li>
+<li><strong>1.0 — protocol freeze</strong>: event taxonomy, plugin ABI, strategy
+  interface, adapter contract, and the web↔kernel WS schema are all
+  frozen. Plugins written against 1.0 keep working across 1.x.</li>
+<li><strong>2.0 — marketplace + sandbox</strong>: plugin registry (discovery + install
+  from a curated index), signed plugins, capability-restricted sandbox
+  execution by default.</li>
 </ul>
 <h2 id="success-metrics">Success Metrics<a class="headerlink" href="#success-metrics" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Time-to-first-plugin</strong> for a new user: ≤5 minutes from <code>pip install</code>
-  to a working custom plugin authored through the web UI.</li>
-<li><strong>Kernel size budget</strong> (Python LOC outside plugins and web shell):
-  stays under <!-- TODO: confirm target, e.g. 2000 LOC --> through 1.0.
-  Enforced in CI.</li>
-<li><strong>Self-authoring rate</strong>: ≥30% of plugins in the wild authored through
-  yaya's own self-authoring loop (health metric for principle #2).</li>
-<li><strong>Cold start</strong>: <code>yaya serve</code> to interactive chat in the browser in
-  ≤<!-- TODO: confirm, e.g. 500ms cold, 150ms warm -->.</li>
-<li><strong>Wheel size</strong>: bundled web assets + Python package stays under
-  <!-- TODO: confirm, e.g. 5 MiB --></li>
+<li><strong>Time-to-first-plugin</strong> for a new user: ≤5 minutes from <code>pip install
+  yaya</code> to a working custom plugin authored through the web UI.</li>
+<li><strong>Seed release (0.1) plugin count</strong>: exactly one of each category
+  (web adapter + 1 LLM provider + 1 tool + 1 strategy + 1 memory).
+  Deliberately minimal to prove the protocol.</li>
+<li><strong>Kernel size budget</strong> (Python LOC in <code>src/yaya/kernel/</code> +
+  <code>src/yaya/cli/</code>, excluding plugins and the web shell): stays under
+  <!-- TODO: confirm target, e.g. 2000 LOC --></li>
 </ul>
+<p>through 1.0. Enforced in CI.
+- <strong>Self-authoring rate</strong>: ≥30% of plugins in the wild authored through
+  yaya's own self-authoring loop (health metric for principle #5).
+- <strong>Cold start</strong>: <code>yaya serve</code> to interactive chat in the browser in
+  ≤<!-- TODO: confirm, e.g. 500ms cold, 150ms warm -->.
+- <strong>Wheel size</strong>: bundled web assets + Python package stays under
+  <!-- TODO: confirm, e.g. 5 MiB --></p>
 <p>— enforced in CI on the release wheel.</p>
 <h2 id="anti-vision-what-yaya-refuses-to-become">Anti-Vision (what yaya refuses to become)<a class="headerlink" href="#anti-vision-what-yaya-refuses-to-become" title="Permanent link">&para;</a></h2>
 <ul>
 <li>A monolith where features accumulate in the kernel to "avoid plugin
   boilerplate".</li>
-<li>An agent locked to one LLM vendor or one runtime.</li>
+<li>A kernel with special cases for the bundled plugins. Bundled plugins
+  load through the <strong>same protocol</strong> as third-party plugins.</li>
+<li>An agent with a fork of the event bus for "internal events" that
+  third-party plugins cannot subscribe to.</li>
+<li>An agent locked to one LLM vendor, one runtime, or one UI.</li>
 <li>A hosted SaaS with accounts, billing, and a control plane.</li>
 <li>A polyglot dual-runtime beast that needs Node <strong>at run time</strong> on the
   user's machine.</li>
@@ -545,13 +654,14 @@ a built-in subcommand.</p>
 </ul>
 <h2 id="governance-of-this-document">Governance of this document<a class="headerlink" href="#governance-of-this-document" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Changing North Star, Principles, Non-Goals, or Anti-Vision requires
-  owner review and a dedicated issue labelled <code>governance</code>.</li>
-<li>Milestones and Success Metrics may be refined in ordinary PRs with
-  justification in the PR body.</li>
+<li>Changing North Star, Principles, Non-Goals, Anti-Vision, or the
+  closed event taxonomy requires owner review and a dedicated issue
+  labelled <code>governance</code>.</li>
+<li>Milestones, Success Metrics, and the plugin category table may be
+  refined in ordinary PRs with justification in the PR body.</li>
 <li>Every <code>docs/dev/*.md</code> and folder-local <code>AGENT.md</code> must be consistent
-  with <code>GOAL.md</code>. When they conflict, <code>GOAL.md</code> wins — fix the downstream
-  doc in the same PR that introduced the conflict.</li>
+  with <code>GOAL.md</code>. When they conflict, <code>GOAL.md</code> wins — fix the
+  downstream doc in the same PR that introduced the conflict.</li>
 </ul>
 </section>
 

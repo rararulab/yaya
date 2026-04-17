@@ -57,3 +57,13 @@ version:
 # Run the CLI
 run *ARGS:
     uv run yaya {{ARGS}}
+
+# Serve documentation locally with hot reload
+docs:
+    @echo "📖 Serving docs at http://127.0.0.1:8000"
+    uv run --group docs mkdocs serve
+
+# Build documentation and fail on warnings (CI parity)
+docs-test:
+    @echo "📖 Building docs (strict)"
+    uv run --group docs mkdocs build -s

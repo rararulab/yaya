@@ -9,7 +9,7 @@ yaya hello --name world
 ## JSON mode
 
 All commands accept `--json` and emit the canonical
-`{"ok": bool, ...}` shape on stdout. See [cli.md](cli.md) for the full
+`{"ok": bool, ...}` shape on stdout. See [CLI Conventions](../dev/cli.md) for the full
 contract.
 
 ```bash

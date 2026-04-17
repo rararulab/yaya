@@ -40,6 +40,15 @@ dev = [
     "tox-uv>=1.16.0",
     "pyinstaller>=6.11.0",
     "pytest-httpx>=0.35",
+    "pytest-timeout>=2.3.0",
+    "pytest-randomly>=3.15.0",
+    "hypothesis>=6.115.0",
+    "syrupy>=4.7.0",
+]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-terminal>=4.7.0",
+    "mkdocstrings[python]>=0.26.1",
 ]
 
 [build-system]
@@ -67,7 +76,18 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-ra --strict-markers"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--timeout=30",
+    "--timeout-method=thread",
+]
+markers = [
+    "unit: fast, isolated, pure-logic tests (default)",
+    "integration: touches filesystem, subprocess, or local network",
+    "slow: >1s tests; skippable via `-m 'not slow'`",
+]
 
 [tool.coverage.run]
 source = ["src/yaya"]
@@ -76,6 +96,12 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+fail_under = 80
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",  # stub-only bodies
+]
 
 [tool.ruff]
 target-version = "py314"

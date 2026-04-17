@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.8.0">
+    
+    <meta name="description" content="A Python AI agent built with engineering rigor."> 
+    
+    <meta name="author" content="rararulab"> 
+    
+    <link rel="canonical" href="https://rararulab.github.io/yaya/wiki/AGENT/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>docs/wiki — AGENT.md (wiki schema) - yaya</title>
+
+
+<link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../../css/normalize.css" rel="stylesheet">
+<link href="../../css/terminal.css" rel="stylesheet">
+<link href="../../css/theme.css" rel="stylesheet">
+<link href="../../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../../css/theme.footer.css" rel="stylesheet">
+<!-- dark color palette -->
+<link href="../../css/palettes/dark.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+
+
+    
+    <link href="../../assets/_mkdocstrings.css" rel="stylesheet">  
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "../..",
+    shortcuts = "{}";
+</script>
+<script src="../../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://rararulab.github.io/yaya/" class="no-style">yaya</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../.." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../../goal/" class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Goal</span>
+                    </a>
+                    <meta property="position" content="1">
+                </li>
+                
+                
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="2">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../..">Home</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../goal/">Goal</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Wiki</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../lessons-learned/">Lessons Learned</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">User Guide</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/install/">Install</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/usage/">Usage</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Development</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/architecture/">Architecture</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/no-agent-frameworks/">No Third-Party Agent Frameworks</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/workflow/">Workflow</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/multi-agent/">Multi-Agent</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/maintaining-agent-md/">Maintaining AGENT.md</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/cli/">CLI Conventions</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/agent-friendly-cli/">Agent-Friendly CLI (org spec)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/web-ui/">Web UI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/testing/">Testing</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/agent-spec/">Agent Spec (BDD Contracts)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/code-comments/">Code Comments & Docstrings</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/release/">Release</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+    </ul>
+</nav><hr>
+<nav>
+    <ul>
+        <li><a href="#docswiki-agentmd-wiki-schema">docs/wiki — AGENT.md (wiki schema)</a></li>
+        <li><a href="#three-layers">Three layers</a></li><li><a href="#directory-structure">Directory structure</a></li><li><a href="#operations">Operations</a></li><li><a href="#page-shapes">Page shapes</a></li><li><a href="#conventions">Conventions</a></li>
+    </ul>
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="docswiki-agentmd-wiki-schema">docs/wiki — AGENT.md (wiki schema)<a class="headerlink" href="#docswiki-agentmd-wiki-schema" title="Permanent link">&para;</a></h1>
+<p>This directory is yaya's <strong>LLM-maintained knowledge wiki</strong>, following
+Karpathy's <a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f">LLM Wiki</a>
+pattern. The wiki is <strong>not</strong> product documentation — <code>docs/dev/*</code>
+remains the authoritative engineering docs. The wiki compiles
+durable lessons, decision history, and notes from sources we consulted.</p>
+<h2 id="three-layers">Three layers<a class="headerlink" href="#three-layers" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Raw sources (immutable).</strong> <code>vendor/kimi-cli</code>, <code>vendor/bub</code>,
+   external gists, the homework PDF, issue comments. Agents read
+   these; they never modify them.</li>
+<li><strong>The wiki (this directory).</strong> LLM-written pages that compile
+   knowledge from sources. Every page has a single owner: the
+   structure, not the human.</li>
+<li><strong>The schema (this file).</strong> How the wiki is organized, what
+   each page shape looks like, when to update what.</li>
+</ol>
+<h2 id="directory-structure">Directory structure<a class="headerlink" href="#directory-structure" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>docs/wiki/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── AGENT.md              &lt;- this file
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── index.md              &lt;- content catalog; updated on every ingest
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── log.md                &lt;- append-only chronological log
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>├── sources/              &lt;- one page per external source consulted
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── concepts/             &lt;- design concepts we converged on
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── lessons/              &lt;- rolling lessons from implementation (was lessons-learned.md)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>└── decisions/            &lt;- ADR-style records of major choices
+</code></pre></div>
+<p>Create subdirectories lazily when the first page of that type lands.</p>
+<h2 id="operations">Operations<a class="headerlink" href="#operations" title="Permanent link">&para;</a></h2>
+<h3 id="ingest">Ingest<a class="headerlink" href="#ingest" title="Permanent link">&para;</a></h3>
+<p>Triggered when we consult a new source (vendor repo, external doc,
+gist, paper, thread) for a non-trivial design decision.</p>
+<ol>
+<li>Read the source.</li>
+<li>Create a file under <code>sources/&lt;slug&gt;.md</code> using the <strong>Source page
+   shape</strong> below. Keep the raw source immutable under <code>vendor/</code> or
+   cite the URL.</li>
+<li>If the source introduces a new concept, create or update the
+   matching <code>concepts/&lt;slug&gt;.md</code>.</li>
+<li>Cross-link: every new page links to at least one other wiki page.</li>
+<li>Append an entry to <code>log.md</code>:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>## [YYYY-MM-DD] ingest | &lt;source title&gt;
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>&lt;one line on what we took from it&gt;
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>See: sources/&lt;slug&gt;.md, concepts/&lt;slug&gt;.md
+</code></pre></div></li>
+<li>Update <code>index.md</code> with the new page listed under its category.</li>
+</ol>
+<p>Convert relative dates the user mentions to absolute dates
+(<code>"yesterday"</code> → <code>YYYY-MM-DD</code>) — the log is permanent.</p>
+<h3 id="query">Query<a class="headerlink" href="#query" title="Permanent link">&para;</a></h3>
+<p>Triggered when a design question recurs or an audit is performed.</p>
+<ol>
+<li>Read <code>index.md</code> first to find relevant pages.</li>
+<li>Drill into concept + source pages. Answer with citations.</li>
+<li>If the answer is durable (an audit, a comparison, a non-obvious
+   synthesis) and not already captured, file it as
+   <code>concepts/&lt;slug&gt;.md</code> or <code>decisions/NNNN-&lt;slug&gt;.md</code>.</li>
+<li>Append a short entry to <code>log.md</code>:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>## [YYYY-MM-DD] query | &lt;question&gt;
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>&lt;one line on the answer&gt;
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>See: &lt;pages&gt;
+</code></pre></div></li>
+</ol>
+<p>Explorations that never get filed back are wasted effort. File them.</p>
+<h3 id="lint">Lint<a class="headerlink" href="#lint" title="Permanent link">&para;</a></h3>
+<p>Triggered periodically (every few weeks or before a major PR).</p>
+<p>Check for:</p>
+<ul>
+<li><strong>Orphans</strong> — pages with zero inbound links (they'll rot).</li>
+<li><strong>Stale claims</strong> — "kimi does X" may no longer be true; re-check
+  vendor/ commit hash referenced in the source page.</li>
+<li><strong>Contradictions</strong> — two concept pages disagreeing on the same
+  claim.</li>
+<li><strong>Missing cross-refs</strong> — a concept mentioned in one page but never
+  linked from related pages.</li>
+<li><strong>Gaps</strong> — important yaya components with no wiki presence
+  (<code>docs/dev/*.md</code> covers the spec; the wiki should cover the
+  <em>why</em> and <em>lessons</em>).</li>
+</ul>
+<p>Append to <code>log.md</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>## [YYYY-MM-DD] lint | &lt;brief&gt;
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>&lt;N findings; resolved/deferred&gt;
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>See: &lt;pages touched&gt;
+</code></pre></div>
+<h2 id="page-shapes">Page shapes<a class="headerlink" href="#page-shapes" title="Permanent link">&para;</a></h2>
+<h3 id="source-page-sourcesslugmd">Source page — <code>sources/&lt;slug&gt;.md</code><a class="headerlink" href="#source-page-sourcesslugmd" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="gh"># &lt;source title&gt;</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">-</span><span class="w"> </span><span class="gs">**URL / path**</span>: &lt;vendor/kimi-cli, external URL, etc.&gt;
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Consulted on**</span>: YYYY-MM-DD
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Commit / version**</span>: &lt;git sha or version string when known&gt;
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Status**</span>: active | archived
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="gu">## Why we read it</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>One paragraph.
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="gu">## What we took</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>Concrete patterns, code references, approved decisions. Cite
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>specific files with line numbers where relevant.
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="gu">## What we rejected</span>
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>Things in the source we deliberately did not copy, with reason.
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="gu">## See also</span>
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="k">-</span><span class="w"> </span>concepts/&lt;slug&gt;.md
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="k">-</span><span class="w"> </span>decisions/&lt;slug&gt;.md
+</code></pre></div>
+<h3 id="concept-page-conceptsslugmd">Concept page — <code>concepts/&lt;slug&gt;.md</code><a class="headerlink" href="#concept-page-conceptsslugmd" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="gh"># &lt;concept&gt;</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>One-paragraph definition.
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="gu">## How it appears in yaya</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>Concrete types, files, events, plugin categories.
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="gu">## Invariants</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>What must always be true.
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="gu">## Sources</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="k">-</span><span class="w"> </span>sources/&lt;slug&gt;.md (primary inspiration)
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="k">-</span><span class="w"> </span>sources/&lt;slug2&gt;.md (pattern from)
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="gu">## Related</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="k">-</span><span class="w"> </span>concepts/&lt;other&gt;.md
+</code></pre></div>
+<h3 id="decision-page-decisionsnnnn-slugmd">Decision page — <code>decisions/NNNN-&lt;slug&gt;.md</code><a class="headerlink" href="#decision-page-decisionsnnnn-slugmd" title="Permanent link">&para;</a></h3>
+<p>Standard ADR: Status / Context / Decision / Consequences.
+Numbered sequentially; never renumber.</p>
+<h3 id="lesson-page-lessonsslugmd">Lesson page — <code>lessons/&lt;slug&gt;.md</code><a class="headerlink" href="#lesson-page-lessonsslugmd" title="Permanent link">&para;</a></h3>
+<p>Rolling log of recurring review findings and hazards. Entry shape
+lives inside the page itself — append only; never rewrite history.</p>
+<h2 id="conventions">Conventions<a class="headerlink" href="#conventions" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Pages are markdown only. No HTML.</li>
+<li>English only (matches root <code>AGENT.md</code>).</li>
+<li>Cross-references use relative paths
+  (<code>[event bus](../concepts/event-bus.md)</code>).</li>
+<li>Dates are absolute <code>YYYY-MM-DD</code>.</li>
+<li><code>index.md</code> and <code>log.md</code> are updated in the <strong>same PR</strong> that adds
+  or modifies a wiki page.</li>
+<li>Never edit <code>log.md</code> retroactively — append only.</li>
+<li>No page exists without at least one inbound link from <code>index.md</code>.</li>
+</ul>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+            
+            <p class="text-center text-muted">Copyright (c) 2026 <a href="https://github.com/rararulab">rararulab</a> contributors.</p>
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal" aria-label="Close">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>

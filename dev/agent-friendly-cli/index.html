@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.8.0">
+    
+    <meta name="description" content="A Python AI agent built with engineering rigor."> 
+    
+    <meta name="author" content="rararulab"> 
+    
+    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/agent-friendly-cli/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>Agent-Friendly CLI (org spec) - yaya</title>
+
+
+<link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../../css/normalize.css" rel="stylesheet">
+<link href="../../css/terminal.css" rel="stylesheet">
+<link href="../../css/theme.css" rel="stylesheet">
+<link href="../../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../../css/theme.footer.css" rel="stylesheet">
+<!-- dark color palette -->
+<link href="../../css/palettes/dark.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+
+
+    
+    <link href="../../assets/_mkdocstrings.css" rel="stylesheet">  
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "../..",
+    shortcuts = "{}";
+</script>
+<script src="../../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://rararulab.github.io/yaya/" class="no-style">yaya</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../.." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="1">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../..">Home</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">User Guide</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/install/">Install</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/usage/">Usage</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        <span class="
+        
+    terminal-mkdocs-side-nav-item--active terminal-mkdocs-side-nav-section-no-index">Development</span>
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../architecture/">Architecture</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../workflow/">Workflow</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../multi-agent/">Multi-Agent</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../cli/">CLI Conventions</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        <span class="terminal-mkdocs-side-nav-item--active">Agent-Friendly CLI (org spec)</span>
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../testing/">Testing</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../agent-spec/">Agent Spec Conformance</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../release/">Release</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+    </ul>
+</nav><hr>
+<nav>
+    <ul>
+        <li><a href="#agent-friendly-cli-design">Agent-Friendly CLI Design</a></li>
+        <li><a href="#1-non-interactive-first">1. Non-Interactive First</a></li><li><a href="#2-lazy-loaded-documentation">2. Lazy-Loaded Documentation</a></li><li><a href="#3-example-driven-help">3. Example-Driven Help</a></li><li><a href="#4-pipe-friendly-json-stdout-logs-stderr">4. Pipe-Friendly (JSON stdout, logs stderr)</a></li><li><a href="#5-fail-fast-with-actionable-errors">5. Fail Fast with Actionable Errors</a></li><li><a href="#6-idempotent-operations">6. Idempotent Operations</a></li><li><a href="#7-dry-run-mode">7. Dry-Run Mode</a></li><li><a href="#8-forceconfirm-bypass">8. Force/Confirm Bypass</a></li><li><a href="#9-predictable-command-structure">9. Predictable Command Structure</a></li><li><a href="#10-structured-success-feedback">10. Structured Success Feedback</a></li><li><a href="#rararulab-implementation-checklist">rararulab Implementation Checklist</a></li><li><a href="#rust-implementation-pattern">Rust Implementation Pattern</a></li>
+    </ul>
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="agent-friendly-cli-design">Agent-Friendly CLI Design<a class="headerlink" href="#agent-friendly-cli-design" title="Permanent link">&para;</a></h1>
+<p>Design CLIs that AI agents can operate reliably. These principles apply to all rararulab CLI tools.</p>
+<h2 id="1-non-interactive-first">1. Non-Interactive First<a class="headerlink" href="#1-non-interactive-first" title="Permanent link">&para;</a></h2>
+<p>Agents cannot handle dynamic prompts. Every parameter must be passable via flags.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Bad: interactive prompt</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>?<span class="w"> </span>Which<span class="w"> </span>environment?<span class="w"> </span><span class="o">(</span>use<span class="w"> </span>arrow<span class="w"> </span>keys<span class="o">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Good: flag-driven</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>my-cli<span class="w"> </span>deploy<span class="w"> </span>--env<span class="w"> </span>staging
+</code></pre></div>
+<p><strong>Rule:</strong> If a command works interactively, it MUST also work with <code>--flags</code> only. No <code>stdin</code> prompts without a flag equivalent.</p>
+<h2 id="2-lazy-loaded-documentation">2. Lazy-Loaded Documentation<a class="headerlink" href="#2-lazy-loaded-documentation" title="Permanent link">&para;</a></h2>
+<p>Agents discover commands incrementally. Don't dump all help at once.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Good: top-level shows subcommands only</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>my-cli<span class="w"> </span>--help
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Good: detail per subcommand</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>my-cli<span class="w"> </span>deploy<span class="w"> </span>--help
+</code></pre></div>
+<p><strong>Rule:</strong> <code>--help</code> at each level shows only that level's options.</p>
+<h2 id="3-example-driven-help">3. Example-Driven Help<a class="headerlink" href="#3-example-driven-help" title="Permanent link">&para;</a></h2>
+<p>Agents pattern-match better than they parse prose.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Good: copy-paste-ready examples in help text</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>EXAMPLES:
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span>my-cli<span class="w"> </span>deploy<span class="w"> </span>--env<span class="w"> </span>staging<span class="w"> </span>--service<span class="w"> </span>api
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span>my-cli<span class="w"> </span>deploy<span class="w"> </span>--env<span class="w"> </span>prod<span class="w"> </span>--service<span class="w"> </span>api<span class="w"> </span>--dry-run
+</code></pre></div>
+<p><strong>Rule:</strong> Every subcommand's <code>--help</code> includes at least one complete, runnable example.</p>
+<h2 id="4-pipe-friendly-json-stdout-logs-stderr">4. Pipe-Friendly (JSON stdout, logs stderr)<a class="headerlink" href="#4-pipe-friendly-json-stdout-logs-stderr" title="Permanent link">&para;</a></h2>
+<p>Agents chain tools together. Structured output enables downstream parsing.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># stdout: machine-readable JSON</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="o">{</span><span class="s2">&quot;ok&quot;</span>:<span class="w"> </span>true,<span class="w"> </span><span class="s2">&quot;deploy_id&quot;</span>:<span class="w"> </span><span class="s2">&quot;d-123&quot;</span>,<span class="w"> </span><span class="s2">&quot;url&quot;</span>:<span class="w"> </span><span class="s2">&quot;https://...&quot;</span><span class="o">}</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># stderr: human-readable logs</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>Deploying<span class="w"> </span>api<span class="w"> </span>to<span class="w"> </span>staging...
+</code></pre></div>
+<p><strong>Rule:</strong> JSON on stdout, human text on stderr. Never mix formats on the same stream.</p>
+<h3 id="standard-json-response-shape">Standard JSON Response Shape<a class="headerlink" href="#standard-json-response-shape" title="Permanent link">&para;</a></h3>
+<p>Success:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span><span class="nt">&quot;ok&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;action&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deploy&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;deploy_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;d-123&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://...&quot;</span><span class="p">}</span>
+</code></pre></div></p>
+<p>Error:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span><span class="nt">&quot;ok&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;service &#39;foo&#39; not found&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;suggestion&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;run &#39;my-cli list&#39; to see available services&quot;</span><span class="p">}</span>
+</code></pre></div></p>
+<p>The <code>suggestion</code> field gives agents a concrete next step when something fails.</p>
+<h2 id="5-fail-fast-with-actionable-errors">5. Fail Fast with Actionable Errors<a class="headerlink" href="#5-fail-fast-with-actionable-errors" title="Permanent link">&para;</a></h2>
+<p>Agents can self-correct, but need clear signals.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Bad: hangs silently or gives vague error</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>Error:<span class="w"> </span>something<span class="w"> </span>went<span class="w"> </span>wrong
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Good: immediate exit + what to do</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="o">{</span><span class="s2">&quot;ok&quot;</span>:<span class="w"> </span>false,<span class="w"> </span><span class="s2">&quot;error&quot;</span>:<span class="w"> </span><span class="s2">&quot;missing --env flag&quot;</span>,<span class="w"> </span><span class="s2">&quot;suggestion&quot;</span>:<span class="w"> </span><span class="s2">&quot;add --env staging or --env prod&quot;</span><span class="o">}</span>
+</code></pre></div>
+<p><strong>Rule:</strong> Non-zero exit code + JSON error with <code>suggestion</code> field. Never hang, never swallow errors.</p>
+<h2 id="6-idempotent-operations">6. Idempotent Operations<a class="headerlink" href="#6-idempotent-operations" title="Permanent link">&para;</a></h2>
+<p>Agents retry frequently. Repeated calls must not create duplicate side effects.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># First call</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="o">{</span><span class="s2">&quot;ok&quot;</span>:<span class="w"> </span>true,<span class="w"> </span><span class="s2">&quot;created&quot;</span>:<span class="w"> </span>true,<span class="w"> </span><span class="s2">&quot;name&quot;</span>:<span class="w"> </span><span class="s2">&quot;my-service&quot;</span><span class="o">}</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Second call (same args)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="o">{</span><span class="s2">&quot;ok&quot;</span>:<span class="w"> </span>true,<span class="w"> </span><span class="s2">&quot;created&quot;</span>:<span class="w"> </span>false,<span class="w"> </span><span class="s2">&quot;name&quot;</span>:<span class="w"> </span><span class="s2">&quot;my-service&quot;</span>,<span class="w"> </span><span class="s2">&quot;reason&quot;</span>:<span class="w"> </span><span class="s2">&quot;already exists&quot;</span><span class="o">}</span>
+</code></pre></div>
+<p><strong>Rule:</strong> <code>create</code> operations return success (exit 0) if resource already exists. Use <code>created: true/false</code> to distinguish.</p>
+<h2 id="7-dry-run-mode">7. Dry-Run Mode<a class="headerlink" href="#7-dry-run-mode" title="Permanent link">&para;</a></h2>
+<p>Agents should verify plans before executing. This reduces blast radius.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>my-cli<span class="w"> </span>deploy<span class="w"> </span>--env<span class="w"> </span>prod<span class="w"> </span>--dry-run
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="o">{</span><span class="s2">&quot;ok&quot;</span>:<span class="w"> </span>true,<span class="w"> </span><span class="s2">&quot;dry_run&quot;</span>:<span class="w"> </span>true,<span class="w"> </span><span class="s2">&quot;would_deploy&quot;</span>:<span class="w"> </span><span class="s2">&quot;api@v1.2.3&quot;</span>,<span class="w"> </span><span class="s2">&quot;target&quot;</span>:<span class="w"> </span><span class="s2">&quot;prod&quot;</span><span class="o">}</span>
+</code></pre></div>
+<p><strong>Rule:</strong> Destructive or stateful commands MUST support <code>--dry-run</code>. Output shows what would happen without doing it.</p>
+<h2 id="8-forceconfirm-bypass">8. Force/Confirm Bypass<a class="headerlink" href="#8-forceconfirm-bypass" title="Permanent link">&para;</a></h2>
+<p>Keep safety nets for humans, but let agents automate.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Human: gets confirmation prompt</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>my-cli<span class="w"> </span>delete<span class="w"> </span>--service<span class="w"> </span>api
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Agent: bypasses prompt</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>my-cli<span class="w"> </span>delete<span class="w"> </span>--service<span class="w"> </span>api<span class="w"> </span>--yes
+</code></pre></div>
+<p><strong>Rule:</strong> Interactive confirmations must have a <code>--yes</code> or <code>--force</code> flag to bypass.</p>
+<h2 id="9-predictable-command-structure">9. Predictable Command Structure<a class="headerlink" href="#9-predictable-command-structure" title="Permanent link">&para;</a></h2>
+<p>Consistent naming reduces agent learning cost.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>resource verb [args] [flags]
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>my-cli service list
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>my-cli service create my-service --description &quot;...&quot;
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>my-cli service deploy my-service --env staging
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>my-cli service delete my-service --yes
+</code></pre></div>
+<p><strong>Rule:</strong> Follow <code>&lt;noun&gt; &lt;verb&gt;</code> pattern. Same verb means same behavior across resources.</p>
+<h2 id="10-structured-success-feedback">10. Structured Success Feedback<a class="headerlink" href="#10-structured-success-feedback" title="Permanent link">&para;</a></h2>
+<p>Agents need parseable results for downstream decisions.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Bad: celebration text</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>🎉<span class="w"> </span>Deployed<span class="w"> </span>successfully!
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Good: machine-readable fields</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="o">{</span><span class="s2">&quot;ok&quot;</span>:<span class="w"> </span>true,<span class="w"> </span><span class="s2">&quot;action&quot;</span>:<span class="w"> </span><span class="s2">&quot;deploy&quot;</span>,<span class="w"> </span><span class="s2">&quot;deploy_id&quot;</span>:<span class="w"> </span><span class="s2">&quot;d-123&quot;</span>,<span class="w"> </span><span class="s2">&quot;duration_ms&quot;</span>:<span class="w"> </span><span class="m">4521</span>,<span class="w"> </span><span class="s2">&quot;url&quot;</span>:<span class="w"> </span><span class="s2">&quot;https://...&quot;</span><span class="o">}</span>
+</code></pre></div>
+<p><strong>Rule:</strong> Success output includes all fields an agent needs for the next step. No emoji, no decoration on stdout.</p>
+<hr />
+<h2 id="rararulab-implementation-checklist">rararulab Implementation Checklist<a class="headerlink" href="#rararulab-implementation-checklist" title="Permanent link">&para;</a></h2>
+<p>When building a CLI in rararulab:</p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> All commands work without interactive prompts (flags only)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> JSON stdout, human logs stderr</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Error responses include <code>suggestion</code> field</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Create operations are idempotent (exit 0 if exists)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Destructive commands support <code>--dry-run</code></li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Interactive confirmations have <code>--yes</code> bypass</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Commands follow <code>noun verb</code> or <code>verb noun</code> pattern consistently</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>--help</code> includes runnable examples per subcommand</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Non-zero exit code on failure</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Success output includes all fields for downstream use</li>
+</ul>
+<h2 id="rust-implementation-pattern">Rust Implementation Pattern<a class="headerlink" href="#rust-implementation-pattern" title="Permanent link">&para;</a></h2>
+<p>Using clap + serde_json + snafu (per <code>rust-style.md</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1">// JSON output helper</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="k">fn</span><span class="w"> </span><span class="nf">json_ok</span><span class="p">(</span><span class="n">value</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">impl</span><span class="w"> </span><span class="n">serde</span><span class="p">::</span><span class="n">Serialize</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">ExitCode</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">serde_json</span><span class="p">::</span><span class="n">to_string_pretty</span><span class="p">(</span><span class="n">value</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">&quot;serialize&quot;</span><span class="p">));</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">    </span><span class="n">ExitCode</span><span class="p">::</span><span class="n">SUCCESS</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="p">}</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="k">fn</span><span class="w"> </span><span class="nf">json_err</span><span class="p">(</span><span class="n">error</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">,</span><span class="w"> </span><span class="n">suggestion</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">ExitCode</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">serde_json</span><span class="p">::</span><span class="n">json</span><span class="o">!</span><span class="p">({</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">        </span><span class="s">&quot;ok&quot;</span><span class="p">:</span><span class="w"> </span><span class="nc">false</span><span class="p">,</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">        </span><span class="s">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="nc">error</span><span class="p">,</span>
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">        </span><span class="s">&quot;suggestion&quot;</span><span class="p">:</span><span class="w"> </span><span class="nc">suggestion</span><span class="p">,</span>
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">    </span><span class="p">}));</span>
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="w">    </span><span class="n">ExitCode</span><span class="p">::</span><span class="n">FAILURE</span>
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="p">}</span>
+</code></pre></div>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+            
+            <p class="text-center text-muted">Copyright (c) 2026 <a href="https://github.com/rararulab">rararulab</a> contributors.</p>
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal" aria-label="Close">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>

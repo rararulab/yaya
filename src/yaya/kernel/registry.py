@@ -603,15 +603,17 @@ def _validate_install_source(source: str) -> None:
     if not source or any(ch in source for ch in (";", "|", "&", "`", "\n", "\r")):
         raise ValueError(f"install source {source!r} contains disallowed characters")
 
+    # Check filesystem paths BEFORE URL parsing: on Windows ``urlparse`` reads
+    # ``C:\foo`` as scheme ``"c"``, which would otherwise be rejected below.
+    path = Path(source)
+    if path.is_absolute() or path.exists():
+        return
+
     parsed = urlparse(source)
     if parsed.scheme in {"https", "file"}:
         return
     if parsed.scheme:  # any other scheme (git, http plain, ssh, ...) is not allowed.
         raise ValueError(f"install source scheme {parsed.scheme!r} is not supported")
-
-    # No scheme: treat as path or PyPI name.
-    if Path(source).is_absolute() or Path(source).exists():
-        return
 
     # PyPI name-or-spec: at minimum must start with alnum.
     if not source[0].isalnum():

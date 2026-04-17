@@ -17,6 +17,7 @@ from yaya.kernel.events import (
 )
 from yaya.kernel.loop import AgentLoop, LoopConfig
 from yaya.kernel.plugin import Category, KernelContext, Plugin
+from yaya.kernel.registry import PluginRegistry, PluginStatus
 
 __all__ = [
     "DEFAULT_HANDLER_TIMEOUT_S",
@@ -29,6 +30,8 @@ __all__ = [
     "KernelContext",
     "LoopConfig",
     "Plugin",
+    "PluginRegistry",
+    "PluginStatus",
     "PublicEventKind",
     "Subscription",
     "new_event",

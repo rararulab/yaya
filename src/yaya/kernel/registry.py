@@ -1,0 +1,672 @@
+"""Plugin registry: entry-point discovery, lifecycle, and failure isolation.
+
+The registry is the kernel's inhabitant-management layer. It discovers
+plugins via the :pep:`621` / setuptools entry-point group
+``yaya.plugins.v1``, instantiates each declared :class:`~yaya.kernel.plugin.Plugin`
+object, wires its :meth:`~yaya.kernel.plugin.Plugin.subscriptions` into the
+bus, drives ``on_load`` / ``on_event`` / ``on_unload``, and isolates
+repeat-offender plugins by unsubscribing and emitting ``plugin.removed``
+once a configurable failure threshold is breached.
+
+**One code path.** Bundled and third-party plugins go through the exact
+same registration logic; "bundled" is only a deterministic load-order
+tie-breaker and never a behavioral branch. This mirrors the product
+principle in ``GOAL.md`` (no special cases for bundled plugins).
+
+**Failure accounting.** The registry subscribes to ``plugin.error`` with
+``source="kernel-registry"`` (not ``"kernel"``, which is reserved for the
+bus's synthetic-error path and trips the recursion guard in
+``bus._report_handler_failure``). When a ``plugin.error`` arrives, the
+handler increments the offending plugin's counter; once the counter
+breaches the configured threshold the registry spawns an unload task
+via ``asyncio.create_task(..., context=contextvars.Context())`` so the
+bus's private ``_IN_WORKER`` ContextVar resets — without that reset,
+the unload task's ``await bus.publish(...)`` would fire-and-forget and
+``plugin.removed`` would never reach adapters. Same pattern the agent
+loop uses for per-turn tasks.
+
+**install / remove**. Shells to ``uv pip`` via
+:func:`asyncio.create_subprocess_exec` (no ``shell=True``). Falls back to
+plain ``pip`` when ``uv`` is not on ``PATH``. After a successful install
+or uninstall, discovery runs again so freshly installed plugins come
+online (and removed ones drop out of the snapshot) without restarting
+the kernel.
+
+Layering: only imports :mod:`yaya.kernel.bus`, :mod:`yaya.kernel.events`,
+and :mod:`yaya.kernel.plugin` plus the Python standard library. No
+imports from ``cli``, ``plugins``, ``core``, or ``loop``.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextvars
+import logging
+import os
+import shutil
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from enum import StrEnum
+from importlib.metadata import EntryPoint, distribution, entry_points
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
+
+from yaya.kernel.events import Event, new_event
+from yaya.kernel.plugin import Category, KernelContext, Plugin
+
+if TYPE_CHECKING:  # pragma: no cover - type-only import, breaks an import cycle.
+    from yaya.kernel.bus import EventBus, Subscription
+
+_logger = logging.getLogger(__name__)
+
+_SOURCE = "kernel-registry"
+"""Subscription source for registry-owned handlers.
+
+Deliberately NOT ``"kernel"``: the bus short-circuits its
+``plugin.error`` re-emission when a handler with ``source="kernel"``
+raises (bus recursion guard). We want registry-handler failures to
+still be observable, so we claim a distinct source.
+"""
+
+_ENTRY_POINT_GROUP = "yaya.plugins.v1"
+"""Public entry-point group per ``docs/dev/plugin-protocol.md``."""
+
+_DEFAULT_FAILURE_THRESHOLD = 3
+"""Consecutive ``plugin.error`` events tolerated before unload."""
+
+# Yaya's own distribution name — used to tag bundled plugins so the
+# registry can (a) order them first deterministically and (b) reject
+# ``remove("<bundled>")`` with a clear ``ValueError``.
+_YAYA_DIST = "yaya"
+
+
+class PluginStatus(StrEnum):
+    """Lifecycle status of a registered plugin.
+
+    Reported verbatim by :meth:`PluginRegistry.snapshot` and shown in
+    ``yaya plugin list``. The set is closed; adding a new value is a
+    contract change.
+    """
+
+    LOADED = "loaded"
+    FAILED = "failed"
+    UNLOADED = "unloaded"
+
+
+@dataclass(slots=True, eq=False)
+class _PluginRecord:
+    """Internal bookkeeping for one registered plugin.
+
+    ``eq=False`` so this dataclass falls back to identity equality. The
+    :attr:`subs` list holds :class:`~yaya.kernel.bus.Subscription`
+    handles that themselves use identity semantics (lesson #7); keeping
+    the owning record identity-keyed avoids the same hazard one layer
+    up when we look a record up by plugin name.
+    """
+
+    plugin: Plugin
+    ctx: KernelContext
+    subs: list[Subscription]
+    status: PluginStatus
+    bundled: bool = False
+    error_count: int = 0
+
+
+class PluginRegistry:
+    """Discover, load, and supervise plugins for a running kernel.
+
+    The registry is tied to one :class:`~yaya.kernel.bus.EventBus`
+    instance in one asyncio loop. Instantiate it after the bus is ready;
+    call :meth:`start` to discover and load plugins, :meth:`stop` to
+    unload them in reverse order on shutdown. Between the two, the
+    registry reacts to ``plugin.error`` events via an internal handler
+    and unloads plugins whose consecutive-error count breaches the
+    threshold.
+
+    Example:
+        ::
+
+            bus = EventBus()
+            registry = PluginRegistry(bus)
+            await registry.start()
+            # ... kernel runs ...
+            await registry.stop()
+
+    Thread model: single asyncio loop. Not safe to share across loops.
+    """
+
+    def __init__(
+        self,
+        bus: EventBus,
+        *,
+        state_dir: Path | None = None,
+        failure_threshold: int = _DEFAULT_FAILURE_THRESHOLD,
+        entry_point_group: str = _ENTRY_POINT_GROUP,
+    ) -> None:
+        """Bind the registry to ``bus``.
+
+        Args:
+            bus: The running kernel event bus. Subscriptions are created
+                during :meth:`start` so callers can wire fixtures first.
+            state_dir: Parent directory for per-plugin state dirs. Each
+                plugin gets ``<state_dir>/<plugin.name>/``. Defaults to
+                ``<XDG_DATA_HOME>/yaya/plugins/`` (or
+                ``~/.local/share/yaya/plugins/``).
+            failure_threshold: Consecutive ``plugin.error`` events this
+                registry tolerates before unloading the offending
+                plugin. Default 3 per the protocol doc.
+            entry_point_group: Override for tests that need to inject a
+                separate entry-point group. Production code should use
+                the default.
+        """
+        self._bus = bus
+        self._state_dir = state_dir or _default_state_dir()
+        self._failure_threshold = failure_threshold
+        self._entry_point_group = entry_point_group
+
+        # Name → record. Bounded by the install set (not user input), so
+        # there is no leak risk even across many discovery cycles.
+        self._records: dict[str, _PluginRecord] = {}
+        # Load order — needed for reverse-order unload on stop().
+        self._load_order: list[str] = []
+        # Subscription for our own ``plugin.error`` accounting handler.
+        self._error_sub: Subscription | None = None
+        # Pending unload tasks so stop() can await them (no leak on shutdown).
+        self._unload_tasks: set[asyncio.Task[None]] = set()
+        self._started = False
+
+    # -- lifecycle --------------------------------------------------------------
+
+    async def start(self) -> None:
+        """Subscribe to ``plugin.error``, then discover + load every plugin.
+
+        Emits one ``plugin.loaded`` event per successful load and a final
+        ``kernel.ready`` event once the full first-pass discovery has
+        finished. Idempotent: a second call is a no-op so test fixtures
+        composing multiple layers can call it defensively.
+        """
+        if self._started:
+            return
+        self._started = True
+
+        self._error_sub = self._bus.subscribe(
+            "plugin.error",
+            self._on_plugin_error,
+            source=_SOURCE,
+        )
+
+        await self._discover_and_load()
+
+        await self._bus.publish(
+            new_event(
+                "kernel.ready",
+                {"version": _yaya_version()},
+                session_id="kernel",
+                source="kernel",
+            )
+        )
+
+    async def stop(self) -> None:
+        """Unload every plugin in reverse load order; emit ``kernel.shutdown``.
+
+        Unsubscribes the registry's ``plugin.error`` handler, waits for
+        any in-flight unload tasks spawned by the failure-accounting
+        path, then runs each loaded plugin's ``on_unload`` inside a
+        ``try/except`` so one noisy plugin cannot block the rest.
+        """
+        if not self._started:
+            return
+        self._started = False
+
+        if self._error_sub is not None:
+            self._error_sub.unsubscribe()
+            self._error_sub = None
+
+        # Drain any in-flight unload tasks spawned from the error handler
+        # before we iterate self._records for the orderly-shutdown pass.
+        if self._unload_tasks:
+            await asyncio.gather(*self._unload_tasks, return_exceptions=True)
+            self._unload_tasks.clear()
+
+        for name in reversed(self._load_order):
+            record = self._records.get(name)
+            if record is None or record.status is not PluginStatus.LOADED:
+                continue
+            await self._unload_record(record, emit_removed=False)
+
+        await self._bus.publish(
+            new_event(
+                "kernel.shutdown",
+                {"reason": "stop"},
+                session_id="kernel",
+                source="kernel",
+            )
+        )
+
+    # -- introspection ----------------------------------------------------------
+
+    def snapshot(self) -> list[dict[str, str]]:
+        """Return a point-in-time view of every known plugin.
+
+        Returns:
+            A list of ``{"name", "version", "category", "status"}`` dicts
+            — one entry per plugin that discovery has ever seen during
+            this registry's lifetime. Ordering matches first-seen load
+            order so ``yaya plugin list`` output is deterministic.
+        """
+        rows: list[dict[str, str]] = []
+        for name in self._load_order:
+            record = self._records.get(name)
+            if record is None:
+                continue
+            rows.append({
+                "name": record.plugin.name,
+                "version": record.plugin.version,
+                "category": str(record.plugin.category),
+                "status": str(record.status),
+            })
+        return rows
+
+    # -- install / remove -------------------------------------------------------
+
+    async def install(self, source: str, *, editable: bool = False) -> str:
+        """Install a plugin package and refresh discovery.
+
+        Args:
+            source: PyPI distribution name, absolute path, ``file://``
+                URL, or ``https://`` URL. Anything else is rejected.
+            editable: If true, pass ``-e`` for dev-mode installs (path /
+                ``file://`` sources only; PyPI names ignore this).
+
+        Returns:
+            The ``source`` argument, echoed back. Resolving to an actual
+            distribution name requires parsing ``uv pip`` output which is
+            format-unstable; callers wanting the dist name should consult
+            :meth:`snapshot` after install completes.
+
+        Raises:
+            ValueError: If ``source`` does not look like a PyPI name /
+                path / URL.
+            RuntimeError: If the subprocess returned non-zero. The stderr
+                from pip is included in the message.
+        """
+        _validate_install_source(source)
+        args = ["pip", "install"]
+        if editable:
+            args.append("-e")
+        args.append(source)
+        await _run_package_command(args)
+        await self._discover_and_load()
+        return source
+
+    async def remove(self, name: str) -> None:
+        """Uninstall a plugin package and refresh discovery.
+
+        Args:
+            name: Plugin name (kebab-case) to uninstall.
+
+        Raises:
+            ValueError: If ``name`` is a bundled plugin — bundled
+                plugins ship inside yaya's own wheel and cannot be
+                uninstalled independently. Use ``yaya update`` to move
+                to a build without the bundled plugin.
+            RuntimeError: If the subprocess returned non-zero.
+        """
+        record = self._records.get(name)
+        if record is not None and record.bundled:
+            raise ValueError(f"cannot remove bundled plugin {name!r}")
+
+        await _run_package_command(["pip", "uninstall", "-y", name])
+
+        # After uninstall, unload any in-memory record the discovery
+        # cycle won't revisit (its entry point is gone).
+        if record is not None and record.status is PluginStatus.LOADED:
+            await self._unload_record(record, emit_removed=True)
+
+        await self._discover_and_load()
+
+    # -- discovery --------------------------------------------------------------
+
+    async def _discover_and_load(self) -> None:
+        """Enumerate entry points, load anything new.
+
+        Bundled plugins sort first; third-party second. Within each group
+        entries are sorted by entry-point name for deterministic order.
+        A plugin already present in :attr:`_records` is skipped (the
+        registry does not currently hot-reload; a new version needs
+        explicit ``remove`` + ``install``).
+        """
+        eps = list(entry_points(group=self._entry_point_group))
+        # Partition bundled vs third-party for deterministic ordering.
+        bundled: list[EntryPoint] = []
+        third_party: list[EntryPoint] = []
+        for ep in eps:
+            (bundled if _ep_is_bundled(ep) else third_party).append(ep)
+        bundled.sort(key=lambda e: e.name)
+        third_party.sort(key=lambda e: e.name)
+
+        for ep in (*bundled, *third_party):
+            await self._load_entry_point(ep, bundled=_ep_is_bundled(ep))
+
+    async def _load_entry_point(self, ep: EntryPoint, *, bundled: bool) -> None:
+        """Resolve one entry point and register the plugin it exposes.
+
+        Any failure path — import error, non-conforming object, or
+        ``on_load`` raising — emits a ``plugin.error`` event and marks
+        the record status ``failed``. The registry does not crash.
+        """
+        try:
+            obj = ep.load()
+        except Exception as exc:
+            _logger.warning("failed to load entry point %r: %s", ep.name, exc)
+            await self._emit_plugin_error(ep.name, f"entry_point_load_failed: {exc}")
+            return
+
+        if not isinstance(obj, Plugin):
+            _logger.warning(
+                "entry point %r resolved to a non-Plugin object (%r); skipping",
+                ep.name,
+                type(obj).__name__,
+            )
+            await self._emit_plugin_error(ep.name, "invalid_plugin_object")
+            return
+
+        plugin: Plugin = obj
+        name = plugin.name
+        if name in self._records:
+            # Already loaded (or already in a terminal state) — skip.
+            return
+
+        ctx = self._make_context(plugin)
+        try:
+            await plugin.on_load(ctx)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _logger.warning("plugin %r raised in on_load: %s", name, exc)
+            record = _PluginRecord(
+                plugin=plugin,
+                ctx=ctx,
+                subs=[],
+                status=PluginStatus.FAILED,
+                bundled=bundled,
+            )
+            self._records[name] = record
+            self._load_order.append(name)
+            await self._emit_plugin_error(name, f"on_load_failed: {exc}")
+            return
+
+        handler = _make_handler(plugin, ctx)
+        subs: list[Subscription] = [
+            self._bus.subscribe(kind, handler, source=name) for kind in _safe_subscriptions(plugin)
+        ]
+        record = _PluginRecord(
+            plugin=plugin,
+            ctx=ctx,
+            subs=subs,
+            status=PluginStatus.LOADED,
+            bundled=bundled,
+        )
+        self._records[name] = record
+        self._load_order.append(name)
+
+        await self._bus.publish(
+            new_event(
+                "plugin.loaded",
+                {
+                    "name": name,
+                    "version": plugin.version,
+                    "category": _category_str(plugin.category),
+                },
+                session_id="kernel",
+                source="kernel",
+            )
+        )
+
+    def _make_context(self, plugin: Plugin) -> KernelContext:
+        """Build the :class:`KernelContext` handed to ``plugin``'s lifecycle hooks."""
+        plugin_state = self._state_dir / plugin.name
+        plugin_state.mkdir(parents=True, exist_ok=True)
+        return KernelContext(
+            bus=self._bus,
+            logger=logging.getLogger(f"yaya.plugin.{plugin.name}"),
+            config={},
+            state_dir=plugin_state,
+            plugin_name=plugin.name,
+        )
+
+    # -- failure accounting -----------------------------------------------------
+
+    async def _on_plugin_error(self, ev: Event) -> None:
+        """Count consecutive ``plugin.error`` events and trigger unloads.
+
+        Runs **inside a bus session worker** (see ``bus.py::_drain``).
+        The bus sets its ``_IN_WORKER`` ContextVar to True while this
+        handler executes, so any nested ``bus.publish`` would fire-and-
+        forget. The actual unload — which calls ``bus.publish`` for
+        ``plugin.removed`` and awaits the plugin's ``on_unload`` — is
+        spawned via :func:`asyncio.create_task` with an **empty**
+        :class:`contextvars.Context` so ``_IN_WORKER`` resets to False
+        inside the spawned task (same pattern as
+        :class:`yaya.kernel.loop.AgentLoop._on_user_message`). This is
+        the only way the unload task's ``plugin.removed`` publish
+        actually reaches subscribers.
+        """
+        name = ev.payload.get("name")
+        if not isinstance(name, str):
+            _logger.warning(
+                "plugin.error without 'name' payload; cannot attribute (source=%r)",
+                ev.source,
+            )
+            return
+        record = self._records.get(name)
+        if record is None or record.status is not PluginStatus.LOADED:
+            return
+        record.error_count += 1
+        if record.error_count < self._failure_threshold:
+            return
+
+        # Threshold breached — spawn the unload task in a fresh context
+        # so ``_IN_WORKER`` resets and the task's publishes await delivery.
+        ctx = contextvars.Context()
+        task = asyncio.get_running_loop().create_task(
+            self._unload_record(record, emit_removed=True),
+            name=f"yaya-registry-unload:{name}",
+            context=ctx,
+        )
+        self._unload_tasks.add(task)
+        task.add_done_callback(self._unload_tasks.discard)
+
+    async def _unload_record(
+        self,
+        record: _PluginRecord,
+        *,
+        emit_removed: bool,
+    ) -> None:
+        """Unsubscribe, run ``on_unload``, and optionally emit ``plugin.removed``.
+
+        ``on_unload`` exceptions are logged and swallowed — once we have
+        decided to unload a plugin, propagating its cleanup error would
+        just replace a known-bad plugin with a wedged registry.
+        """
+        for sub in record.subs:
+            sub.unsubscribe()
+        record.subs.clear()
+
+        try:
+            await record.plugin.on_unload(record.ctx)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _logger.warning(
+                "plugin %r raised in on_unload; continuing: %s",
+                record.plugin.name,
+                exc,
+            )
+
+        record.status = PluginStatus.FAILED if record.error_count else PluginStatus.UNLOADED
+
+        if emit_removed:
+            await self._bus.publish(
+                new_event(
+                    "plugin.removed",
+                    {"name": record.plugin.name},
+                    session_id="kernel",
+                    source="kernel",
+                )
+            )
+
+    async def _emit_plugin_error(self, name: str, error: str) -> None:
+        """Publish a ``plugin.error`` from the registry.
+
+        Used for discovery-time failures (entry-point import, non-Plugin
+        object, ``on_load`` raising) where the bus has no subscriber to
+        synthesize an error on our behalf.
+        """
+        await self._bus.publish(
+            new_event(
+                "plugin.error",
+                {"name": name, "error": error},
+                session_id="kernel",
+                source="kernel",
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers.
+# ---------------------------------------------------------------------------
+
+
+def _default_state_dir() -> Path:
+    """Return ``<XDG_DATA_HOME>/yaya/plugins/`` (or the ~/.local/share fallback)."""
+    base = os.environ.get("XDG_DATA_HOME")
+    root = Path(base) if base else Path.home() / ".local" / "share"
+    return root / "yaya" / "plugins"
+
+
+def _yaya_version() -> str:
+    """Best-effort yaya package version for ``kernel.ready`` payloads."""
+    try:
+        return distribution(_YAYA_DIST).version
+    except Exception:
+        return "0.0.0"
+
+
+def _ep_is_bundled(ep: EntryPoint) -> bool:
+    """Return True if ``ep`` is shipped inside yaya's own distribution."""
+    dist = ep.dist
+    if dist is None:
+        return False
+    # ``metadata['Name']`` is normalised lower-case in Python 3.10+.
+    return (dist.metadata["Name"] or "").lower() == _YAYA_DIST
+
+
+def _category_str(category: Any) -> str:
+    """Coerce a :class:`Category` (or look-alike) to its string value."""
+    if isinstance(category, Category):
+        return category.value
+    return str(category)
+
+
+def _safe_subscriptions(plugin: Plugin) -> list[str]:
+    """Call ``plugin.subscriptions()`` defensively; fall back to ``[]``.
+
+    A misbehaving plugin that raises from ``subscriptions()`` still
+    counts as loaded (``on_load`` already succeeded), but contributes no
+    subscriptions. A ``plugin.error`` is emitted so the incident is
+    observable.
+    """
+    try:
+        subs = plugin.subscriptions()
+    except Exception as exc:
+        _logger.warning("plugin %r raised in subscriptions(): %s", plugin.name, exc)
+        return []
+    return list(subs)
+
+
+def _validate_install_source(source: str) -> None:
+    """Reject obviously-unsafe install sources before shelling to pip.
+
+    Accepted forms:
+
+    * PyPI distribution name — ``[a-zA-Z0-9][a-zA-Z0-9_.-]*`` (with
+      optional version specifier like ``foo==1.2.3``).
+    * Absolute filesystem path (``/foo/bar`` or ``C:\\foo``).
+    * ``file://`` URL.
+    * ``https://`` URL.
+
+    Everything else — shell metachars, git URLs (not yet supported),
+    relative paths — is rejected with :class:`ValueError`.
+    """
+    if not source or any(ch in source for ch in (";", "|", "&", "`", "\n", "\r")):
+        raise ValueError(f"install source {source!r} contains disallowed characters")
+
+    parsed = urlparse(source)
+    if parsed.scheme in {"https", "file"}:
+        return
+    if parsed.scheme:  # any other scheme (git, http plain, ssh, ...) is not allowed.
+        raise ValueError(f"install source scheme {parsed.scheme!r} is not supported")
+
+    # No scheme: treat as path or PyPI name.
+    if Path(source).is_absolute() or Path(source).exists():
+        return
+
+    # PyPI name-or-spec: at minimum must start with alnum.
+    if not source[0].isalnum():
+        raise ValueError(f"install source {source!r} is not a recognised PyPI spec")
+
+
+async def _run_package_command(args: list[str]) -> None:
+    """Run ``uv <args>`` (or plain ``<args>`` as fallback) in a subprocess.
+
+    Uses :func:`asyncio.create_subprocess_exec` — no shell — so shell
+    metacharacters in arguments cannot escape into the shell. Raises
+    :class:`RuntimeError` with stderr on non-zero exit.
+    """
+    uv = shutil.which("uv")
+    if uv is not None:
+        argv = [uv, *args]
+    else:
+        # Fall back to whatever tool name came in (pip / pip uninstall).
+        resolved = shutil.which(args[0])
+        if resolved is None:
+            raise RuntimeError(f"neither 'uv' nor {args[0]!r} found on PATH")
+        argv = [resolved, *args[1:]]
+
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"command {argv!r} failed with exit {proc.returncode}: {stderr.decode(errors='replace').strip()}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# on_event dispatch wrapper.
+#
+# The ``Plugin`` protocol's ``on_event`` takes ``(ev, ctx)``; the bus's
+# handler signature is ``(ev,) -> Awaitable[None]``. The registry builds a
+# per-plugin closure here that binds the KernelContext — one closure per
+# plugin, shared across every kind that plugin subscribes to.
+# ---------------------------------------------------------------------------
+
+
+def _make_handler(
+    plugin: Plugin,
+    ctx: KernelContext,
+) -> Callable[[Event], Awaitable[None]]:
+    """Return an ``(ev) -> Awaitable[None]`` closure that forwards to on_event."""
+
+    async def _handler(ev: Event) -> None:
+        await plugin.on_event(ev, ctx)
+
+    return _handler
+
+
+__all__ = ["PluginRegistry", "PluginStatus"]

@@ -9,7 +9,7 @@ The kernel. Event bus, plugin ABI, closed public event catalog, and (later) the 
 - [`docs/dev/plugin-protocol.md`](../../../docs/dev/plugin-protocol.md) is the authoritative contract — this module is its Python mirror; drift fails review.
 - `tests/kernel/` is ground truth for behavior; ≥80% coverage enforced by `pyproject.toml`.
 - `mypy --strict` + ruff are the import-graph enforcers: the kernel MUST NOT import from `cli`, `plugins`, or `core`.
-- BDD contract: [`specs/kernel-bus-and-abi.spec.md`](../../../specs/kernel-bus-and-abi.spec.md); `agent-spec guard` rejects unbound scenarios.
+- BDD contract: [`specs/kernel-bus-and-abi.spec`](../../../specs/kernel-bus-and-abi.spec); `agent-spec guard` rejects unbound scenarios.
 
 ## Constraints
 - `events.py` — closed `PublicEventKind` Literal, per-kind `TypedDict` payloads, `Event` dataclass, `new_event()` factory. New public kind = governance amendment (protocol doc + GOAL.md + this module in the same PR).

@@ -30,7 +30,7 @@ These live in the org `.github` repo and apply to every rararulab repo. Fetch vi
   `gh pr checks {PR} --watch` and paste the green summary.
 - Use subagents for independent issues in parallel; one worktree per subagent.
 - BDD contracts via [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec)
-  are non-negotiable for non-trivial feature work: author `specs/<slug>.spec.md`,
+  are non-negotiable for non-trivial feature work: author `specs/<slug>.spec`,
   run `agent-spec lifecycle` before commit, let `agent-spec guard` gate CI.
 - Python code follows the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html);
   every public symbol has a Google-style docstring.

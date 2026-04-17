@@ -62,9 +62,7 @@ def json_stdout(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
     """Parse the JSON body from yaya's stdout, failing loudly on drift."""
     if result.returncode != 0:
         raise AssertionError(
-            f"yaya exited {result.returncode}\n"
-            f"stdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}",
+            f"yaya exited {result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
         )
     try:
         data = json.loads(result.stdout)
@@ -73,5 +71,5 @@ def json_stdout(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
             f"stdout is not JSON: {exc}\nraw stdout:\n{result.stdout}",
         ) from exc
     if not isinstance(data, dict):
-        raise AssertionError(f"expected object, got {type(data).__name__}")
+        raise AssertionError(f"expected object, got {type(data).__name__}")  # noqa: TRY004
     return data

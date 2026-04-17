@@ -16,6 +16,12 @@ check:
     uv run ruff format --check .
     @echo "🧠 Type-checking with mypy (strict)"
     uv run mypy --strict
+    @echo "🧾 Linting specs with agent-spec"
+    @bash scripts/check_specs.sh
+
+# Lint only the BDD specs (skipped if agent-spec is not installed)
+check-specs:
+    @bash scripts/check_specs.sh
 
 # Run all pre-commit hooks + lock file consistency (CI parity)
 check-all: check

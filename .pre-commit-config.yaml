@@ -22,3 +22,15 @@ repos:
     rev: 0.5.4
     hooks:
       - id: uv-lock
+
+  # agent-spec: lint BDD specs. Runs only when a `.spec` file is staged.
+  # If `agent-spec` is not installed locally, the wrapper prints a skip
+  # notice (CI enforces). See docs/dev/agent-spec.md.
+  - repo: local
+    hooks:
+      - id: agent-spec-lint
+        name: agent-spec lint
+        entry: bash scripts/check_specs.sh
+        language: system
+        pass_filenames: false
+        files: ^specs/.*\.spec$

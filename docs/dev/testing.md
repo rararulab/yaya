@@ -17,7 +17,7 @@
 - **Tests must fail before they pass.** Write the failing test first, then
   the implementation (TDD).
 - **Feature PRs**: each observable behavior is covered by a BDD scenario
-  in `specs/<slug>.spec.md` whose `Test:` selector names the test
+  in `specs/<slug>.spec` whose `Test:` selector names the test
   function. `agent-spec guard` rejects unbound scenarios. See
   [agent-spec.md](agent-spec.md).
 - **Test layout mirrors `src/`.** A file at `src/yaya/core/foo.py` has its

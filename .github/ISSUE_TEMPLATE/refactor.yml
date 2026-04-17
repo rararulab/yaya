@@ -1,0 +1,89 @@
+name: Refactor
+description: Propose a code refactor or technical improvement
+labels: ["refactor"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs refactoring and why?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the system is affected?
+      options:
+        - core (runtime, engine, core logic)
+        - kernel (agent loop, plugin registry, event bus)
+        - plugins (bundled or external plugin protocol)
+        - cli (command-line interface)
+        - ci (CI/CD, build, release)
+        - docs (documentation)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent-owner
+    attributes:
+      label: Agent owner
+      description: Who should implement the first pass?
+      options:
+        - agent:codex
+        - agent:claude
+        - human / unassigned
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: How would you approach this refactor?
+    validations:
+      required: true
+
+  - type: textarea
+    id: agent-task-packet
+    attributes:
+      label: Agent Task Packet
+      description: Context the implementation agent must read before editing.
+      value: |
+        ### Read First
+        - `GOAL.md`
+        - `AGENT.md`
+        - Area-specific docs, specs, and folder `AGENT.md` files
+
+        ### Expected Touch Points
+        - 
+
+        ### Forbidden / Avoid
+        - 
+
+        ### Existing Patterns
+        - 
+
+        ### Validation
+        - `just check`
+        - `just test`
+
+        ### Failure Modes To Cover
+        - 
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: completion-criteria
+    attributes:
+      label: Completion Criteria
+      description: Concrete conditions that must be true before the PR is ready.
+      placeholder: |
+        - [ ] Public behavior is unchanged unless explicitly scoped.
+        - [ ] Existing tests still cover the moved or reshaped behavior.
+        - [ ] `just check && just test` passes.
+      render: markdown
+    validations:
+      required: true

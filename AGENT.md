@@ -35,7 +35,7 @@ Accountability is to the **artifact**, not to the user's approval.
 
 - `just check` (ruff + mypy) and `just test` (pytest + coverage) are ground truth.
 - CI is the final gate — `gh pr checks --watch` green before reporting done.
-- Every non-trivial feature PR is backed by a `specs/<slug>.spec.md` contract verified with [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec) (`agent-spec lifecycle` locally, `agent-spec guard` in CI).
+- Every non-trivial feature PR is backed by a `specs/<slug>.spec` contract verified with [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec) (`agent-spec lifecycle` locally, `agent-spec guard` in CI).
 - Folder-local `AGENT.md` is ground truth for that folder. If code contradicts it, one of them is wrong — fix before merging.
 
 ## 4. Constraints
@@ -45,7 +45,7 @@ Accountability is to the **artifact**, not to the user's approval.
 - Conventional Commits with `(#N)` + `Closes #N`. Never `--no-verify`.
 - Layout: `cli/` depends on `core/`, never the reverse.
 - **[Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)** for all Python. Every public module/class/function has a Google-style docstring explaining _why_, not _what_. Inline comments mark non-obvious invariants only. See [docs/dev/code-comments.md](docs/dev/code-comments.md).
-- **BDD contracts via [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec).** Every non-trivial feature PR ships with `specs/<slug>.spec.md` (Intent · Decisions · Boundaries · Completion Criteria). Each scenario binds to a test via `Test:` selector. Run `agent-spec lifecycle` before commit; CI runs `agent-spec guard` on staged changes. See [docs/dev/agent-spec.md](docs/dev/agent-spec.md).
+- **BDD contracts via [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec).** Every non-trivial feature PR ships with `specs/<slug>.spec` (Intent · Decisions · Boundaries · Completion Criteria). Each scenario binds to a test via `Test:` selector. Run `agent-spec lifecycle` before commit; CI runs `agent-spec guard` on staged changes. See [docs/dev/agent-spec.md](docs/dev/agent-spec.md).
 - **No third-party AI agent frameworks.** yaya is the kernel; the agent loop, plugin registry, tool orchestration, strategy dispatch, memory, and session state are all implemented in this repo. The following categories are **banned** from imports, dependencies, and vendor/: LangChain, LangGraph, LangSmith, LlamaIndex, Haystack, AutoGen, CrewAI, Semantic Kernel, Instructor, Guidance, DSPy, Mirascope, Marvin, Griptape, Smol, OpenAI Agents SDK, Anthropic `agents` SDK, or any other library whose stated purpose is "agent creation / orchestration / chains / flows". **Permitted for LLM access: the official `openai` and `anthropic` Python SDKs — nothing else.** Permitted for everything else: general-purpose libraries (HTTP, web frameworks, data validation, storage, test infrastructure) as long as their docs do not position them as agent frameworks. If in doubt, vendor a minimal implementation into `src/yaya/kernel/` instead of importing. See [docs/dev/no-agent-frameworks.md](docs/dev/no-agent-frameworks.md).
 
 ## 5. Anti-sycophancy
@@ -68,7 +68,15 @@ gh issue create (labelled)  →  git worktree add .worktrees/issue-{N}-{slug} -b
 
 Required labels on every issue and PR:
 `agent:{claude|codex}` + type (`bug|enhancement|refactor|chore|documentation`)
-+ component (`core|cli|ci|docs`). Templates inherited from `rararulab/.github`.
++ component (`core|kernel|plugins|cli|ci|docs`). yaya carries local
+experimental issue/PR templates so agent-oriented workflow changes can be
+tested here before they move to `rararulab/.github`.
+
+The GitHub issue is the only task record. External coding agents MUST read the
+issue body, the `Agent Task Packet` section, and the latest issue comments
+before editing. Do not create shadow task/story files. Planner notes go in
+issue comments; implementation notes go in the PR body; reviewer findings go
+in PR reviews/comments. See [docs/dev/workflow.md](docs/dev/workflow.md).
 
 Multi-agent: one agent, one worktree, one PR. Coordinate via issue comments,
 never by editing each other's branches. Parallel only for disjoint files;
@@ -106,4 +114,6 @@ Read local first, save tokens. Every code/test/scripts folder has its own
 **Org baseline** (canonical, `gh api repos/rararulab/.github/contents/...`):
 `docs/workflow.md` · `docs/stacked-prs.md` · `docs/commit-style.md` ·
 `docs/agent-friendly-cli.md` · `docs/agent-md.md` · `docs/code-comments.md` ·
-`docs/anti-patterns.md`. Issue/PR templates inherited — do not duplicate.
+`docs/anti-patterns.md`. The local yaya issue/PR templates are an
+experimental overlay; keep them aligned with the org baseline unless an issue
+explicitly tests a workflow change.

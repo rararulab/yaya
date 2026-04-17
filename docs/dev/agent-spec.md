@@ -138,12 +138,12 @@ Pre-commit runs `agent-spec lint` automatically on any staged
 - **One contract, one issue.** Split large work into stacked
   contracts; see [workflow.md](workflow.md).
 
-## Relationship to the org BDD issue template
+## Relationship to the yaya BDD issue template
 
-`rararulab/.github/ISSUE_TEMPLATE/bdd_task.yml` captures the same
-sections (Description / Plan Spec / Feature file / Design spec). Use
-the issue template to open the issue; translate its scenarios into
-the `specs/<slug>.spec` format above.
+`.github/ISSUE_TEMPLATE/bdd_task.yml` captures the same sections
+(Description / Plan Spec / agent-spec contract draft / Design spec).
+Use the issue template to open the issue, then commit the executable
+contract as `specs/<slug>.spec`.
 
 ## What NOT To Do
 

@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.8.0">
+    
+    <meta name="description" content="A Python AI agent built with engineering rigor."> 
+    
+    <meta name="author" content="rararulab"> 
+    
+    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/no-agent-frameworks/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>No third-party AI agent frameworks - yaya</title>
+
+
+<link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../../css/normalize.css" rel="stylesheet">
+<link href="../../css/terminal.css" rel="stylesheet">
+<link href="../../css/theme.css" rel="stylesheet">
+<link href="../../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../../css/theme.footer.css" rel="stylesheet">
+<!-- dark color palette -->
+<link href="../../css/palettes/dark.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+
+
+    
+    <link href="../../assets/_mkdocstrings.css" rel="stylesheet">  
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "../..",
+    shortcuts = "{}";
+</script>
+<script src="../../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://rararulab.github.io/yaya/" class="no-style">yaya</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../.." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../../goal/" class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Goal</span>
+                    </a>
+                    <meta property="position" content="1">
+                </li>
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="2">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../..">Home</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../goal/">Goal</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">User Guide</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/install/">Install</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/usage/">Usage</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Development</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../architecture/">Architecture</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../workflow/">Workflow</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../multi-agent/">Multi-Agent</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../maintaining-agent-md/">Maintaining AGENT.md</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../cli/">CLI Conventions</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../agent-friendly-cli/">Agent-Friendly CLI (org spec)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../web-ui/">Web UI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../testing/">Testing</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../agent-spec/">Agent Spec (BDD Contracts)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../code-comments/">Code Comments & Docstrings</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../release/">Release</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+    </ul>
+</nav><hr>
+<nav>
+    <ul>
+        <li><a href="#no-third-party-ai-agent-frameworks">No third-party AI agent frameworks</a></li>
+        <li><a href="#the-rule">The rule</a></li><li><a href="#explicit-block-list">Explicit block list</a></li><li><a href="#permitted-llm-access">Permitted LLM access</a></li><li><a href="#permitted-general-purpose-libraries">Permitted general-purpose libraries</a></li><li><a href="#when-you-are-tempted-to-pull-in-a-framework">When you are tempted to pull in a framework</a></li><li><a href="#enforcement">Enforcement</a></li>
+    </ul>
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="no-third-party-ai-agent-frameworks">No third-party AI agent frameworks<a class="headerlink" href="#no-third-party-ai-agent-frameworks" title="Permanent link">&para;</a></h1>
+<p>yaya is the kernel. The agent loop, plugin registry, tool orchestration,
+strategy dispatch, memory, and session state are all implemented in
+this repo. Using a higher-level agent framework would defeat the point
+and — more pressingly — violates an external constraint on this
+project.</p>
+<h2 id="the-rule">The rule<a class="headerlink" href="#the-rule" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>You are not permitted to use high-level AI agent frameworks. This
+includes (but is not limited to) LangChain, LangGraph, LlamaIndex,
+and similar libraries designed to simplify agent creation.</p>
+<p>Permitted: libraries for web scraping, data handling, and the
+official SDKs provided by OpenAI (e.g., <code>openai</code>) or Anthropic
+(e.g., <code>anthropic</code>) for direct interaction with their LLM APIs.</p>
+</blockquote>
+<h2 id="explicit-block-list">Explicit block list<a class="headerlink" href="#explicit-block-list" title="Permanent link">&para;</a></h2>
+<p>The following PyPI packages are banned from <code>pyproject.toml</code>
+dependencies, <code>src/yaya/**</code> imports, test code, and <code>vendor/</code>
+(except as reference material, not imported):</p>
+<ul>
+<li>LangChain family: <code>langchain</code>, <code>langchain-core</code>, <code>langchain-openai</code>,
+  <code>langchain-community</code>, <code>langgraph</code>, <code>langsmith</code>, <code>langserve</code>.</li>
+<li>LlamaIndex family: <code>llama-index</code>, <code>llama-index-core</code>,
+  <code>llama-index-llms-*</code>, <code>llama-parse</code>.</li>
+<li>Haystack family: <code>haystack-ai</code>, <code>farm-haystack</code>.</li>
+<li>AutoGen family: <code>autogen</code>, <code>pyautogen</code>, <code>autogenstudio</code>.</li>
+<li>CrewAI family: <code>crewai</code>, <code>crewai-tools</code>.</li>
+<li>Semantic Kernel: <code>semantic-kernel</code>.</li>
+<li>DSPy / Instructor / Guidance / Marvin / Griptape / Mirascope / Smol.</li>
+<li>Anthropic / OpenAI agent-flavoured wrappers: <code>anthropic-agents</code>,
+  <code>openai-agents</code> — use the <strong>raw</strong> <code>openai</code> and <code>anthropic</code> SDKs only.</li>
+</ul>
+<h2 id="permitted-llm-access">Permitted LLM access<a class="headerlink" href="#permitted-llm-access" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>openai</code> (the official Python SDK, <code>AsyncOpenAI</code>). Covers OpenAI,
+  Azure OpenAI, and every OpenAI-compatible endpoint (DeepSeek,
+  Moonshot, ollama, lm-studio, LiteLLM gateway) via
+  <code>OPENAI_BASE_URL</code> + <code>OPENAI_API_KEY</code>.</li>
+<li><code>anthropic</code> (the official Python SDK, <code>AsyncAnthropic</code>). Covers
+  Claude with native tool use, prompt caching, and streaming.</li>
+</ul>
+<p>No other LLM client, wrapper, router, or gateway library is permitted.
+If a new provider is needed, add a yaya <code>llm-provider</code> plugin that
+calls the vendor's official SDK.</p>
+<h2 id="permitted-general-purpose-libraries">Permitted general-purpose libraries<a class="headerlink" href="#permitted-general-purpose-libraries" title="Permanent link">&para;</a></h2>
+<p>As long as a library is <strong>not</strong> positioned as an agent framework,
+these categories are fine:</p>
+<ul>
+<li>HTTP clients: <code>httpx</code> (for non-LLM traffic only).</li>
+<li>Web frameworks: <code>fastapi</code>, <code>starlette</code>, <code>websockets</code>, <code>uvicorn</code>.</li>
+<li>CLI: <code>typer</code>, <code>rich</code>.</li>
+<li>Data validation &amp; settings: <code>pydantic</code>, <code>pydantic-settings</code>.</li>
+<li>Persistence: <code>aiosqlite</code>, stdlib <code>sqlite3</code>, <code>jsonlines</code> — <strong>not</strong>
+  vector-store-as-a-service libraries that bundle retrieval-chain
+  logic.</li>
+<li>Logging: <code>loguru</code>.</li>
+<li>Test infrastructure: <code>pytest</code> and ecosystem (<code>pytest-asyncio</code>,
+  <code>pytest-httpx</code>, <code>pytest-cov</code>, <code>pytest-timeout</code>, <code>pytest-randomly</code>,
+  <code>hypothesis</code>, <code>syrupy</code>).</li>
+<li>Build: <code>hatchling</code>, <code>pyinstaller</code>, <code>uv</code>.</li>
+<li>MCP: the <strong>official</strong> <code>mcp</code> SDK (from Anthropic). Community wrappers
+  like <code>fastmcp</code> are permitted only if the core interface used is the
+  protocol SDK; review required.</li>
+</ul>
+<h2 id="when-you-are-tempted-to-pull-in-a-framework">When you are tempted to pull in a framework<a class="headerlink" href="#when-you-are-tempted-to-pull-in-a-framework" title="Permanent link">&para;</a></h2>
+<p>Don't. Vendor a ~200-line minimal implementation into
+<code>src/yaya/kernel/</code> instead. Specifically:</p>
+<table>
+<thead>
+<tr>
+<th>Temptation</th>
+<th>yaya equivalent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LangChain <code>AgentExecutor</code></td>
+<td>The kernel's fixed agent loop (#12).</td>
+</tr>
+<tr>
+<td>LangGraph state machine</td>
+<td>Plugin dispatch via the closed event catalog (#11).</td>
+</tr>
+<tr>
+<td>LlamaIndex VectorStoreIndex</td>
+<td>A future <code>memory_embeddings</code> plugin calling the vendor SDK directly (e.g. <code>openai.embeddings.create</code>).</td>
+</tr>
+<tr>
+<td>LangChain <code>ChatMessageHistory</code></td>
+<td>The session tape (#32).</td>
+</tr>
+<tr>
+<td>LangChain <code>Tool</code> abstraction</td>
+<td>The tool contract (#27).</td>
+</tr>
+<tr>
+<td>LangSmith tracing</td>
+<td>The event bus + tape log (#32).</td>
+</tr>
+</tbody>
+</table>
+<p>If a vendor-ban question is truly ambiguous, open a <code>governance</code>
+issue before writing the import.</p>
+<h2 id="enforcement">Enforcement<a class="headerlink" href="#enforcement" title="Permanent link">&para;</a></h2>
+<ul>
+<li>PR review checks <code>pyproject.toml</code> and <code>git diff</code> against this list.</li>
+<li>CI runs a dependency scanner (see the tracking issue) that fails
+  the build on a banned package or on a banned import in <code>src/yaya/</code>.</li>
+<li><code>vendor/</code> contains reference repos (e.g. <code>bub/</code>, <code>kimi-cli/</code>) — they
+  are NEVER imported at runtime; <code>src/yaya/</code> must not reference
+  anything under <code>vendor/</code>.</li>
+</ul>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+            
+            <p class="text-center text-muted">Copyright (c) 2026 <a href="https://github.com/rararulab">rararulab</a> contributors.</p>
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal" aria-label="Close">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>

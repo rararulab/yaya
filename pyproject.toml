@@ -27,7 +27,7 @@ Repository = "https://github.com/rararulab/yaya"
 Changelog = "https://github.com/rararulab/yaya/blob/main/CHANGELOG.md"
 
 [project.scripts]
-yaya = "yaya.__main__:app"
+yaya = "yaya.cli:app"
 
 [dependency-groups]
 dev = [
@@ -39,6 +39,7 @@ dev = [
     "pre-commit>=4.0.0",
     "tox-uv>=1.16.0",
     "pyinstaller>=6.11.0",
+    "pytest-httpx>=0.35",
 ]
 
 [build-system]

@@ -54,7 +54,7 @@ jobs:
       - uses: ./.github/actions/setup-python-env
       - name: Build distributions
         run: uvx --from build pyproject-build --installer uv
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/

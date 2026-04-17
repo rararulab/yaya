@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.8.0">
+    
+    <meta name="description" content="A Python AI agent built with engineering rigor."> 
+    
+    <meta name="author" content="rararulab"> 
+    
+    <link rel="canonical" href="https://rararulab.github.io/yaya/wiki/lessons-learned/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>Lessons Learned - yaya</title>
+
+
+<link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../../css/normalize.css" rel="stylesheet">
+<link href="../../css/terminal.css" rel="stylesheet">
+<link href="../../css/theme.css" rel="stylesheet">
+<link href="../../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../../css/theme.footer.css" rel="stylesheet">
+<!-- dark color palette -->
+<link href="../../css/palettes/dark.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+
+
+    
+    <link href="../../assets/_mkdocstrings.css" rel="stylesheet">  
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "../..",
+    shortcuts = "{}";
+</script>
+<script src="../../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://rararulab.github.io/yaya/" class="no-style">yaya</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../.." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../../goal/" class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Goal</span>
+                    </a>
+                    <meta property="position" content="1">
+                </li>
+                
+                
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="2">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../..">Home</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../goal/">Goal</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        <span class="
+        
+    terminal-mkdocs-side-nav-item--active terminal-mkdocs-side-nav-section-no-index">Wiki</span>
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        <span class="terminal-mkdocs-side-nav-item--active">Lessons Learned</span>
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">User Guide</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/install/">Install</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/usage/">Usage</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Development</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/architecture/">Architecture</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/no-agent-frameworks/">No Third-Party Agent Frameworks</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/workflow/">Workflow</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/multi-agent/">Multi-Agent</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/maintaining-agent-md/">Maintaining AGENT.md</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/cli/">CLI Conventions</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/agent-friendly-cli/">Agent-Friendly CLI (org spec)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/web-ui/">Web UI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/testing/">Testing</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/agent-spec/">Agent Spec (BDD Contracts)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/code-comments/">Code Comments & Docstrings</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../dev/release/">Release</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+    </ul>
+</nav><hr>
+<nav>
+    <ul>
+        <li><a href="#agent-lessons-learned">Agent Lessons Learned</a></li>
+        <li><a href="#1-asynciolock-is-not-reentrant-never-serialize-per-key-fifo-with-a-shared-lock">1. asyncio.Lock is not reentrant — never serialize per-key FIFO with a shared lock</a></li><li><a href="#2-heuristic-external-vs-reentrant-must-detect-any-worker-context-not-just-the-targets">2. Heuristic "external-vs-reentrant" must detect any worker context, not just the target's</a></li><li><a href="#3-except-baseexception-swallows-asynciocancellederror">3. except BaseException swallows asyncio.CancelledError</a></li><li><a href="#4-typeddict-totalfalse-is-the-wrong-default-for-payloads-whose-fields-split-requiredoptional">4. TypedDict total=False is the wrong default for payloads whose fields split required/optional</a></li><li><a href="#5-from-__future__-import-annotations-breaks-notrequired-partitioning">5. from __future__ import annotations breaks NotRequired partitioning</a></li><li><a href="#6-unbounded-per-key-dicts-leak-in-long-running-async-processes">6. Unbounded per-key dicts leak in long-running async processes</a></li><li><a href="#7-default-dataclass-__eq__-breaks-identity-based-listremove">7. Default dataclass __eq__ breaks identity-based list.remove</a></li><li><a href="#8-subagent-findings-for-the-next-issue-are-usually-bugs-in-this-pr">8. Subagent "findings for the next issue" are usually bugs in THIS PR</a></li><li><a href="#9-no-speculative-state-for-future-extensions">9. No speculative state "for future extensions"</a></li><li><a href="#10-silent-no-op-primitives-are-a-ux-bug">10. Silent no-op primitives are a UX bug</a></li><li><a href="#11-empirical-probes-beat-static-reasoning">11. Empirical probes beat static reasoning</a></li><li><a href="#12-code-review-rounds-re-enter-until-genuinely-clean">12. Code-review rounds re-enter until genuinely clean</a></li><li><a href="#13-document-non-obvious-design-decisions-in-the-specs-decisions">13. Document non-obvious design decisions in the spec's ## Decisions</a></li><li><a href="#14-pre-commit-hook-drift-just-check-all-is-currently-broken">14. Pre-commit hook drift: just check-all is currently broken</a></li><li><a href="#how-to-use-this-doc">How to use this doc</a></li>
+    </ul>
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="agent-lessons-learned">Agent Lessons Learned<a class="headerlink" href="#agent-lessons-learned" title="Permanent link">&para;</a></h1>
+<p>Rolling log of recurring review findings, anti-patterns, and hazards
+that bit us during implementation. <strong>Read this before starting any
+non-trivial kernel/plugin work.</strong> Every PR whose review surfaces a new
+hazard appends one entry here in the same PR.</p>
+<p>Entry shape:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>## N. &lt;short name&gt;
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>**Symptom**  — what the review or a probe flagged.
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>**Root cause** — why it happens.
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>**Rule** — what to do instead.
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>**Reference** — PR / file / line.
+</code></pre></div>
+<p>Keep entries short and actionable. If a rule generalises, lift it into
+<code>docs/dev/plugin-protocol.md</code> or the relevant <code>AGENT.md</code>.</p>
+<hr />
+<h2 id="1-asynciolock-is-not-reentrant-never-serialize-per-key-fifo-with-a-shared-lock">1. asyncio.Lock is not reentrant — never serialize per-key FIFO with a shared lock<a class="headerlink" href="#1-asynciolock-is-not-reentrant-never-serialize-per-key-fifo-with-a-shared-lock" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — Handlers that re-publish on their own session deadlocked
+for 30 s before the outer <code>wait_for</code> cancelled them; the cancellation
+was surfaced as a spurious empty-message <code>plugin.error</code> ("plugin 'tool'
+raised while handling 'tool.call.request': ").</p>
+<p><strong>Root cause</strong> — <code>asyncio.Lock</code> held by the worker task is re-acquired
+by the same task; asyncio locks deadlock on same-task re-acquisition.
+FIFO per session was implemented as <code>async with session_locks[sid]:</code>
+around fan-out, which is the wrong primitive for a serial delivery
+contract.</p>
+<p><strong>Rule</strong> — Use a <strong>per-key worker task + <code>asyncio.Queue</code></strong> pattern for
+serial delivery. Publishers enqueue; the worker drains. FIFO is
+preserved because one worker owns one queue. Re-entry is impossible by
+construction.</p>
+<p><strong>Reference</strong> — PR #21, <code>src/yaya/kernel/bus.py</code>.</p>
+<hr />
+<h2 id="2-heuristic-external-vs-reentrant-must-detect-any-worker-context-not-just-the-targets">2. Heuristic "external-vs-reentrant" must detect <strong>any</strong> worker context, not just the target's<a class="headerlink" href="#2-heuristic-external-vs-reentrant-must-detect-any-worker-context-not-just-the-targets" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — Cross-session cycle deadlocked: handler on session <code>s1</code>
+published to <code>s2</code> and awaited; <code>s2</code> handler published to <code>s1</code> and
+awaited; both workers blocked on each other's completion future.</p>
+<p><strong>Root cause</strong> — The re-entry check used
+<code>current_task() is session_workers[event.session_id]</code>. That only
+detects <strong>same-session</strong> re-entry. A task running inside <code>s1</code>'s worker
+that publishes to <code>s2</code> is NOT <code>s2</code>'s worker, so the check missed it and
+the caller awaited delivery, which cannot complete while <code>s1</code> is
+blocked.</p>
+<p><strong>Rule</strong> — Detect "am I inside <strong>any</strong> worker" via a
+<code>contextvars.ContextVar[bool]</code> set by the worker for the duration of
+its loop body. ContextVars propagate across <code>await</code> within the same
+task but are copied (and therefore resettable) when you spawn a new
+task. This gives the right granularity.</p>
+<p><strong>Reference</strong> — PR #21 round 2, <code>src/yaya/kernel/bus.py</code> <code>_IN_WORKER</code>.</p>
+<hr />
+<h2 id="3-except-baseexception-swallows-asynciocancellederror">3. <code>except BaseException</code> swallows <code>asyncio.CancelledError</code><a class="headerlink" href="#3-except-baseexception-swallows-asynciocancellederror" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — Deliberately cancelling a <code>publish</code> task produced a
+spurious <code>plugin.error</code> ("plugin 'slow' raised while handling
+'kernel.ready'") because the handler's <code>CancelledError</code> was caught,
+reported, and a synthetic error emitted instead of propagating.</p>
+<p><strong>Root cause</strong> — In modern asyncio, <code>CancelledError</code> <strong>must</strong> propagate
+so <code>gather</code>, <code>wait_for</code>, and <code>Task.cancel</code> can unwind cleanly.</p>
+<p><strong>Rule</strong> — Either narrow to <code>except Exception</code> (CancelledError is a
+BaseException subclass, not an Exception subclass, in Python 3.8+), or
+explicitly <code>except asyncio.CancelledError: raise</code> before the general
+handler. Never swallow cancellation.</p>
+<p><strong>Reference</strong> — PR #21, <code>src/yaya/kernel/bus.py</code> <code>_deliver</code>.</p>
+<hr />
+<h2 id="4-typeddict-totalfalse-is-the-wrong-default-for-payloads-whose-fields-split-requiredoptional">4. TypedDict <code>total=False</code> is the wrong default for payloads whose fields split required/optional<a class="headerlink" href="#4-typeddict-totalfalse-is-the-wrong-default-for-payloads-whose-fields-split-requiredoptional" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — <code>mypy --strict</code> accepted payloads missing required keys
+(<code>text</code>, <code>content</code>, <code>usage</code>, etc.) because the TypedDict marked them
+optional via <code>total=False</code>. The public-contract tables in
+<code>plugin-protocol.md</code> show required vs optional (<code>field</code> vs <code>field?</code>).</p>
+<p><strong>Root cause</strong> — Subagent heuristic: "if any field is optional, just
+make the whole dict <code>total=False</code>." That weakens the type contract and
+silently lets the protocol drift.</p>
+<p><strong>Rule</strong> — Default <code>TypedDict</code> to <code>total=True</code> (the default). For each
+optional field use <code>typing.NotRequired[T]</code>. Write one table-driven test
+that compares <code>__required_keys__</code> / <code>__optional_keys__</code> against the
+protocol spec so drift fails CI.</p>
+<p><strong>Reference</strong> — PR #21, <code>src/yaya/kernel/events.py</code>,
+<code>tests/kernel/test_events.py::test_typed_dict_required_optional_partition</code>.</p>
+<hr />
+<h2 id="5-from-__future__-import-annotations-breaks-notrequired-partitioning">5. <code>from __future__ import annotations</code> breaks <code>NotRequired</code> partitioning<a class="headerlink" href="#5-from-__future__-import-annotations-breaks-notrequired-partitioning" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — After switching payloads to <code>NotRequired[T]</code>, the
+introspection test still saw every field as required.</p>
+<p><strong>Root cause</strong> — PEP 563 string annotations defer evaluation. With
+<code>from __future__ import annotations</code>, <code>TypedDict</code> bodies are stored as
+strings and <code>__required_keys__</code> / <code>__optional_keys__</code> fall back to
+treating all fields as required at class-construction time.</p>
+<p><strong>Rule</strong> — In modules that define <code>TypedDict</code> classes using
+<code>NotRequired</code>, do <strong>not</strong> enable <code>from __future__ import annotations</code>.
+Document the choice in the module docstring so future edits don't
+reintroduce it.</p>
+<p><strong>Reference</strong> — PR #21, <code>src/yaya/kernel/events.py</code> module docstring.</p>
+<hr />
+<h2 id="6-unbounded-per-key-dicts-leak-in-long-running-async-processes">6. Unbounded per-key dicts leak in long-running async processes<a class="headerlink" href="#6-unbounded-per-key-dicts-leak-in-long-running-async-processes" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — <code>_session_locks</code> dict grew to 1000 entries after 1000
+one-shot session ids (one WS connection each). Each entry never
+released.</p>
+<p><strong>Root cause</strong> — Static "register on first use, never remove" dicts
+keyed by user-supplied ids leak by construction.</p>
+<p><strong>Rule</strong> — Prefer self-cleaning state. In the queue-worker pattern,
+the worker's <code>finally</code> block removes its own queue + task entry when
+the queue drains. Verify with a burst test:
+<code>bus._session_queues</code> must return to zero after N one-shot publishes.</p>
+<p><strong>Reference</strong> — PR #21, <code>src/yaya/kernel/bus.py</code> <code>_drain</code> <code>finally</code>,
+<code>tests/kernel/test_bus.py::test_session_queue_releases_when_idle</code>.</p>
+<hr />
+<h2 id="7-default-dataclass-__eq__-breaks-identity-based-listremove">7. Default dataclass <code>__eq__</code> breaks identity-based <code>list.remove</code><a class="headerlink" href="#7-default-dataclass-__eq__-breaks-identity-based-listremove" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — Subscribing the same handler+source twice, then
+unsubscribing one, could remove either entry because
+<code>_Subscriber</code> had structural equality over <code>(kind, handler, source)</code>.</p>
+<p><strong>Root cause</strong> — <code>@dataclass(slots=True)</code> generates <code>__eq__</code> by
+default. <code>list.remove(x)</code> uses <code>==</code>, so identity is lost.</p>
+<p><strong>Rule</strong> — When the class is an <strong>identity-keyed handle</strong> (subscription
+tokens, resource IDs, pending-request futures), set
+<code>@dataclass(eq=False)</code> so equality falls back to <code>is</code>.</p>
+<p><strong>Reference</strong> — PR #21, <code>src/yaya/kernel/bus.py</code> <code>_Subscriber</code>.</p>
+<hr />
+<h2 id="8-subagent-findings-for-the-next-issue-are-usually-bugs-in-this-pr">8. Subagent "findings for the next issue" are usually bugs in THIS PR<a class="headerlink" href="#8-subagent-findings-for-the-next-issue-are-usually-bugs-in-this-pr" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — PR #21's self-report listed "the agent loop must not
+await round-trip events from inside a handler on the same session or it
+will deadlock" as a note for the next issue. That was not a next-issue
+concern; it was a design flaw IN the current bus.</p>
+<p><strong>Root cause</strong> — Subagents sometimes defer problems they noticed with
+"document it for the next PR" instead of fixing them. This transfers
+debt and forces downstream consumers to work around infrastructure.</p>
+<p><strong>Rule</strong> — If a subagent flags a hazard or a design trade-off in the
+code it just wrote, the reviewer must treat it as a finding in the
+current PR and decide whether to fix now or accept. Do <strong>not</strong>
+auto-defer.</p>
+<p><strong>Reference</strong> — PR #21 round 2 (retro-fix of round-1 hazards).</p>
+<hr />
+<h2 id="9-no-speculative-state-for-future-extensions">9. No speculative state "for future extensions"<a class="headerlink" href="#9-no-speculative-state-for-future-extensions" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — PR #21 round 1 shipped an <code>_in_flight: set[Task]</code> that
+was never written to and an empty <code>if TYPE_CHECKING: pass</code> block "for
+future fire-and-forget extensions." Dead code.</p>
+<p><strong>Root cause</strong> — "I might need this later" accumulates abstractions
+without tests to justify them.</p>
+<p><strong>Rule</strong> — Project rule: no speculative abstractions. Delete dead
+state. Re-add it with tests when the feature actually lands.</p>
+<p><strong>Reference</strong> — <code>AGENT.md</code> §4 Constraints + PR #21.</p>
+<hr />
+<h2 id="10-silent-no-op-primitives-are-a-ux-bug">10. Silent no-op primitives are a UX bug<a class="headerlink" href="#10-silent-no-op-primitives-are-a-ux-bug" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — <code>publish()</code> on a closed bus silently returned without
+delivering. Callers racing with shutdown had no signal the event was
+dropped.</p>
+<p><strong>Root cause</strong> — Defensive-return without observability trades a
+visible crash for an invisible failure.</p>
+<p><strong>Rule</strong> — Silent drops log a WARNING naming what was dropped (event
+kind, task name, etc.). For dispatch primitives on shut-down resources,
+a warning is the minimum; consider raising if callers are expected to
+handle the state.</p>
+<p><strong>Reference</strong> — PR #21, <code>bus.py::publish</code> <code>Note:</code> docstring +
+<code>test_publish_after_close_logs_warning</code>.</p>
+<hr />
+<h2 id="11-empirical-probes-beat-static-reasoning">11. Empirical probes beat static reasoning<a class="headerlink" href="#11-empirical-probes-beat-static-reasoning" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — "Same-session re-entry hangs because asyncio.Lock isn't
+reentrant" looked subtle on paper; a 20-line probe reproduced it in
+one run. Same for cross-session cycle and plugin.error cascade.</p>
+<p><strong>Root cause</strong> — Async deadlocks do not produce a stack trace on the
+blocking call; they hide until a timeout fires elsewhere.</p>
+<p><strong>Rule</strong> — When reviewing async infrastructure, write a minimal probe
+(<code>asyncio.run</code> a harness; <code>wait_for</code> with a short timeout) to reproduce
+each hypothesised hazard. Ship the successful probe as a regression
+test.</p>
+<p><strong>Reference</strong> — PR #21 review transcript.</p>
+<hr />
+<h2 id="12-code-review-rounds-re-enter-until-genuinely-clean">12. Code-review rounds re-enter until genuinely clean<a class="headerlink" href="#12-code-review-rounds-re-enter-until-genuinely-clean" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — Round-1 fixes introduced TWO new cross-session deadlock
+hazards; they were only caught by running <code>code-review-expert</code> a second
+time on the updated PR.</p>
+<p><strong>Root cause</strong> — A fixup can subtly reshape the design. Approving after
+one round on load-bearing infra is risky.</p>
+<p><strong>Rule</strong> — After any fixup on infra PRs (kernel, event bus, plugin
+ABI), re-run the full review skill. Merge only after a round produces
+zero new findings at P0/P1.</p>
+<p><strong>Reference</strong> — PR #21 two rounds.</p>
+<hr />
+<h2 id="13-document-non-obvious-design-decisions-in-the-specs-decisions">13. Document non-obvious design decisions in the spec's <code>## Decisions</code><a class="headerlink" href="#13-document-non-obvious-design-decisions-in-the-specs-decisions" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — Queue-vs-lock, correlation-via-event-id, ContextVar
+reset for turn tasks — each is a non-obvious design choice that
+affected subsequent issues.</p>
+<p><strong>Root cause</strong> — Implementation-level decisions buried in code
+comments are invisible to the next agent reading only the spec.</p>
+<p><strong>Rule</strong> — <code>specs/&lt;slug&gt;.spec.md</code>'s <code>## Decisions</code> section captures
+every <strong>non-obvious</strong> design choice that affects the external contract
+or downstream issues. One bullet per decision, with the <strong>why</strong>.</p>
+<p><strong>Reference</strong> — <code>docs/dev/agent-spec.md</code> + <code>docs/dev/architecture.md</code>.</p>
+<hr />
+<h2 id="14-pre-commit-hook-drift-just-check-all-is-currently-broken">14. Pre-commit hook drift: <code>just check-all</code> is currently broken<a class="headerlink" href="#14-pre-commit-hook-drift-just-check-all-is-currently-broken" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — Pre-commit runs a pinned <code>ruff</code> that doesn't know
+<code>target-version = "py314"</code>. <code>just check-all</code> fails on a config the
+direct <code>uv run ruff check</code> accepts.</p>
+<p><strong>Root cause</strong> — <code>.pre-commit-config.yaml</code> pins a ruff version older
+than Python 3.14 support.</p>
+<p><strong>Rule</strong> — Source of truth for quality gates is the <strong>direct tool
+invocations</strong> (<code>uv run ruff check</code>, <code>uv run mypy</code>, <code>uv run pytest</code>).
+CI uses those. Treat <code>just check-all</code> as advisory until the pre-commit
+pin is bumped. Open a follow-up chore issue to fix it; do NOT skip
+hooks with <code>--no-verify</code>.</p>
+<p><strong>Reference</strong> — PR #21 subagent reports; <code>.pre-commit-config.yaml</code>.</p>
+<hr />
+<h2 id="how-to-use-this-doc">How to use this doc<a class="headerlink" href="#how-to-use-this-doc" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Before starting a PR that touches the kernel, event bus, plugin ABI,
+  agent loop, or any async infrastructure: <strong>read entries 1–13</strong>.</li>
+<li>When dispatching a subagent: reference this doc in the prompt's
+  "Read first" list.</li>
+<li>When a review turn surfaces a hazard that is <strong>not</strong> listed here:
+  append an entry in the same PR. The review cannot pass until the
+  hazard is captured.</li>
+<li>When a rule generalises beyond a single PR, lift it into
+  <code>docs/dev/plugin-protocol.md</code> or the relevant <code>AGENT.md</code>. This file
+  is for patterns, not a permanent spec.</li>
+</ul>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+            
+            <p class="text-center text-muted">Copyright (c) 2026 <a href="https://github.com/rararulab">rararulab</a> contributors.</p>
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal" aria-label="Close">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>

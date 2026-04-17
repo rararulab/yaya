@@ -113,6 +113,8 @@
                 
                 
                 
+                
+                
                     
                     
 
@@ -157,6 +159,45 @@
         
     
     
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Wiki</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../wiki/lessons-learned/">Lessons Learned</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
     
        </li>
         
@@ -250,6 +291,19 @@
         
         
             <a class="terminal-mkdocs-side-nav-item" href="../plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../no-agent-frameworks/">No Third-Party Agent Frameworks</a>
         
     
     </li>
@@ -393,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#multi-agent-development">Multi-Agent Development</a></li>
-        <li><a href="#rules">Rules</a></li><li><a href="#dispatch-pattern">Dispatch pattern</a></li><li><a href="#done-criteria-per-pr">Done criteria (per PR)</a></li>
+        <li><a href="#rules">Rules</a></li><li><a href="#dispatch-pattern">Dispatch pattern</a></li><li><a href="#subagent-dispatch-template-required-read-first-items">Subagent dispatch template — required Read first items</a></li><li><a href="#done-criteria-per-pr">Done criteria (per PR)</a></li>
     </ul>
 </nav>
 </aside>
@@ -423,6 +477,23 @@ Coordination happens through GitHub, not chat context.</p>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  ├─ subagents run in parallel, each opens its own PR
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  └─ PRs reviewed + merged independently on GitHub
 </code></pre></div>
+<h2 id="subagent-dispatch-template-required-read-first-items">Subagent dispatch template — required <code>Read first</code> items<a class="headerlink" href="#subagent-dispatch-template-required-read-first-items" title="Permanent link">&para;</a></h2>
+<p>Every prompt that dispatches a coding subagent MUST include this list,
+in order:</p>
+<ol>
+<li><code>GOAL.md</code> — product anchor.</li>
+<li><code>AGENT.md</code> — root agent index.</li>
+<li><strong><code>docs/wiki/lessons-learned.md</code></strong> — recurring review findings to avoid.</li>
+<li>The authoritative contract for the area of work (e.g.
+   <code>docs/dev/plugin-protocol.md</code> for kernel/plugin work).</li>
+<li>Folder-local <code>AGENT.md</code> for every folder the subagent will touch.</li>
+<li><code>docs/dev/workflow.md</code>, <code>testing.md</code>, <code>code-comments.md</code>,
+   <code>agent-spec.md</code>, <code>maintaining-agent-md.md</code> as relevant.</li>
+<li>The GitHub issue itself (<code>gh issue view &lt;N&gt;</code>).</li>
+</ol>
+<p>Skipping item 3 causes the subagent to re-commit known anti-patterns;
+every review round that uncovers a new hazard <strong>appends a bullet</strong> to
+the wiki doc in the same PR.</p>
 <p>Large features that cannot be decomposed into independent issues use
 <strong>stacked PRs</strong>: one epic issue, sub-issues branched off <code>feat/{name}</code>,
 final summary PR to <code>main</code>.</p>

@@ -247,13 +247,23 @@ required in practice for the kernel loop to observe a response.
 ## Plugin failure model
 
 - A plugin raising from `on_event` produces `plugin.error` and the
-  kernel continues. Repeated failures (threshold configurable) unload
-  the plugin and emit `plugin.removed`.
+  kernel continues. Each `plugin.error` attributed to a plugin
+  increments its failure counter; a successful `on_event` invocation
+  resets the counter to zero, so **N *consecutive* failures** — not N
+  cumulative — triggers unload and emits `plugin.removed`. Default
+  N = 3, configurable on the registry.
 - A plugin hanging in `on_event` past a deadline (default 30s, per
   category) is cancelled; the same counter increments.
 - `on_load` failure prevents registration; the plugin is marked
   `status: failed` in `yaya plugin list` with the stack trace in its
   state directory.
+- Status ladder reported by `yaya plugin list` / `snapshot()`:
+  `loaded → unloading → failed` for the threshold path (transient
+  `unloading` between threshold breach and `on_unload` completion);
+  `loaded → unloaded` for orderly `stop()` / `remove()`. `unloading`
+  is observable so operators see in-flight unloads and so the registry
+  can reject duplicate unload tasks from rival `plugin.error` events
+  during the race window.
 - **The kernel never crashes because a plugin did**. If the kernel
   itself raises, `kernel.error` fires, and `yaya serve` exits non-zero.
 

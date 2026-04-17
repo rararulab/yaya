@@ -339,6 +339,55 @@ too, not just authors.
 
 ---
 
+## 17. "Consecutive" vs "cumulative" in failure policies
+
+**Symptom** — PR #49 documented the registry's failure threshold as
+"consecutive plugin.error events" in both the spec and protocol doc,
+then implemented it as a monotonic counter: 2 errors + 1 success + 1
+error = permanent unload.
+
+**Root cause** — Incrementing a counter on error without ever resetting
+it is the obvious implementation; "consecutive" requires a reset hook
+on success that is easy to forget because the success path doesn't
+naturally touch the failure accounting.
+
+**Rule** — When a policy uses the word "consecutive", the implementation
+MUST reset the counter on the non-failure event. Write the reset test
+first (lesson #11: empirical probe): 2 bad, N good, 1 bad, assert still
+loaded. If that test doesn't exist, "consecutive" is aspirational and
+the doc should say "cumulative".
+
+**Reference** — PR #49 review. Cf. lesson #13 (non-obvious decisions in
+spec Decisions) — the decision here was "reset or not" and it wasn't
+recorded explicitly.
+
+---
+
+## 18. Authoritative-source checks at enforcement points, not cached state
+
+**Symptom** — PR #49 round-1's `remove()` bundled guard consulted
+`self._records[name].bundled`. A bundled plugin whose load failed or
+whose discovery hadn't run was absent from `_records`, so the guard
+silently permitted `pip uninstall` on bundled names.
+
+**Root cause** — Policy decisions that protect against user error
+were gated on an in-memory cache whose population was conditional on
+earlier lifecycle steps succeeding. When the cache wasn't populated,
+the policy didn't apply.
+
+**Rule** — At enforcement points (uninstall guards, permission
+checks, allowlists, sandbox gates), re-derive the predicate from the
+authoritative source — entry-point metadata, auth server, filesystem
+— not from a cached record. If the cache is the source of truth, it
+must be populated BEFORE any path that could bypass the enforcement.
+
+**Reference** — PR #49 review round 1. Distinct from lesson #6
+(leak-prone dicts) and lesson #13 (decision documentation) because
+the failure mode is silent policy bypass, not resource leak or
+lost context.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

@@ -317,6 +317,40 @@ def _uvicorn_stopped(web_ctx: _WebCtx) -> None:
     assert live._server_task is None
 
 
+# ---------------------------------------------------------------------------
+# Scenario: Shipped static bundle is a real Vite build
+# ---------------------------------------------------------------------------
+
+
+@given("the packaged web plugin static directory", target_fixture="static_dir")
+def _static_dir() -> Path:
+    """Resolve the in-source ``static/`` via ``importlib.resources``."""
+    from importlib.resources import files
+
+    resource = files("yaya.plugins.web") / "static"
+    return Path(str(resource))
+
+
+@when(
+    "its index.html is inspected",
+    target_fixture="index_html_text",
+)
+def _read_index_html(static_dir: Path) -> str:
+    return (static_dir / "index.html").read_text(encoding="utf-8")
+
+
+@then("it references Vite-hashed JS assets and no placeholder markers remain")
+def _assert_vite_bundle(index_html_text: str) -> None:
+    import re
+
+    assert re.search(r"/assets/[\w.-]+-[A-Za-z0-9_-]{8,}\.js", index_html_text), (
+        "index.html must reference Vite-hashed JS bundles; got: " + index_html_text[:500]
+    )
+    lowered = index_html_text.lower()
+    assert "plugins-panel" not in lowered
+    assert "preview" not in lowered
+
+
 # -- helpers --------------------------------------------------------------
 
 

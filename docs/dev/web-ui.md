@@ -7,9 +7,9 @@ the same protocol as any third-party adapter (see
 [plugin-protocol.md](plugin-protocol.md)). The kernel has no special
 case for it.
 
-The browser UI is built on
-[`@mariozechner/pi-web-ui`](https://github.com/badlogic/pi-mono/tree/main/packages/web-ui)
-(Lit web components + TailwindCSS v4).
+The browser UI is a Vite-built integration of
+[`@mariozechner/pi-web-ui@0.67.6`](https://github.com/badlogic/pi-mono/tree/main/packages/web-ui)
+(Lit web components + Tailwind v4). See issue #66 for the landing PR.
 
 ## Runtime shape
 
@@ -32,8 +32,7 @@ yaya serve
   [GOAL.md](../goal.md)).
 - `yaya serve --no-open` suppresses the automatic browser launch.
 - The agent loop runs in the Python **kernel**. The browser is a
-  renderer and input device, nothing more. We do **not** embed
-  `pi-agent-core` or any JS/TS agent runtime.
+  renderer and input device, nothing more.
 
 ## Role in the plugin protocol
 
@@ -54,36 +53,81 @@ frames back into `user.message.received` events on the bus.
 
 ```
 src/yaya/plugins/web/
-├── pyproject.toml       # ships as a Python subpackage; registers entry point
-├── __init__.py          # exposes `plugin: Plugin`
-├── server.py            # FastAPI app + WebSocket bridge
-├── package.json         # npm: @mariozechner/pi-web-ui (build-time dep)
-├── tsconfig.json
-├── vite.config.ts
-├── src/                 # our shell wiring pi-web-ui to the WS schema
+├── __init__.py           # entry point exposes `plugin: Plugin`
+├── plugin.py             # FastAPI app + WebSocket bridge
+├── AGENT.md              # whitelist / blacklist table lives here
+├── package.json          # vite + vitest + pi-web-ui + mini-lit + lit + lucide
+├── tsconfig.json         # strict TS
+├── vite.config.ts        # outDir=static; tools/index.js stub plugin
+├── index.html            # /
+├── src/
 │   ├── main.ts
-│   ├── ws-client.ts     # thin WS client speaking the yaya event schema
-│   └── components/      # yaya-specific Lit components
-├── index.html
-└── static/              # *build output* — ships in the wheel
+│   ├── app.css           # imports @mariozechner/pi-web-ui/app.css
+│   ├── types.ts          # discriminated-union WS frame types
+│   ├── ws-client.ts      # reconnect + send queue
+│   ├── chat-shell.ts     # <yaya-chat> component
+│   ├── stubs/
+│   │   └── tools-index.ts
+│   └── __tests__/
+│       └── ws-client.test.ts
+└── static/               # *build output* — git-tracked, shipped in the wheel
     ├── index.html
-    ├── assets/*.js
-    └── assets/*.css
+    └── assets/*.{js,css}
 ```
 
 `static/` is git-tracked so end users who install the wheel get the
-UI without Node. CI verifies `static/` is up-to-date with `src/`.
+UI without Node. CI verifies `static/` matches a fresh Vite build.
 
-## Dependency policy
+## pi-web-ui whitelist / blacklist (Dependency Rule)
 
-- pi-web-ui is consumed **as an npm dependency** (`package.json`) —
-  not vendored, not forked. Upgrades go through ordinary `npm update`
-  PRs.
-- `vendor/pi-mono/` in the repo is **reference only** — a pinned
-  mirror for humans and agents to read. Do NOT import from it; the
-  build must resolve through npm.
-- Peer dependencies (`@mariozechner/mini-lit`, `lit`) live in the
-  plugin's own `package.json` and are pinned.
+`pi-web-ui` ships both pure-presentation components and
+use-case-coupled modules that assume the browser owns the agent, API
+keys, and session storage. yaya inverts each of those — the Python
+kernel owns the agent, env vars hold keys, a future memory plugin
+holds sessions. We cherry-pick; we do NOT import the barrel index.
+
+**Whitelist:** `MessageList`, `StreamingMessageContainer`, `Input`,
+`ConsoleBlock`. Plus `@mariozechner/mini-lit` primitives (including
+`ThemeToggle`), `lit`, `lucide`, and Tailwind via
+`@tailwindcss/vite`.
+
+**Blacklist (pre-commit grep enforces in `src/yaya/plugins/web/src/`):**
+
+- The upstream chat panel class (pulls the upstream agent-core runtime)
+- The upstream agent interface component
+- Custom-provider card / dialog / store
+- Api-key prompt dialog, keys tab, keys input, keys store
+- Settings dialog / tab, providers-models tab, proxy tab
+- Session list dialog, sessions store, app storage helpers,
+  IndexedDB backend, persistent storage dialog
+- Anything from the sandbox runtime bridge or router
+- Everything from `@mariozechner/pi-agent-core`
+- Everything from `@mariozechner/pi-ai`
+
+The rationale is lesson 27 in
+[docs/wiki/lessons-learned.md](../wiki/lessons-learned.md): a
+framework-adjacent library can still contain use-case-level
+assumptions disguised as components. The Dependency Rule demands we
+evaluate each export, not the library as a unit.
+
+### tools/index.js stub
+
+pi-web-ui's `tools/index.js` side-effect-auto-registers tool
+renderers that transitively pull provider SDKs (anthropic, mistral,
+openai, google), pdfjs, lmstudio, and ollama. We redirect that
+module to `src/stubs/tools-index.ts` via a Vite `resolveId` plugin.
+The stub keeps the public API (`renderTool`, `registerToolRenderer`,
+`getToolRenderer`, `setShowJsonMode`) as no-ops; the yaya shell
+renders tool output through `<console-block>` driven by WS
+`tool.start` / `tool.result` frames instead.
+
+## Version pinning
+
+`@mariozechner/pi-web-ui` is pinned to `0.67.6` (exact, no caret).
+Upgrades go through a deliberate PR that re-audits the whitelist and
+blacklist — the upstream library can add new use-case-coupled
+exports between minor versions, and our pre-commit grep cannot catch
+new names automatically.
 
 ## Build pipeline
 
@@ -92,46 +136,44 @@ install time.
 
 - **Install time (user-facing)**: `pip install yaya`. Pure Python.
   The wheel already contains `src/yaya/plugins/web/static/`.
-- **Build time (contributor)**: Node + npm. `just web-build` runs
-  `npm ci && npm run build` inside `src/yaya/plugins/web/` and writes
-  into `static/`. The wheel's build step (`hatchling`) includes
-  `static/` as package data.
-- **Dev loop**: `just web-dev` starts Vite's dev server with HMR on a
-  separate port, proxied by `yaya serve --dev` to the Python kernel.
-  Two processes during development, one at release.
+- **Build time (contributor)**: Node 20+ and npm. Inside
+  `src/yaya/plugins/web/`:
+  ```bash
+  npm ci          # install
+  npm run check   # tsc --noEmit
+  npm run test    # vitest
+  npm run build   # vite build → static/
+  ```
 
-### just recipes
+## CI rules
 
-```bash
-just web-install    # npm ci inside src/yaya/plugins/web
-just web-build      # npm run build → static/
-just web-dev        # vite dev server (HMR)
-just web-check      # biome + tsc --noEmit
-```
+A dedicated **Web UI** job runs on every PR:
 
-### CI rules
+1. `npm ci`
+2. `npm run check`
+3. `npm run test`
+4. `npm run build`
+5. `git diff --exit-code src/yaya/plugins/web/static` — **fails if
+   `static/` drifted.** The PR author must commit the Vite output
+   alongside source changes.
 
-- `just web-check` runs on every PR.
-- `just web-build` runs and CI **fails if `static/` changed** — the
-  PR author must commit the built assets alongside source changes.
-  Rationale: keeps the wheel reproducible; avoids Node in the
-  release pipeline.
-- Wheel-size budget (see [GOAL.md](../goal.md) success metrics) is
-  asserted on the built artifact.
+Rationale: keeps the wheel reproducible, avoids Node in the release
+pipeline, and makes bundle-size regressions obvious in review.
 
 ## WebSocket schema
 
 The WS schema is a thin serialization of the public event set. The
 authoritative catalog lives in `src/yaya/kernel/events.py`; the TS
-mirror lives at `src/yaya/plugins/web/src/events.ts`. **Any change to
-`events.py` updates the TS side in the same PR** — CI compares a JSON
-Schema export of the Python catalog against the TS types.
+mirror lives at `src/yaya/plugins/web/src/types.ts` as a
+discriminated union with an exhaustive `assertNever(frame)` switch.
+**Any change to `events.py` updates the TS side in the same PR** —
+lesson 19 (compile-time enforcement of catalog drift).
 
 Frames flow in both directions:
 
 | WS frame | Direction | Kernel event |
 |---|---|---|
-| `{type: "user.message", text, attachments?}` | browser → adapter | `user.message.received` |
+| `{type: "user.message", text}` | browser → adapter | `user.message.received` |
 | `{type: "user.interrupt"}` | browser → adapter | `user.interrupt` |
 | `{type: "assistant.delta", content}` | adapter → browser | `assistant.message.delta` |
 | `{type: "assistant.done", content, tool_calls}` | adapter → browser | `assistant.message.done` |
@@ -159,14 +201,16 @@ config. Until then, check `/api/health` to confirm the actual port.
 
 ## What NOT To Do
 
-- Do NOT special-case the web plugin in kernel code. It must register
-  and receive events through the same ABI as third-party adapters.
+- Do NOT special-case the web plugin in kernel code.
 - Do NOT import from `vendor/pi-mono/` — use the npm package.
-- Do NOT embed `pi-agent-core` or any JS/TS agent runtime. The agent
-  is Python; the browser renders.
+- Do NOT import from `@mariozechner/pi-agent-core` (full ban per
+  `AGENT.md` section 4).
+- Do NOT import from `@mariozechner/pi-ai`. Provider SDKs live
+  Python-side via the `llm_openai` plugin and its siblings.
+- Do NOT import the pi-web-ui barrel index (`"@mariozechner/pi-web-ui"`
+  with no subpath). Cherry-pick individual components via the
+  `@yaya/pi-web-ui/*` alias in `vite.config.ts`.
 - Do NOT add a build step that requires Node **at install time** —
   users get a pre-built wheel.
 - Do NOT introduce an auth layer or a public-bind default. That is a
   2.x conversation at earliest.
-- Do NOT couple UI components directly to kernel internals — the
-  event catalog is the only contract.

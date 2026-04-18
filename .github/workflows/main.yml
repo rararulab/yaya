@@ -75,6 +75,36 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  web-ui:
+    name: Web UI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/yaya/plugins/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('src/yaya/plugins/web/package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+      - name: Install web adapter dependencies
+        run: npm ci
+      - name: TypeScript strict check
+        run: npm run check
+      - name: Unit tests (vitest)
+        run: npm run test
+      - name: Build Vite bundle
+        run: npm run build
+      - name: Verify static/ is in sync with source
+        run: git diff --exit-code src/yaya/plugins/web/static
+        working-directory: ${{ github.workspace }}
+
   build-wheel:
     name: Build wheel + sdist
     runs-on: ubuntu-latest

@@ -37,3 +37,8 @@ Feature: Web adapter plugin
     Given a loaded web adapter plugin with an active uvicorn server
     When on_unload is awaited
     Then the uvicorn server task completes and clients are closed
+
+  Scenario: Shipped static bundle is a real Vite build
+    Given the packaged web plugin static directory
+    When its index.html is inspected
+    Then it references Vite-hashed JS assets and no placeholder markers remain

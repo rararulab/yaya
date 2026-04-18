@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import socket
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -299,6 +300,31 @@ async def test_static_root_survives_on_load(tmp_path: Path) -> None:
     assert plugin._static_path.is_dir()
     assert (plugin._static_path / "index.html").is_file()
     _ = app  # keep reference to avoid unused-var warning
+
+
+def test_static_bundle_is_real_vite_build(tmp_path: Path) -> None:
+    """``static/index.html`` must reference hashed Vite-built assets.
+
+    Regression guard for issue #66: the shipped bundle is the output
+    of ``vite build`` inside ``src/yaya/plugins/web/``; the hand-
+    written placeholder preview must not be reintroduced. Vite emits
+    asset names of the form ``<name>-<hash>.<ext>`` under
+    ``/assets/`` — checking the HTML text for that pattern is
+    enough to detect a drift without coupling to a specific hash.
+    """
+    from importlib.resources import files  # local import — test-only
+
+    del tmp_path  # unused; fixture kept for parity with other tests.
+    static_root = files("yaya.plugins.web") / "static"
+    idx_text = (static_root / "index.html").read_text(encoding="utf-8")
+    assert re.search(r"/assets/[\w.-]+-[A-Za-z0-9_-]{8,}\.js", idx_text), (
+        "index.html must reference Vite-hashed JS bundles; got: " + idx_text[:500]
+    )
+    # The placeholder's sentinel markers (a <details> "plugins-panel"
+    # section and the hand-written status copy) must be gone.
+    lowered = idx_text.lower()
+    assert "plugins-panel" not in lowered
+    assert "preview" not in lowered
 
 
 # Silence pytest warnings about an unused async fixture pattern in this

@@ -69,3 +69,20 @@ response event echoes `request_id` per lesson #15. Each plugin
 ships a BDD `.spec` (0 WARN from `agent-spec lint`) + unit tests
 under `tests/plugins/<name>/`.
 See: ../../specs/plugin-strategy_react.spec, ../../specs/plugin-memory_sqlite.spec, ../../specs/plugin-llm_openai.spec, ../../specs/plugin-tool_bash.spec, ../../src/yaya/plugins/
+
+## [2026-04-18] ingest | pi-web-ui landing (issue #66)
+Replaced the 305-line vanilla-JS placeholder under
+`src/yaya/plugins/web/static/` with a Vite-built integration of
+`@mariozechner/pi-web-ui@0.67.6`. Applied the Dependency Rule
+strictly (lesson 27): whitelisted `MessageList`,
+`StreamingMessageContainer`, `Input`, `ConsoleBlock`; blacklisted
+every pi-web-ui export that assumes browser-owned agent / API
+keys / session storage, plus all of `@mariozechner/pi-agent-core`
+and `@mariozechner/pi-ai`. A Vite `resolveId` plugin redirects
+pi-web-ui's side-effecting `tools/index.js` auto-register module to
+a local no-op stub so the bundle no longer pulls provider SDKs,
+pdfjs, lmstudio, or ollama. WebSocket protocol unchanged; TS frame
+types mirror `events.py` with an exhaustive `assertNever` (lesson
+19). CI gains a Web UI job that runs `npm run check/test/build` and
+fails if `static/` drifts.
+See: ../../specs/plugin-web.spec, ../../src/yaya/plugins/web/, ../dev/web-ui.md

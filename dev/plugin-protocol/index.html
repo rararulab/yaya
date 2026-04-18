@@ -605,7 +605,7 @@ multiple packages.</p>
 <tr>
 <td><code>tool.call.request</code></td>
 <td>kernel → tool</td>
-<td><code>{ id: str, name: str, args: dict }</code></td>
+<td><code>{ id: str, name: str, args: dict, schema_version?: "v1", request_id?: str }</code></td>
 </tr>
 <tr>
 <td><code>tool.call.start</code></td>
@@ -615,7 +615,12 @@ multiple packages.</p>
 <tr>
 <td><code>tool.call.result</code></td>
 <td>tool → kernel</td>
-<td><code>{ id: str, ok: bool, value?: Any, error?: str, request_id?: str }</code></td>
+<td><code>{ id: str, ok: bool, value?: Any, error?: str, envelope?: dict, request_id?: str }</code></td>
+</tr>
+<tr>
+<td><code>tool.error</code></td>
+<td>kernel → originator</td>
+<td><code>{ id: str, kind: "validation" \| "not_found" \| "rejected", brief: str, detail?: dict, request_id?: str }</code></td>
 </tr>
 </tbody>
 </table>
@@ -796,11 +801,83 @@ interface:</p>
 <p><code>KernelContext</code> gives the plugin an <code>emit(kind, payload, *,
 session_id)</code> method, a scoped logger, access to its configuration,
 and a state directory under <code>&lt;XDG_DATA_HOME&gt;/yaya/plugins/&lt;name&gt;/</code>.</p>
+<h3 id="tools-v1-contract">Tools (v1 contract)<a class="headerlink" href="#tools-v1-contract" title="Permanent link">&para;</a></h3>
+<p>Since 0.2, tools declare their contract through a pydantic-backed
+<code>Tool</code> base class in <code>yaya.kernel.tool</code>. Plugins on this path do
+<strong>not</strong> implement <code>on_event</code> to route <code>tool.call.request</code> themselves
+— the kernel's dispatcher does it for them.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClassVar</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">yaya.kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">KernelContext</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">yaya.kernel.tool</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tool</span><span class="p">,</span> <span class="n">ToolOk</span><span class="p">,</span> <span class="n">ToolReturnValue</span><span class="p">,</span> <span class="n">TextBlock</span><span class="p">,</span> <span class="n">register_tool</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="k">class</span><span class="w"> </span><span class="nc">EchoTool</span><span class="p">(</span><span class="n">Tool</span><span class="p">):</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">name</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;echo&quot;</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">description</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Echo the input text.&quot;</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># parameters are ordinary pydantic fields</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">KernelContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ToolReturnValue</span><span class="p">:</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>        <span class="k">return</span> <span class="n">ToolOk</span><span class="p">(</span><span class="n">brief</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;echo: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">text</span><span class="p">[:</span><span class="mi">40</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">display</span><span class="o">=</span><span class="n">TextBlock</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="c1"># In the plugin&#39;s on_load:</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">KernelContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    <span class="n">register_tool</span><span class="p">(</span><span class="n">EchoTool</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>JSON schema</strong> is derived by <code>Tool.openai_function_spec()</code> →
+<code>{"name", "description", "parameters": model_json_schema()}</code>,
+directly compatible with the OpenAI chat-completions <code>tools</code> array
+shape. Anthropic's Messages API accepts the same dict under a
+different key, so adapters repack without rewriting.</p>
+<p><strong>Return envelope</strong> — <code>ToolOk</code> / <code>ToolError</code> each carry:</p>
+<ul>
+<li><code>brief: str</code> — one-liner (≤80 chars) for logs and status panes.</li>
+<li><code>display: DisplayBlock</code> — adapter-rendering hint. Built-ins:
+  <code>TextBlock(kind="text", text=...)</code>,
+  <code>MarkdownBlock(kind="markdown", markdown=...)</code>,
+  <code>JsonBlock(kind="json", data=...)</code>.</li>
+</ul>
+<p><code>ToolError</code> additionally carries <code>kind: str</code> — one of
+<code>"validation" | "timeout" | "rejected" | "crashed" | "internal"</code>.
+Additional kinds may be introduced additively.</p>
+<p><strong>Dispatcher behaviour</strong> — <code>yaya.kernel.tool.dispatch</code> handles a
+<code>tool.call.request</code> event whose payload's <code>schema_version</code> equals
+<code>"v1"</code>:</p>
+<ol>
+<li>Looks the tool up by <code>payload.name</code> in the registry. Unknown name →
+   <code>tool.error</code> with <code>kind="not_found"</code>.</li>
+<li>Validates <code>payload.args</code> against the tool's pydantic schema.
+   Failure → <code>tool.error</code> with <code>kind="validation"</code> and
+   <code>detail.errors</code> carrying pydantic's structured error list.
+   <code>run()</code> is <strong>not</strong> called.</li>
+<li>If <code>requires_approval=True</code>, calls <code>pre_approve(ctx)</code>. A <code>False</code>
+   return → <code>tool.error</code> with <code>kind="rejected"</code>.</li>
+<li>Calls <code>run(ctx)</code>. A raised exception is coerced into
+   <code>tool.call.result</code> with a <code>ToolError(kind="crashed")</code> envelope —
+   the kernel never lets a tool exception escape onto the bus.</li>
+<li>Emits <code>tool.call.result</code> with <code>{"id", "ok", "envelope":
+   &lt;model_dump&gt;, "request_id"}</code>.</li>
+</ol>
+<p><strong>Approval hook shape (placeholder)</strong> — <code>requires_approval: ClassVar[bool]
+= False</code> and <code>async def pre_approve(self, ctx) -&gt; bool</code> exist on the
+contract today. The real approval runtime (prompt the user, cancel on
+interrupt, resume on approval) lands in a follow-up issue. Default
+behaviour is no-approval.</p>
+<p><strong>Backward compatibility</strong> — A <code>tool.call.request</code> payload without
+<code>schema_version</code> falls through to whatever plugin subscribed via
+<code>on_event</code>. Bundled plugins that pre-date v1 (e.g. <code>tool_bash</code>) keep
+working unchanged. If a legacy plugin and a v1 registration claim the
+same tool name, the registry logs a WARNING; duplicate
+<code>tool.call.result</code> emissions are possible until one path is retired.</p>
+<p><strong>The new <code>tool.error</code> event kind</strong> is a kernel → originator event
+emitted only by the v1 dispatcher (never by plugins). Adapters
+typically render it inline with the originating assistant turn rather
+than as a tool-pane update, because the target tool never ran.</p>
 <h3 id="category-specific-extras">Category-specific extras<a class="headerlink" href="#category-specific-extras" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>tool</code></strong> declares <code>tool_name: str</code> and <code>json_schema: dict</code> for
   arguments. The kernel routes <code>tool.call.request</code> to the plugin whose
-  <code>tool_name</code> matches.</li>
+  <code>tool_name</code> matches. Since 0.2 the preferred path is to declare a
+  <code>Tool</code> subclass and call <code>register_tool()</code> — see "Tools (v1
+  contract)" above.</li>
 <li><strong><code>llm-provider</code></strong> declares <code>provider_id: str</code> (e.g., <code>"openai"</code>).
   The kernel routes <code>llm.call.request</code> by <code>payload.provider</code>.</li>
 <li><strong><code>strategy</code></strong> declares <code>strategy_id: str</code>. Only one strategy is
@@ -814,13 +891,13 @@ and a state directory under <code>&lt;XDG_DATA_HOME&gt;/yaya/plugins/&lt;name&gt
 </ul>
 <h2 id="agent-loop-kernel-owned">Agent loop (kernel-owned)<a class="headerlink" href="#agent-loop-kernel-owned" title="Permanent link">&para;</a></h2>
 <p>The loop shape is fixed. Each turn runs this sequence:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>user.message.received
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  → strategy.decide.request  →  strategy.decide.response
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    → memory.query           →  memory.result (if requested)
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    → llm.call.request       →  llm.call.response
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>      → tool.call.request    →  tool.call.result   (repeat per tool)
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    → assistant.message.done
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>  → memory.write (if requested by strategy)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>user.message.received
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  → strategy.decide.request  →  strategy.decide.response
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    → memory.query           →  memory.result (if requested)
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    → llm.call.request       →  llm.call.response
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>      → tool.call.request    →  tool.call.result   (repeat per tool)
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    → assistant.message.done
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  → memory.write (if requested by strategy)
 </code></pre></div>
 <p>Strategies control: which tools to offer, when to call memory, when to
 stop. Strategies <strong>do not</strong> change the ordering of the sequence —

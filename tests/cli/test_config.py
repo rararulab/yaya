@@ -29,6 +29,10 @@ def _isolate_yaya_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(cfg_mod, "CONFIG_PATH", tmp_path / "config.toml")
 
 
+# `cli_app` is a fixture returning a `typer.Typer` app; pytest fixture
+# resolution doesn't carry the type through here. Tests are out of scope
+# for `[tool.mypy] files = ["src"]`, but the per-arg ignore documents
+# intent if a future PR widens the mypy file set.
 def test_config_show_text_mode(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
     result = runner.invoke(cli_app, ["config", "show"])
     assert result.exit_code == 0, result.stdout
@@ -38,7 +42,7 @@ def test_config_show_text_mode(runner: CliRunner, cli_app) -> None:  # type: ign
     assert "port" in result.stdout
 
 
-def test_config_show_json_shape(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+def test_config_show_json_shape(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]  # see fixture note above
     result = runner.invoke(cli_app, ["--json", "config", "show"])
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
@@ -52,7 +56,7 @@ def test_config_show_json_shape(runner: CliRunner, cli_app) -> None:  # type: ig
 
 def test_json_redacts_openai_api_key(
     runner: CliRunner,
-    cli_app,  # type: ignore[no-untyped-def]
+    cli_app,  # type: ignore[no-untyped-def]  # see fixture note above
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AC-02: env-supplied secret never appears in stdout under --json."""
@@ -67,7 +71,7 @@ def test_json_redacts_openai_api_key(
 
 def test_text_mode_redacts_secrets(
     runner: CliRunner,
-    cli_app,  # type: ignore[no-untyped-def]
+    cli_app,  # type: ignore[no-untyped-def]  # see fixture note above
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Redaction also applies in human-readable rendering."""

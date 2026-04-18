@@ -21,6 +21,7 @@ plugin under `plugins/`.
 - `plugins/` — bundled plugins (`web` adapter, one LLM provider, one tool, one strategy, one memory). Each loads through the **same protocol** as third-party plugins — no special cases.
 - `core/` — shared pure-logic helpers (updater, etc.). See [core/AGENT.md](core/AGENT.md).
 - Every public callable/class has a Google-style docstring explaining **why**, not **what**.
+- Type bar: `mypy --strict` + the per-error-code enable set documented in `pyproject.toml` (`redundant-expr`, `truthy-bool`, `truthy-iterable`, `unused-awaitable`, `possibly-undefined`, `explicit-override`) plus `disallow_any_unimported`. Loosening any of those settings is a `governance` change.
 
 ## Interaction (patterns)
 - New subpackage ⇒ ships with its own `AGENT.md` in the same PR; otherwise merge is blocked.

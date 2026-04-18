@@ -62,6 +62,9 @@ async def _drive(
 
     req = new_event(
         "llm.call.request",
+        # `new_event` accepts a strict TypedDict; the test feeds a plain
+        # dict literal. Casting per call would obscure each scenario's
+        # shape — narrow ignore is the lesser evil.
         payload,  # type: ignore[arg-type]
         session_id="sess-echo",
         source="kernel",

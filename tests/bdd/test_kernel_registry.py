@@ -701,6 +701,9 @@ def _two_plugins_a_then_b(ctx: BDDContext, tmp_path: Path, loop: asyncio.Abstrac
             calls.append(name)
             await orig(kctx)
 
+        # Monkey-patching a Plugin instance method to record unload order;
+        # mypy correctly forbids method reassignment, but the test owns this
+        # instance and the swap is the whole point.
         p.on_unload = _tracked  # type: ignore[method-assign]
         return p
 

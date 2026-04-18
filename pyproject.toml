@@ -100,6 +100,37 @@ strict_equality = true
 extra_checks = true
 show_error_codes = true
 ignore_missing_imports = true
+# `disallow_any_unimported` flags returns from third-party packages
+# that arrive as `Any` because we don't have stubs. With our current
+# deps (pydantic, fastapi, openai, typer, etc.) we ship no `Any`
+# leaks across the import boundary; pinning the flag locks that in.
+disallow_any_unimported = true
+# Additional opt-in error codes — strict turns most things on, but
+# these are off-by-default and worth catching:
+#   redundant-expr     — `x is None or x is None` and similar dead logic.
+#   truthy-bool        — `if some_object:` where `some_object` is a class
+#                        instance (almost always a bug — caller meant
+#                        `is not None` or an explicit attribute check).
+#   truthy-iterable    — `if some_list_factory:` (always-truthy callable).
+#   unused-awaitable   — coroutine result discarded without `await`.
+#   possibly-undefined — name used on a branch where it may not be bound.
+#   explicit-override  — methods overriding a base must be marked with
+#                        `@typing.override` (PEP 698). Catches stale
+#                        overrides when the base method is renamed.
+# `unused-ignore` is intentionally omitted: half our ignores are
+# guardrails for asymmetric mypy/pyright narrowing where a future
+# mypy version may stop firing the warning. We rely on
+# `warn_unused_ignores = true` (above, mypy-side) plus pyright's
+# `reportUnnecessaryTypeIgnoreComment = "error"` to flag genuinely
+# stale ignores; the cross-check is enough.
+enable_error_code = [
+    "redundant-expr",
+    "truthy-bool",
+    "truthy-iterable",
+    "unused-awaitable",
+    "possibly-undefined",
+    "explicit-override",
+]
 
 # Second type-checker gate. Pyright is the engine behind VS Code's Pylance,
 # so its CI verdict matches what contributors see live in the editor — closes

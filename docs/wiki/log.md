@@ -5,6 +5,26 @@ passes. Never rewrite history; append only. Entry prefix is
 `## [YYYY-MM-DD] <kind> | <title>` so `grep "^## \[" log.md`
 parses.
 
+## [2026-04-18] ingest | mypy strict tightening (issue #40)
+Baseline `uv run mypy` was already clean against `strict = true` +
+every individual flag pinned (the heavy lifting landed in earlier
+PRs). This pass tightens the bar further: enabled
+`disallow_any_unimported = true` and the off-by-default
+`enable_error_code` set
+(`redundant-expr`, `truthy-bool`, `truthy-iterable`,
+`unused-awaitable`, `possibly-undefined`, `explicit-override`).
+All 34 source files still pass with zero new violations — the
+codebase was already at this bar; pinning the flags keeps it there.
+`unused-ignore` deliberately omitted: half the existing ignores are
+guardrails for asymmetric mypy/pyright narrowing where mypy may
+stop firing in a future version, and `warn_unused_ignores` plus
+pyright's `reportUnnecessaryTypeIgnoreComment = "error"` already
+cover real staleness. Audited every `# type: ignore` in `src/` and
+`tests/` against lesson #21 — every one carries a specific code
+suffix and now also a rationale comment.
+See: ../../pyproject.toml, lessons-learned.md#21
+
+
 ## [2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)
 Adopted the three-layer pattern (raw sources / wiki / schema) for
 `docs/wiki/`. Added `AGENT.md`, `index.md`, this log, and

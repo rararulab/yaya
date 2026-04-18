@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#plugin-protocol-v0-10">Plugin Protocol (v0 → 1.0)</a></li>
-        <li><a href="#plugin-categories-closed-set">Plugin categories (closed set)</a></li><li><a href="#event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)</a></li><li><a href="#plugin-discovery-and-loading">Plugin discovery and loading</a></li><li><a href="#plugin-abi">Plugin ABI</a></li><li><a href="#agent-loop-kernel-owned">Agent loop (kernel-owned)</a></li><li><a href="#plugin-failure-model">Plugin failure model</a></li><li><a href="#security-posture-10">Security posture (1.0)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#plugin-categories-closed-set">Plugin categories (closed set)</a></li><li><a href="#event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)</a></li><li><a href="#plugin-discovery-and-loading">Plugin discovery and loading</a></li><li><a href="#plugin-abi">Plugin ABI</a></li><li><a href="#agent-loop-kernel-owned">Agent loop (kernel-owned)</a></li><li><a href="#plugin-failure-model">Plugin failure model</a></li><li><a href="#sessions-and-tape">Sessions and tape</a></li><li><a href="#security-posture-10">Security posture (1.0)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -755,6 +755,37 @@ the deadlock rationale (lesson #2).</p>
 <tr>
 <td><code>kernel.error</code></td>
 <td><code>{ source: str, message: str, detail?: dict }</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="session-lifecycle-kernel-all">Session lifecycle (kernel → all)<a class="headerlink" href="#session-lifecycle-kernel-all" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session.started</code></td>
+<td><code>{ session_id: str, tape_name: str, workspace: str }</code></td>
+</tr>
+<tr>
+<td><code>session.handoff</code></td>
+<td><code>{ session_id: str, name: str, state: dict }</code></td>
+</tr>
+<tr>
+<td><code>session.reset</code></td>
+<td><code>{ session_id: str, archive_path: str \| null }</code></td>
+</tr>
+<tr>
+<td><code>session.archived</code></td>
+<td><code>{ session_id: str, archive_path: str }</code></td>
+</tr>
+<tr>
+<td><code>session.forked</code></td>
+<td><code>{ parent_id: str, child_id: str }</code></td>
 </tr>
 </tbody>
 </table>
@@ -1139,6 +1170,109 @@ required in practice for the kernel loop to observe a response.</p>
   during the race window.</li>
 <li><strong>The kernel never crashes because a plugin did</strong>. If the kernel
   itself raises, <code>kernel.error</code> fires, and <code>yaya serve</code> exits non-zero.</li>
+</ul>
+<h2 id="sessions-and-tape">Sessions and tape<a class="headerlink" href="#sessions-and-tape" title="Permanent link">&para;</a></h2>
+<p>A <strong>session</strong> is the kernel's canonical conversational state: an
+append-only log of :class:<code>~republic.TapeEntry</code> values backed by a
+:class:<code>~yaya.kernel.session.SessionStore</code>. Every bus event that
+carries a "normal" <code>session_id</code> (i.e. not the reserved
+<code>"kernel"</code> session) is mirrored onto that session's tape by a
+kernel subscriber; the LLM context is a derived view over the tape
+(see :mod:<code>yaya.kernel.tape_context</code>), never a mutable history list
+kept in memory.</p>
+<h3 id="persistence-table">Persistence table<a class="headerlink" href="#persistence-table" title="Permanent link">&para;</a></h3>
+<p>The bus auto-persister maps bus events onto tape entries:</p>
+<table>
+<thead>
+<tr>
+<th>Bus event</th>
+<th>Tape kind</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user.message.received</code></td>
+<td><code>message</code> role=<code>user</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>assistant.message.delta</code></td>
+<td><em>(skipped)</em></td>
+<td>Too chatty — deltas only</td>
+</tr>
+<tr>
+<td><code>assistant.message.done</code></td>
+<td><code>message</code> role=<code>assistant</code></td>
+<td>Final turn</td>
+</tr>
+<tr>
+<td><code>tool.call.request</code></td>
+<td><code>tool_call</code></td>
+<td><code>{id, name, args}</code></td>
+</tr>
+<tr>
+<td><code>tool.call.result</code></td>
+<td><code>tool_result</code></td>
+<td>Correlated by <code>tool_call_id</code></td>
+</tr>
+<tr>
+<td><code>llm.call.delta</code></td>
+<td><em>(skipped)</em></td>
+<td>Streaming chunk — too chatty</td>
+</tr>
+<tr>
+<td><code>session.*</code></td>
+<td><em>(skipped)</em></td>
+<td>Lifecycle mirrors the tape itself</td>
+</tr>
+<tr>
+<td>any other public kind</td>
+<td><code>event</code></td>
+<td><code>name=&lt;kind&gt;</code>, <code>data=&lt;payload&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<p>Plugins can opt an event out of persistence with a kernel-level
+<code>persist=False</code> key on the payload (accepted as <code>"__persist__"</code> too
+for extensions that want to keep the top-level payload clean).
+Anything on session <code>"kernel"</code> is never persisted.</p>
+<h3 id="tape-naming">Tape naming<a class="headerlink" href="#tape-naming" title="Permanent link">&para;</a></h3>
+<p>Every tape is named <code>md5(workspace_abspath)[:16] + "__" +
+md5(session_id)[:16]</code> so two sessions with the same <code>session_id</code> in
+different workspaces live on different tapes. MD5 is a
+collision-tolerant identifier — not a security primitive — hence
+<code>hashlib.md5(..., usedforsecurity=False)</code>.</p>
+<h3 id="fork-compaction-reset">Fork / compaction / reset<a class="headerlink" href="#fork-compaction-reset" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Fork</strong> (<code>Session.fork(child_id)</code>): returns a child session backed
+  by an overlay store. Reads see parent-entries + child-entries;
+  writes land only on the child; <code>reset()</code> on the child does not
+  touch the parent. Tooling for subagents.</li>
+<li><strong>Compaction</strong>: append a summary anchor via <code>Session.handoff(name,
+  state)</code> and run subsequent context queries with
+  <code>after_last_anchor</code> (see :func:<code>yaya.kernel.tape_context.after_last_anchor</code>).
+  Compaction never rewrites past entries — the summarised prefix
+  stays on disk and is filtered out of the LLM context only.</li>
+<li><strong>Reset</strong> (<code>Session.reset(archive=True)</code>): archives the current
+  entries to <code>tapes/.archive/&lt;tape&gt;.jsonl.&lt;stamp&gt;.bak</code>, clears the
+  tape, and re-seeds a <code>session/start</code> anchor. Safe for
+  long-running conversations that have drifted off-topic.</li>
+</ul>
+<h3 id="auto-persister-guarantees">Auto-persister guarantees<a class="headerlink" href="#auto-persister-guarantees" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Best-effort, not transactional.</strong> A tape-write failure logs at
+  WARNING and emits a <code>plugin.error</code> with <code>source="kernel-session-persister"</code>;
+  the session keeps receiving events. Losing an observational entry
+  is strictly better than halting the session worker.</li>
+<li><strong>No bus recursion.</strong> The persister writes entries directly — it
+  never re-publishes on the bus. Failure notifications use a
+  non-<code>"kernel"</code> source so the bus recursion guard (lesson #2)
+  still surfaces them through <code>plugin.error</code>.</li>
+<li><strong>Kernel session skipped.</strong> Events emitted on session <code>"kernel"</code>
+  (approval prompts, plugin lifecycle, kernel errors, etc.) do not
+  land on any tape. Those events belong to the control plane; if
+  an adapter needs to render them it subscribes to them directly.</li>
 </ul>
 <h2 id="security-posture-10">Security posture (1.0)<a class="headerlink" href="#security-posture-10" title="Permanent link">&para;</a></h2>
 <ul>

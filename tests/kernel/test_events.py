@@ -62,6 +62,7 @@ def test_public_catalog_matches_protocol_document() -> None:
         "tool.call.request",
         "tool.call.start",
         "tool.call.result",
+        "tool.error",
         "memory.query",
         "memory.write",
         "memory.result",
@@ -90,7 +91,7 @@ def test_public_catalog_matches_protocol_document() -> None:
         ),
         (LlmCallResponsePayload, {"usage"}, {"text", "tool_calls", "request_id"}),
         (LlmCallErrorPayload, {"error"}, {"retry_after_s", "request_id"}),
-        (ToolCallResultPayload, {"id", "ok"}, {"value", "error", "request_id"}),
+        (ToolCallResultPayload, {"id", "ok"}, {"value", "error", "envelope", "request_id"}),
         (KernelErrorPayload, {"source", "message"}, {"detail"}),
     ],
 )

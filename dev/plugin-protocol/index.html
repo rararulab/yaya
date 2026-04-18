@@ -796,6 +796,37 @@ them and does not promise compatibility across versions</strong>. Use this
 namespace for plugin-private payloads (e.g., a <code>stats</code> skill plugin
 emitting <code>x.stats.token.counted</code>). Do not use <code>x.*</code> as a workaround
 for missing public events — propose a public event kind instead.</p>
+<p><strong>Private session ids.</strong> Plugins may use session ids prefixed with
+<code>_bridge:&lt;plugin-name&gt;</code> for internal routing (publishing to themselves
+without touching a user-facing session). This reserves <code>_bridge:</code> as a
+plugin-private namespace; user / adapter sessions MUST NOT start with
+<code>_bridge:</code>. Example: <code>mcp_bridge</code> routes lifecycle events on
+<code>_bridge:mcp-bridge</code>.</p>
+<p>Currently in use by bundled plugins:</p>
+<table>
+<thead>
+<tr>
+<th>Extension kind</th>
+<th>Owner</th>
+<th>Payload</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>x.mcp.server.ready</code></td>
+<td><code>mcp_bridge</code></td>
+<td><code>{ server: str, tools: list[{name, mcp_name, description}] }</code></td>
+<td>One emit per MCP server the bridge brought up at boot.</td>
+</tr>
+<tr>
+<td><code>x.mcp.server.error</code></td>
+<td><code>mcp_bridge</code></td>
+<td><code>{ server: str, kind: "config_invalid" \| "boot_failed", message: str }</code></td>
+<td>One emit per MCP server that failed config validation or exhausted boot retries. The bridge keeps running.</td>
+</tr>
+</tbody>
+</table>
 <h3 id="what-makes-the-set-closed">What makes the set "closed"<a class="headerlink" href="#what-makes-the-set-closed" title="Permanent link">&para;</a></h3>
 <ul>
 <li>A PR that introduces a new <strong>public</strong> event kind (anything not under

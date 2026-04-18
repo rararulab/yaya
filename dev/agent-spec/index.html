@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#agent-spec-bdd-contracts-for-agent-work">agent-spec — BDD Contracts for Agent Work</a></li>
-        <li><a href="#what-this-harness-enforces-today">What this harness enforces today</a></li><li><a href="#install">Install</a></li><li><a href="#task-contract-shape-specsslugspec">Task contract shape (specs/&lt;slug&gt;.spec)</a></li><li><a href="#developer-workflow">Developer workflow</a></li><li><a href="#contract-authoring-rules">Contract authoring rules</a></li><li><a href="#relationship-to-the-yaya-bdd-issue-template">Relationship to the yaya BDD issue template</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#what-this-harness-enforces-today">What this harness enforces today</a></li><li><a href="#lint-rules-the-wrapper-exposes">Lint rules the wrapper exposes</a></li><li><a href="#install">Install</a></li><li><a href="#task-contract-shape-specsslugspec">Task contract shape (specs/&lt;slug&gt;.spec)</a></li><li><a href="#developer-workflow">Developer workflow</a></li><li><a href="#contract-authoring-rules">Contract authoring rules</a></li><li><a href="#relationship-to-the-yaya-bdd-issue-template">Relationship to the yaya BDD issue template</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -463,27 +463,50 @@ Trivial means: single-line typos, doc-only changes, dependency bumps.
 Everything else — new commands, new <code>core/</code> or <code>kernel/</code> modules, new
 plugins, behavior changes — must have a spec.</p>
 <h2 id="what-this-harness-enforces-today">What this harness enforces today<a class="headerlink" href="#what-this-harness-enforces-today" title="Permanent link">&para;</a></h2>
+<p><code>scripts/check_specs.sh</code> runs <code>agent-spec lifecycle</code> on every
+<code>specs/*.spec</code> and classifies findings into hard-fail vs soft-report,
+matching the upstream <a href="https://github.com/ZhangHanDong/agent-spec/blob/main/.github/workflows/contract-guard.yml"><code>contract-guard.yml</code></a>
+model (which uses <code>continue-on-error: true</code> for the same reasons).
+The wrapper then runs in three places: <code>just check</code>, the pre-commit
+hook for <code>specs/*.spec</code> changes, and the CI <code>check</code> job.</p>
+<p><strong>Hard-fail (blocks merge):</strong></p>
 <ul>
-<li><strong>Lint</strong> on every PR and pre-commit: parse errors, missing
-  frontmatter, quality metrics (determinism / testability / coverage),
-  unbound scenarios, vague verbs.</li>
-<li>Spec files MUST live under <code>specs/&lt;slug&gt;.spec</code> (no <code>.md</code> suffix; the
-  tool parses a YAML-front-matter format, not Markdown).</li>
+<li>Parse error — bad frontmatter, unresolved <code>inherits:</code>, malformed
+  scenario block.</li>
+<li><code>quality_score &lt; 0.6</code> — sloppy spec authoring; see the lint rules
+  below.</li>
+<li>Non-boundary scenario failures — reserved for when an AI backend
+  lands and the <code>verify</code> layer returns real <code>fail</code> verdicts.</li>
 </ul>
-<p><strong>Not yet enforced</strong> (tracked separately):</p>
+<p><strong>Soft-report (visible in logs, does not block merge):</strong></p>
 <ul>
-<li><code>boundary</code> layer (diff-vs-allowed-paths) is implemented upstream but
-  has a path-handling bug on non-linux runners in 0.2.7 that we are
-  avoiding until the next release. Boundaries are still declared in
-  specs — we just don't block merges on them yet.</li>
-<li><code>verify</code> layer (scenario-level pass/fail) needs an AI backend we
-  have not wired up. Scenarios lint-pass when they bind a real test
-  via the <code>Test:</code> selector, but the tool can't yet confirm the test
-  exists or passes.</li>
+<li>Boundary violations — <code>[boundaries]</code> pseudo-scenario with
+  <code>verdict=fail</code>. A spec's Allowed list only semantically applies to
+  the one PR owning that spec; other specs in the same repo always
+  flag cross-cutting changes. Reported so reviewers see which specs a
+  PR touches. Upstream does the same until issue-to-spec association
+  lands.</li>
+<li>Scenario verify SKIPs — <code>no verifier covered this step</code>. The
+  <code>verify</code> layer needs an AI backend (<code>--ai-mode</code> with a real LLM)
+  or the <code>agent-spec-tool-first</code> skill to interpret Given/When/Then
+  against code. Not wired today; tracked separately.</li>
 </ul>
-<p>When the upstream fix lands we flip from <code>lint</code> to
-<code>lifecycle --layers lint,boundary</code>; the AI verify layer is a separate
-future issue.</p>
+<p>Spec files MUST live under <code>specs/&lt;slug&gt;.spec</code> (no <code>.md</code> suffix; the
+tool parses YAML frontmatter, not Markdown).</p>
+<h2 id="lint-rules-the-wrapper-exposes">Lint rules the wrapper exposes<a class="headerlink" href="#lint-rules-the-wrapper-exposes" title="Permanent link">&para;</a></h2>
+<p>Invoked via the <code>lint</code> layer of <code>agent-spec lifecycle</code>; visible in the
+summary line as <code>lint_issues=N quality=X.XX</code>:</p>
+<ul>
+<li><code>[implicit-dep]</code> — parameter referenced without a <code>Given</code> step that
+  establishes it.</li>
+<li><code>[decision-coverage]</code> — <code>## Decisions</code> entry with no matching scenario.</li>
+<li><code>[error-path]</code> — spec has no error-path scenarios.</li>
+<li><code>[vague-verb]</code> — constraint uses a hand-wavy verb (<code>manage</code>, <code>handle</code>).</li>
+<li><code>[platform-decision-tag]</code> — decision references a platform-specific
+  tool (<code>pip</code>, <code>cargo</code>, …) without a <code>[platform-specific]</code> tag.</li>
+</ul>
+<p>A quality score is aggregated across determinism / testability /
+coverage; <code>min_score=0.6</code> is the floor.</p>
 <h2 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>cargo<span class="w"> </span>install<span class="w"> </span>agent-spec<span class="w"> </span>--version<span class="w"> </span><span class="m">0</span>.2.7<span class="w"> </span>--locked
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>agent-spec<span class="w"> </span>--version

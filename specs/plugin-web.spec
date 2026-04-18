@@ -51,8 +51,9 @@ broadcast to every connected client.
   StreamingMessageContainer, Input, ConsoleBlock) plus the yaya
   WebSocket client and chat shell. End users still install via
   `pip` — Node is a contributor-only dependency. CI rebuilds
-  `static/` and fails if the fresh output differs from the tracked
-  bundle, keeping the wheel reproducible.
+  `static/` on every PR and shape-checks that `index.html` still
+  references Vite-hashed assets; placeholder markers fail the
+  build.
 - **Framework ring boundary.** pi-web-ui modules that assume the
   browser owns the agent loop, API keys, or session storage are
   **forbidden** to preserve the Dependency Rule. Whitelist:

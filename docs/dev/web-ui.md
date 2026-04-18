@@ -153,12 +153,17 @@ A dedicated **Web UI** job runs on every PR:
 2. `npm run check`
 3. `npm run test`
 4. `npm run build`
-5. `git diff --exit-code src/yaya/plugins/web/static` — **fails if
-   `static/` drifted.** The PR author must commit the Vite output
-   alongside source changes.
+5. Shape-check on the freshly built `static/index.html`: it must
+   reference Vite-hashed JS and CSS assets and must not contain
+   the old placeholder markers.
 
-Rationale: keeps the wheel reproducible, avoids Node in the release
-pipeline, and makes bundle-size regressions obvious in review.
+Rationale: the wheel needs a pre-built `static/` so `pip install`
+users skip Node. Byte-for-byte equality across OS / Node versions
+is currently impractical (tiny Tailwind class-scan ordering diffs
+between macOS and Linux on the runners), so CI only enforces the
+shape of the build. PR authors should still rebuild locally and
+commit the result; reviewers can eyeball bundle sizes for
+regressions from the build step's `stdout`.
 
 ## WebSocket schema
 

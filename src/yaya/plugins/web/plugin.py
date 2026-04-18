@@ -353,15 +353,30 @@ class WebAdapter:
                 self._ctx.logger.warning("could not enumerate yaya.plugins.v1: %s", exc)
             return
         for ep in eps:
-            # We can't know the plugin's ``category`` without loading
+            # ``ep.dist.version`` is the owning distribution's version
+            # (e.g. "0.0.1" for bundled yaya plugins, or the 3rd-party
+            # package's version). It is NOT the plugin's self-declared
+            # ``version``, but it is cheap to read without loading the
+            # plugin object, and it is strictly better than a blank
+            # column. A subsequent ``plugin.loaded`` event overwrites
+            # with the authoritative value when one arrives (i.e. for
+            # the adapter itself, and any plugin loaded AFTER the
+            # adapter subscribed). See lesson #26.
+            version = ""
+            if ep.dist is not None:
+                try:
+                    version = ep.dist.version
+                except Exception:  # pragma: no cover - defensive only
+                    version = ""
+            # We cannot know the plugin's ``category`` without loading
             # it (the entry-point value is a "module:attr" string, not
-            # a Plugin object). Leave category blank; the subsequent
-            # ``plugin.loaded`` events overwrite with the real value.
+            # a Plugin object); that field stays blank until a
+            # ``plugin.loaded`` event patches it.
             self._plugin_rows.setdefault(
                 ep.name,
                 {
                     "name": ep.name,
-                    "version": "",
+                    "version": version,
                     "category": "",
                     "status": "loaded",
                 },

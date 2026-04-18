@@ -64,7 +64,7 @@ class BashTool:
         args = cast("dict[str, Any]", raw_args) if isinstance(raw_args, dict) else {}
         cmd: Any = args.get("cmd")
 
-        cmd_list: list[Any] = list(cmd) if isinstance(cmd, list) else []
+        cmd_list: list[Any] = list(cmd) if isinstance(cmd, list) else []  # pyright: ignore[reportUnknownArgumentType]
         if not (isinstance(cmd, list) and all(isinstance(x, str) for x in cmd_list)):
             await self._emit_result(
                 ctx,

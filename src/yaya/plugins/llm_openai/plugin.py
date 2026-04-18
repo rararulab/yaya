@@ -131,16 +131,24 @@ class OpenAIProvider:
         if tools:
             create_kwargs["tools"] = tools
 
-        completion: Any = await self._client.chat.completions.create(**create_kwargs)
+        # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportUnknownArgumentType]
+        # The SDK's return type is a generic union of ChatCompletion and
+        # AsyncStream[ChatCompletionChunk]; pinning it to Any here keeps
+        # the tests' stub-client pattern working.
+        completion: Any = await self._client.chat.completions.create(  # pyright: ignore[reportUnknownVariableType]
+            **create_kwargs
+        )
 
-        choices: list[Any] = list(completion.choices or [])
+        choices_raw: Any = completion.choices or []  # pyright: ignore[reportUnknownMemberType]
+        choices: list[Any] = list(choices_raw) if choices_raw else []  # pyright: ignore[reportUnknownArgumentType]
         choice: Any = choices[0] if choices else None
-        message: Any = choice.message if choice is not None else None
-        text: str = getattr(message, "content", "") or ""
-        raw_tool_calls: list[Any] = list(getattr(message, "tool_calls", None) or [])
+        message: Any = choice.message if choice is not None else None  # pyright: ignore[reportUnknownMemberType]
+        text: str = getattr(message, "content", "") or ""  # pyright: ignore[reportUnknownArgumentType]
+        raw_tool_calls_obj: Any = getattr(message, "tool_calls", None) or []  # pyright: ignore[reportUnknownArgumentType]
+        raw_tool_calls: list[Any] = list(raw_tool_calls_obj) if raw_tool_calls_obj else []
         tool_calls = [_tool_call_to_dict(tc) for tc in raw_tool_calls]
 
-        usage_obj: Any = getattr(completion, "usage", None)
+        usage_obj: Any = getattr(completion, "usage", None)  # pyright: ignore[reportUnknownArgumentType]
         usage: dict[str, int] = {}
         if usage_obj is not None:
             input_tokens = getattr(usage_obj, "prompt_tokens", None)

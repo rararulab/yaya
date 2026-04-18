@@ -142,7 +142,7 @@ def _decide(state: dict[str, Any], *, provider: str, model: str) -> dict[str, An
     if last_assistant is not None:
         tool_calls = last_assistant.get("tool_calls")
         if isinstance(tool_calls, list) and tool_calls:
-            first: Any = tool_calls[0]
+            first: Any = tool_calls[0]  # pyright: ignore[reportUnknownVariableType]
             if isinstance(first, dict):
                 return {
                     "next": "tool",

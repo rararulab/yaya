@@ -139,9 +139,16 @@ class SqliteMemory:
 
 
 def _open_db(db_path: Path) -> sqlite3.Connection:
-    """Open ``db_path`` and ensure the schema exists."""
+    """Open ``db_path`` and ensure the schema exists.
+
+    ``check_same_thread=False`` is required because we dispatch every
+    sqlite call through ``asyncio.to_thread`` — the connection is
+    inherently used across the thread-pool worker threads, and all
+    calls are serialized by the per-session FIFO worker on the bus so
+    the concurrency model stays safe.
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.execute(_SCHEMA)
     conn.commit()
     return conn

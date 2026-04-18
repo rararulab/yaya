@@ -502,6 +502,43 @@ also acceptable — but then the spec must not advertise it either.
 
 ---
 
+## 25. Late-subscribe plugins miss events fired before `on_load`
+
+**Symptom** — PR #65's web adapter subscribed to `plugin.loaded` in
+`on_load`. The registry had already loaded the 4 seed plugins by the
+time the adapter's `on_load` ran; those `plugin.loaded` events had
+already been delivered, so the adapter's `_plugin_rows` stayed
+empty. Users saw an incomplete plugin list in the UI despite the
+kernel CLI listing all 5 plugins.
+
+**Root cause** — The bus does not retain events for late subscribers.
+Any plugin that publishes state during startup (registry emitting
+`plugin.loaded` per plugin as they load) is invisible to plugins
+loaded after.
+
+**Rule** — Plugins that care about startup state must NOT rely on
+the event stream alone. Options:
+1. **Eager snapshot at on_load**: enumerate the underlying source
+   (entry points, filesystem state, stored config) directly during
+   `on_load`, then merge subsequent events as deltas. PR #65 took
+   this path.
+2. **Late-join replay**: registries can snapshot-and-replay on
+   subscribe (requires registry-side support; bus doesn't replay).
+3. **Bootstrap event**: the kernel emits a single `kernel.ready`
+   event after all initial load events, giving late subscribers a
+   signal to query a fresh snapshot. yaya already emits
+   `kernel.ready`; adapters can use it as a "prime your caches now"
+   trigger in addition to — not instead of — the eager snapshot.
+
+Avoid spinning up your own event-retention buffer in plugins — that
+is what a durable bus would be, and yaya's bus deliberately isn't.
+
+**Reference** — PR #65 review round 1. Distinct from lessons #6
+(leak-prone dicts) and #15 (missing correlation field): this is
+specifically about startup-race event loss.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

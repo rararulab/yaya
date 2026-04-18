@@ -140,6 +140,9 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
         text=(
             f"[green]yaya kernel live[/] on "
             f"[bold]{_BIND_HOST}:{bound_port}[/] (pid {os.getpid()})\n"
+            "[dim]note: the web adapter may bind a different port; "
+            "check http://127.0.0.1:<adapter-port>/api/health or set "
+            "YAYA_WEB_PORT to pin it.[/]\n"
             "press Ctrl+C to stop."
         ),
         action="serve.started",

@@ -245,6 +245,62 @@ async def test_on_unload_stops_server(tmp_path: Path) -> None:
     assert plugin._server_task is None
 
 
+async def test_plugin_inventory_is_seeded_at_load(tmp_path: Path) -> None:
+    """The adapter seeds _plugin_rows from entry points at on_load time.
+
+    Regression for PR #65: the registry emits ``plugin.loaded`` events
+    for plugins loaded BEFORE the web adapter's ``on_load`` subscribes,
+    so the adapter must eagerly snapshot the entry-point set to avoid a
+    cold cache. See lesson #25.
+    """
+    plugin = WebAdapter()
+    bus = EventBus()
+    ctx = KernelContext(
+        bus=bus,
+        logger=logging.getLogger("plugin.web-test-inventory"),
+        config={},
+        state_dir=tmp_path,
+        plugin_name=plugin.name,
+    )
+    # Don't start uvicorn; exercise only the ASGI + inventory paths.
+    plugin._ctx = ctx
+    plugin._app = plugin._build_app()
+    plugin._prime_plugin_inventory()
+
+    # In test env, the 4 seed plugins + web are registered. All five
+    # should appear in the rows (the adapter included).
+    names = set(plugin._plugin_rows.keys())
+    expected = {"strategy_react", "memory_sqlite", "llm_openai", "tool_bash", "web"}
+    assert expected <= names, f"missing: {expected - names}"
+
+
+async def test_static_root_survives_on_load(tmp_path: Path) -> None:
+    """The resolved static path must outlive on_load completion.
+
+    Regression for PR #65: ``as_file`` is a context manager; a previous
+    ``with as_file(...) as path: return path`` exited the CM before the
+    StaticFiles mount ever resolved the path for a wheel-installed
+    deploy.
+    """
+    plugin = WebAdapter(port=0)
+    bus = EventBus()
+    ctx = KernelContext(
+        bus=bus,
+        logger=logging.getLogger("plugin.web-test-static"),
+        config={},
+        state_dir=tmp_path,
+        plugin_name=plugin.name,
+    )
+    # Use _build_app to exercise the path resolver without uvicorn.
+    plugin._ctx = ctx
+    app = plugin._build_app()
+    # The static mount must point to a real, still-existing directory.
+    assert plugin._static_path is not None
+    assert plugin._static_path.is_dir()
+    assert (plugin._static_path / "index.html").is_file()
+    _ = app  # keep reference to avoid unused-var warning
+
+
 # Silence pytest warnings about an unused async fixture pattern in this
 # module-level helper. The helpers above are awaited in tests; this
 # sentinel keeps the module importable under ``--strict``.

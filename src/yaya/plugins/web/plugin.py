@@ -54,7 +54,9 @@ import contextlib
 import os
 from collections import defaultdict
 from collections.abc import Awaitable
+from importlib.metadata import entry_points
 from importlib.resources import as_file, files
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -158,6 +160,12 @@ class WebAdapter:
         self._server_task: asyncio.Task[None] | None = None
         self._bound_port: int | None = None
         self._ctx: KernelContext | None = None
+        # ``as_file`` is a context manager; for wheel-installed deploys
+        # it materialises a temp dir that is cleaned up on ``__exit__``.
+        # Hold the CM on the instance and release it in ``on_unload``
+        # so the static mount keeps resolving for the adapter's lifetime.
+        self._static_cm: Any = None
+        self._static_path: Path | None = None
 
     # -- ABI --------------------------------------------------------------------
 
@@ -175,6 +183,7 @@ class WebAdapter:
         """
         self._ctx = ctx
         port = self._resolve_port()
+        self._prime_plugin_inventory()
         app = self._build_app()
         self._app = app
 
@@ -246,7 +255,11 @@ class WebAdapter:
         except TimeoutError:
             ctx.logger.warning("web adapter uvicorn shutdown exceeded %.1fs; cancelling", _SHUTDOWN_TIMEOUT_S)
             task.cancel()
-            with contextlib.suppress(BaseException):
+            # Narrow to CancelledError (lesson #3): it is the expected
+            # post-cancel exception. Any other BaseException subclass
+            # coming out of a cancelled task is a real bug and must
+            # propagate, not be swallowed.
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
         # Close any WS connections the uvicorn shutdown didn't reach.
         for sockets in list(self._clients.values()):
@@ -254,6 +267,14 @@ class WebAdapter:
                 with contextlib.suppress(Exception):
                     await ws.close()
         self._clients.clear()
+
+        # Release the static-files context manager so wheel-extracted
+        # temp dirs clean up. Safe if ``_static_root`` was never called.
+        if self._static_cm is not None:
+            with contextlib.suppress(Exception):
+                self._static_cm.__exit__(None, None, None)
+            self._static_cm = None
+            self._static_path = None
 
     # -- HTTP / WS --------------------------------------------------------------
 
@@ -294,20 +315,57 @@ class WebAdapter:
         app.mount("/", StaticFiles(directory=str(static_root), html=True), name="static")
         return app
 
-    @staticmethod
-    def _static_root() -> Any:
-        """Resolve ``<pkg>/static/`` via :mod:`importlib.resources`.
+    def _static_root(self) -> Path:
+        """Resolve ``<pkg>/static/`` and keep the context alive.
 
-        Uses ``as_file`` so the path resolves whether the package was
-        installed editable or as a wheel. The context manager is
-        short-lived — we materialize the path once during app build
-        and keep it alive via ``files(...)`` returning a real
-        directory on disk for an installed wheel. For editable
-        installs the path is the repo tree directly.
+        :func:`importlib.resources.as_file` is a context manager. For
+        editable installs it returns the real on-disk path and the
+        ``__exit__`` is a no-op; for wheel-installed deploys it may
+        materialise a temp dir that is deleted on ``__exit__``. We
+        therefore keep the context manager open on the instance for
+        the adapter's whole lifetime and release it in ``on_unload``.
         """
+        if self._static_path is not None:
+            return self._static_path
         resource = files("yaya.plugins.web") / "static"
-        with as_file(resource) as path:  # returns a real fs path
-            return path
+        cm = as_file(resource)
+        path = Path(cm.__enter__())
+        self._static_cm = cm
+        self._static_path = path
+        return path
+
+    def _prime_plugin_inventory(self) -> None:
+        """Seed ``_plugin_rows`` from the live entry-point set.
+
+        The registry emits ``plugin.loaded`` events per plugin during
+        ``start()``; the web adapter typically loads last (alphabetical
+        entry-point order puts ``web`` after ``memory_sqlite`` /
+        ``strategy_react`` etc.), so those events fire before the
+        adapter's ``on_load`` subscribes. Bootstrapping from the
+        entry-point set closes the gap without adding a new event kind
+        (lesson #25). Subsequent ``plugin.loaded`` / ``plugin.removed``
+        events still flow through ``on_event`` and patch the cache.
+        """
+        try:
+            eps = entry_points(group="yaya.plugins.v1")
+        except Exception as exc:
+            if self._ctx is not None:
+                self._ctx.logger.warning("could not enumerate yaya.plugins.v1: %s", exc)
+            return
+        for ep in eps:
+            # We can't know the plugin's ``category`` without loading
+            # it (the entry-point value is a "module:attr" string, not
+            # a Plugin object). Leave category blank; the subsequent
+            # ``plugin.loaded`` events overwrite with the real value.
+            self._plugin_rows.setdefault(
+                ep.name,
+                {
+                    "name": ep.name,
+                    "version": "",
+                    "category": "",
+                    "status": "loaded",
+                },
+            )
 
     async def _handle_ws(self, ws: WebSocket) -> None:
         """Run one WebSocket connection from accept to disconnect."""

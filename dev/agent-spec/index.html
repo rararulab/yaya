@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#agent-spec-bdd-contracts-for-agent-work">agent-spec — BDD Contracts for Agent Work</a></li>
-        <li><a href="#what-this-harness-enforces-today">What this harness enforces today</a></li><li><a href="#lint-rules-the-wrapper-exposes">Lint rules the wrapper exposes</a></li><li><a href="#install">Install</a></li><li><a href="#task-contract-shape-specsslugspec">Task contract shape (specs/&lt;slug&gt;.spec)</a></li><li><a href="#developer-workflow">Developer workflow</a></li><li><a href="#contract-authoring-rules">Contract authoring rules</a></li><li><a href="#relationship-to-the-yaya-bdd-issue-template">Relationship to the yaya BDD issue template</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#what-this-harness-enforces-today">What this harness enforces today</a></li><li><a href="#pr-ownership-scripts_detect_owning_specpy">PR ownership (scripts/_detect_owning_spec.py)</a></li><li><a href="#lint-rules-the-wrapper-exposes">Lint rules the wrapper exposes</a></li><li><a href="#install">Install</a></li><li><a href="#task-contract-shape-specsslugspec">Task contract shape (specs/&lt;slug&gt;.spec)</a></li><li><a href="#developer-workflow">Developer workflow</a></li><li><a href="#contract-authoring-rules">Contract authoring rules</a></li><li><a href="#relationship-to-the-yaya-bdd-issue-template">Relationship to the yaya BDD issue template</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -475,22 +475,43 @@ hook for <code>specs/*.spec</code> changes, and the CI <code>check</code> job.</
   scenario block.</li>
 <li><code>quality_score &lt; 0.6</code> — sloppy spec authoring; see the lint rules
   below.</li>
+<li>Boundary violation on <strong>the owning spec</strong> — see "PR ownership"
+  below. Each PR can own at most one spec; that spec's Allowed /
+  Forbidden lists are enforced as a hard gate.</li>
 <li>Non-boundary scenario failures — reserved for when an AI backend
   lands and the <code>verify</code> layer returns real <code>fail</code> verdicts.</li>
 </ul>
 <p><strong>Soft-report (visible in logs, does not block merge):</strong></p>
 <ul>
-<li>Boundary violations — <code>[boundaries]</code> pseudo-scenario with
-  <code>verdict=fail</code>. A spec's Allowed list only semantically applies to
-  the one PR owning that spec; other specs in the same repo always
-  flag cross-cutting changes. Reported so reviewers see which specs a
-  PR touches. Upstream does the same until issue-to-spec association
-  lands.</li>
+<li>Boundary violations on <strong>non-owning specs</strong>. A repo with N specs
+  evaluates boundary per spec; a cross-cutting PR will naturally
+  violate every spec except the one it owns. Reported so reviewers
+  see which surfaces a PR touched, but not failed.</li>
 <li>Scenario verify SKIPs — <code>no verifier covered this step</code>. The
   <code>verify</code> layer needs an AI backend (<code>--ai-mode</code> with a real LLM)
   or the <code>agent-spec-tool-first</code> skill to interpret Given/When/Then
   against code. Not wired today; tracked separately.</li>
 </ul>
+<h2 id="pr-ownership-scripts_detect_owning_specpy">PR ownership (<code>scripts/_detect_owning_spec.py</code>)<a class="headerlink" href="#pr-ownership-scripts_detect_owning_specpy" title="Permanent link">&para;</a></h2>
+<p>Which spec does a PR own? Resolution chain (first match wins):</p>
+<ol>
+<li><strong>Branch name convention</strong> — <code>issue-{N}-{slug}</code> (or
+   <code>feat/slug</code>, <code>fix/slug</code>, …). The slug is matched against
+   <code>specs/*.spec</code> file stems by prefix. Exactly one candidate must
+   match; ambiguous slugs return no owner with a warning. Works in
+   CI (<code>$GITHUB_HEAD_REF</code>) and in local worktrees.</li>
+<li><strong>PR body trailer</strong> — a line <code>Spec: specs/&lt;path&gt;.spec</code> anywhere
+   in the PR body. Fetched via <code>gh pr view --json body</code>. Used when
+   the branch name does not resolve.</li>
+<li><strong>HEAD commit trailer</strong> — a line <code>Spec: specs/&lt;path&gt;.spec</code> in
+   the last commit message. Last-resort fallback for stacked
+   branches or offline cases.</li>
+<li><strong>No match</strong> — meta PRs (infra, docs, dep bumps) have no owner.
+   Boundary stays soft-reported for every spec; the build is not
+   blocked on boundary for these PRs.</li>
+</ol>
+<p>The pull request template has an optional <code>Spec:</code> line so authors
+can override when the branch name heuristic is wrong.</p>
 <p>Spec files MUST live under <code>specs/&lt;slug&gt;.spec</code> (no <code>.md</code> suffix; the
 tool parses YAML frontmatter, not Markdown).</p>
 <h2 id="lint-rules-the-wrapper-exposes">Lint rules the wrapper exposes<a class="headerlink" href="#lint-rules-the-wrapper-exposes" title="Permanent link">&para;</a></h2>

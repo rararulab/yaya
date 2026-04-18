@@ -71,5 +71,5 @@ def json_stdout(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
             f"stdout is not JSON: {exc}\nraw stdout:\n{result.stdout}",
         ) from exc
     if not isinstance(data, dict):
-        raise AssertionError(f"expected object, got {type(data).__name__}")  # noqa: TRY004
+        raise TypeError(f"expected object, got {type(data).__name__}")
     return data

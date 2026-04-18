@@ -13,6 +13,15 @@
 
 @import "tailwindcss";
 
+/* Restrict Tailwind v4's auto-detection to our own source tree so
+ * the generated CSS is identical across host OS / Node version.
+ * Without an explicit allowlist, the plugin crawls every file under
+ * the Vite root (including node_modules scan rules that depend on
+ * the host filesystem's iteration order), which drifts between Linux
+ * CI and macOS dev environments. */
+@source "./**/*.{ts,html}";
+@source "../index.html";
+
 /* Local overrides kept deliberately tiny — everything structural
    should come from pi-web-ui. */
 yaya-chat {

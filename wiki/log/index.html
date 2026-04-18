@@ -453,7 +453,7 @@
 <nav>
     <ul>
         <li><a href="#wiki-log">Wiki Log</a></li>
-        <li><a href="#2026-04-18-ingest-llm-provider-contract-v1-issue-26">[2026-04-18] ingest | llm-provider contract v1 (issue #26)</a></li><li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-structured-logging-error-taxonomy-issue-30">[2026-04-18] ingest | structured logging + error taxonomy (issue #30)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li><li><a href="#2026-04-18-ingest-approval-runtime-pr-83-review-fixes-issue-28">[2026-04-18] ingest | approval runtime PR #83 review fixes (issue #28)</a></li>
+        <li><a href="#2026-04-18-ingest-llm-provider-contract-v1-issue-26">[2026-04-18] ingest | llm-provider contract v1 (issue #26)</a></li><li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-structured-logging-error-taxonomy-issue-30">[2026-04-18] ingest | structured logging + error taxonomy (issue #30)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li><li><a href="#2026-04-18-ingest-approval-runtime-pr-83-review-fixes-issue-28">[2026-04-18] ingest | approval runtime PR #83 review fixes (issue #28)</a></li><li><a href="#2026-04-18-ingest-pr-62-follow-up-kernel-cli-lifecycle-hardening-issue-84">[2026-04-18] ingest | PR #62 follow-up — kernel-CLI lifecycle hardening (issue #84)</a></li>
     </ul>
 </nav>
 </aside>
@@ -675,6 +675,30 @@ raises, registry install-before-<code>kernel.ready</code> /
 uninstall-before-<code>kernel.shutdown</code> ordering, cross-session
 end-to-end round-trip (lesson #2 regression).
 See: ../../src/yaya/kernel/approval.py, ../../src/yaya/kernel/tool.py, ../dev/plugin-protocol.md, lessons-learned.md</p>
+<h2 id="2026-04-18-ingest-pr-62-follow-up-kernel-cli-lifecycle-hardening-issue-84">[2026-04-18] ingest | PR #62 follow-up — kernel-CLI lifecycle hardening (issue #84)<a class="headerlink" href="#2026-04-18-ingest-pr-62-follow-up-kernel-cli-lifecycle-hardening-issue-84" title="Permanent link">&para;</a></h2>
+<p>Address all 11 review findings from PR #62 (merged as 837e502). P1
+fixes plug three lifecycle holes: (a) <code>serve</code> now installs the
+SIGINT/SIGTERM handler <strong>before</strong> <code>registry.start()</code> so a Ctrl+C
+during boot still hits teardown — <code>KeyboardInterrupt</code> is a
+<code>BaseException</code>, not <code>Exception</code> (lesson #30); (b) <code>hello.py</code> and
+<code>plugin.py</code> move bus / registry construction inside the <code>try</code> block
+with <code>started</code> flags so a startup failure no longer leaks worker
+tasks; (c) <code>_run_package_command</code> wraps <code>communicate()</code> in
+<code>except (CancelledError, KeyboardInterrupt): proc.terminate()</code> —
+<code>asyncio.create_subprocess_exec</code> does not auto-kill the spawned
+child on cancel, so the previous code let <code>pip</code> keep mutating the
+user's environment for minutes after Ctrl+C (lesson #31). P2 / P3
+fixes: <code>--strategy</code> is now <code>click.Choice(["react"])</code> so typos exit
+2; <code>validate_install_source</code> drops the metachar blacklist (security
+theater under <code>create_subprocess_exec</code>) and tightens the path
+branch to <code>is_absolute()</code> only; <code>webbrowser.open</code> runs on the
+default executor so macOS doesn't stall the loop; <code>hello</code> gains a
+<code>--timeout</code> flag; <code>emit_ok</code> text is now optional and silent under
+human mode for commands that render their own output. _pick_free_port
+TOCTOU is acknowledged and deferred — port resolution moves to the
+adapter plugin (#16) where a single owner can hold the bound socket
+end-to-end.
+See: ../../src/yaya/cli/commands/serve.py, ../../src/yaya/cli/commands/hello.py, ../../src/yaya/cli/commands/plugin.py, ../../src/yaya/cli/output.py, ../../src/yaya/kernel/registry.py, lessons-learned.md</p>
 </section>
 
             </main>

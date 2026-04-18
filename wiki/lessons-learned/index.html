@@ -448,7 +448,7 @@
     <ul>
         <li><a href="#agent-lessons-learned">Agent Lessons Learned</a></li>
         <li><a href="#1-asynciolock-is-not-reentrant-never-serialize-per-key-fifo-with-a-shared-lock">1. asyncio.Lock is not reentrant — never serialize per-key FIFO with a shared lock</a></li><li><a href="#2-heuristic-external-vs-reentrant-must-detect-any-worker-context-not-just-the-targets">2. Heuristic "external-vs-reentrant" must detect any worker context, not just the target's</a></li><li><a href="#3-except-baseexception-swallows-asynciocancellederror">3. except BaseException swallows asyncio.CancelledError</a></li><li><a href="#4-typeddict-totalfalse-is-the-wrong-default-for-payloads-whose-fields-split-requiredoptional">4. TypedDict total=False is the wrong default for payloads whose fields split required/optional</a></li><li><a href="#5-from-__future__-import-annotations-breaks-notrequired-partitioning">5. from __future__ import annotations breaks NotRequired partitioning</a></li><li><a href="#6-unbounded-per-key-dicts-leak-in-long-running-async-processes">6. Unbounded per-key dicts leak in long-running async processes</a></li><li><a href="#7-default-dataclass-__eq__-breaks-identity-based-listremove">7. Default dataclass __eq__ breaks identity-based list.remove</a></li><li><a href="#8-subagent-findings-for-the-next-issue-are-usually-bugs-in-this-pr">8. Subagent "findings for the next issue" are usually bugs in THIS PR</a></li><li><a href="#9-no-speculative-state-for-future-extensions">9. No speculative state "for future extensions"</a></li><li><a href="#10-silent-no-op-primitives-are-a-ux-bug">10. Silent no-op primitives are a UX bug</a></li><li><a href="#11-empirical-probes-beat-static-reasoning">11. Empirical probes beat static reasoning</a></li><li><a href="#12-code-review-rounds-re-enter-until-genuinely-clean">12. Code-review rounds re-enter until genuinely clean</a></li><li><a href="#13-document-non-obvious-design-decisions-in-the-specs-decisions">13. Document non-obvious design decisions in the spec's ## Decisions</a></li><li><a href="#14-pre-commit-hook-drift-just-check-all-is-currently-broken">14. Pre-commit hook drift: just check-all is currently broken</a></li><li><a href="#15-silent-no-request_id-drops-hang-plugin-authors">15. Silent "no request_id" drops hang plugin authors</a></li><li><a href="#16-reviewers-verify-the-flagged-pattern-is-actually-wrong">16. Reviewers: verify the flagged pattern is actually wrong</a></li><li><a href="#17-consecutive-vs-cumulative-in-failure-policies">17. "Consecutive" vs "cumulative" in failure policies</a></li><li><a href="#18-authoritative-source-checks-at-enforcement-points-not-cached-state">18. Authoritative-source checks at enforcement points, not cached state</a></li><li><a href="#19-author-specs-in-the-tools-format-not-the-protocol-docs-pseudo-format">19. Author specs in the tool's format, not the protocol doc's pseudo-format</a></li><li><a href="#20-sqlite3-check_same_threadfalse-is-not-a-safety-flag">20. sqlite3 check_same_thread=False is not a safety flag</a></li><li><a href="#21-blanket-file-level-pyright-pragmas-silence-more-than-they-should">21. Blanket file-level pyright pragmas silence more than they should</a></li><li><a href="#23-cli-flags-that-will-work-later-must-be-observably-inert">23. CLI flags that "will work later" must be observably inert</a></li><li><a href="#10-silent-no-ops-removing-the-flag-entirely-until-it-works-is">10 (silent no-ops). Removing the flag entirely until it works is</a></li>
-        <li><a href="#25-late-subscribe-plugins-miss-events-fired-before-on_load">25. Late-subscribe plugins miss events fired before on_load</a></li><li><a href="#27-framework-modules-pass-the-dependency-rule-only-if-their-assumptions-align-with-your-use-case-direction">27. Framework modules pass the Dependency Rule only if their assumptions align with your use-case direction</a></li><li><a href="#28-verify-squash-merge-ingested-the-latest-push-before-cleanup">28. Verify squash-merge ingested the latest push before cleanup</a></li><li><a href="#29-subclass-pre_approve-exceptions-silently-orphan-tool-calls">29. Subclass pre_approve exceptions silently orphan tool calls</a></li><li><a href="#how-to-use-this-doc">How to use this doc</a></li>
+        <li><a href="#25-late-subscribe-plugins-miss-events-fired-before-on_load">25. Late-subscribe plugins miss events fired before on_load</a></li><li><a href="#27-framework-modules-pass-the-dependency-rule-only-if-their-assumptions-align-with-your-use-case-direction">27. Framework modules pass the Dependency Rule only if their assumptions align with your use-case direction</a></li><li><a href="#28-verify-squash-merge-ingested-the-latest-push-before-cleanup">28. Verify squash-merge ingested the latest push before cleanup</a></li><li><a href="#29-subclass-pre_approve-exceptions-silently-orphan-tool-calls">29. Subclass pre_approve exceptions silently orphan tool calls</a></li><li><a href="#30-sigint-can-arrive-before-loopadd_signal_handler-is-installed">30. SIGINT can arrive before loop.add_signal_handler is installed</a></li><li><a href="#31-asynciocreate_subprocess_exec-does-not-auto-kill-the-child-on-cancel">31. asyncio.create_subprocess_exec does NOT auto-kill the child on cancel</a></li><li><a href="#how-to-use-this-doc">How to use this doc</a></li>
     </ul>
 </nav>
 </aside>
@@ -949,6 +949,58 @@ block). Test:
 <code>tests/kernel/test_approval.py::test_pre_approve_crash_translates_to_tool_error</code>.
 Related to lesson #15 (silent "no request_id" drops hang plugin
 authors) — same family of "request lost without trace" hazards.</p>
+<hr />
+<h2 id="30-sigint-can-arrive-before-loopadd_signal_handler-is-installed">30. SIGINT can arrive <em>before</em> <code>loop.add_signal_handler</code> is installed<a class="headerlink" href="#30-sigint-can-arrive-before-loopadd_signal_handler-is-installed" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — <code>yaya serve</code> was wired to install the SIGINT/SIGTERM
+asyncio signal handler <strong>after</strong> <code>await registry.start()</code> and
+<code>await loop.start()</code>. A user hitting Ctrl+C during the boot window
+(plugin discovery + entry-point load) would see Python's default
+<code>KeyboardInterrupt</code> propagate out of <code>start()</code>. Because the
+surrounding handler was <code>except Exception</code>, the interrupt — a
+<code>BaseException</code>, not <code>Exception</code> — escaped past every teardown
+branch. Result: a half-started kernel, an open EventBus, and any
+adapter task that did manage to spawn left dangling.</p>
+<p><strong>Root cause</strong> — Two assumptions stacked: (a) "the signal handler
+guards the whole lifecycle" (it doesn't — it only guards what
+runs <em>after</em> <code>add_signal_handler</code>), and (b) "<code>except Exception</code>
+catches Ctrl+C" (it doesn't — <code>KeyboardInterrupt</code> inherits from
+<code>BaseException</code>). Combined, the failure mode is invisible during
+testing because tests drive shutdown via the <code>shutdown_event</code> hook
+and never go through SIGINT.</p>
+<p><strong>Rule</strong> — For any process that spawns long-lived async resources:
+install the shutdown trigger <strong>before</strong> awaiting the first startup
+coroutine, AND wrap every started component in <code>try/finally</code> with
+explicit <code>started</code>-flag bookkeeping so teardown is tolerant of
+partially-started state. Never rely on a single <code>except Exception</code>
+clause to catch interrupts.</p>
+<p><strong>Reference</strong> — PR #85 (follow-up to PR #62 review finding #1).
+Related to lesson #3 (<code>except BaseException</code> swallows
+<code>CancelledError</code>) — both belong to the family "broad / narrow
+exception handlers chosen on autopilot mishandle async control
+flow".</p>
+<hr />
+<h2 id="31-asynciocreate_subprocess_exec-does-not-auto-kill-the-child-on-cancel">31. <code>asyncio.create_subprocess_exec</code> does NOT auto-kill the child on cancel<a class="headerlink" href="#31-asynciocreate_subprocess_exec-does-not-auto-kill-the-child-on-cancel" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — <code>yaya plugin install &lt;src&gt;</code> shells out to <code>pip</code> /
+<code>uv</code> via <code>asyncio.create_subprocess_exec</code>. Ctrl+C while
+<code>communicate()</code> is awaiting cancels the awaiting coroutine but
+does <strong>not</strong> terminate the spawned child. <code>pip</code> continues for
+minutes — fully resolving wheels, downloading them, mutating the
+user's <code>site-packages</code> — long after the CLI has returned.</p>
+<p><strong>Root cause</strong> — <code>asyncio.subprocess.Process</code> is a thin
+asyncio-friendly wrapper around the OS process; the OS process
+does not share fate with the awaiting Python coroutine. Cancelling
+the coroutine only stops <em>Python's</em> read of the pipes. The child
+keeps running until something explicitly sends it a signal.</p>
+<p><strong>Rule</strong> — Every <code>await proc.communicate()</code> (or
+<code>await proc.wait()</code>) sits inside
+<code>except (asyncio.CancelledError, KeyboardInterrupt): proc.terminate()</code>,
+followed by <code>await asyncio.wait_for(proc.wait(), timeout)</code> and a
+<code>proc.kill()</code> fallback, then re-raise. Anything less leaks a
+detached subprocess that can mutate the user's environment after
+control returns.</p>
+<p><strong>Reference</strong> — PR #85 (follow-up to PR #62 review finding #3).
+Cf. lesson #30 — both are "the obvious shutdown path doesn't
+actually clean up" hazards.</p>
 <hr />
 <h2 id="how-to-use-this-doc">How to use this doc<a class="headerlink" href="#how-to-use-this-doc" title="Permanent link">&para;</a></h2>
 <ul>

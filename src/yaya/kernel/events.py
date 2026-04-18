@@ -38,6 +38,7 @@ PublicEventKind = Literal[
     "assistant.message.done",
     # LLM invocation (kernel ↔ llm-provider).
     "llm.call.request",
+    "llm.call.delta",
     "llm.call.response",
     "llm.call.error",
     # Tool execution (kernel ↔ tool).
@@ -174,6 +175,26 @@ class LlmCallRequestPayload(TypedDict):
     tools: NotRequired[list[ToolSchema]]
 
 
+class LlmCallDeltaPayload(TypedDict):
+    """``llm.call.delta`` — one streaming chunk from an llm-provider.
+
+    The v1 ``llm-provider`` contract (see :mod:`yaya.kernel.llm`) yields
+    deltas as it consumes the provider's async iterator; the loop
+    re-emits each as an ``llm.call.delta`` on the bus so adapters can
+    render progressive output and observability sinks can count
+    tokens in flight.
+
+    At most one of ``content`` / ``tool_call_partial`` is populated per
+    delta. ``request_id`` mirrors the originating ``llm.call.request``
+    event id for correlation — same convention as the other ``llm.*``
+    events.
+    """
+
+    content: NotRequired[str]
+    tool_call_partial: NotRequired[dict[str, Any]]
+    request_id: NotRequired[str]
+
+
 class LlmCallResponsePayload(TypedDict):
     """``llm.call.response`` — provider's completion result.
 
@@ -181,6 +202,12 @@ class LlmCallResponsePayload(TypedDict):
     kernel agent loop (see ``yaya.kernel.loop``) can correlate concurrent
     in-flight calls. Optional for backwards compatibility with hand-crafted
     fixtures but required in practice for the loop to observe the response.
+
+    ``usage`` is the :class:`Usage` TypedDict at the bus level; the v1
+    llm-provider contract populates it from
+    :class:`yaya.kernel.llm.TokenUsage` via ``TokenUsage.model_dump()``
+    — the additional cache-aware keys flow through as extra dict
+    entries without violating the TypedDict shape.
     """
 
     usage: Usage
@@ -194,11 +221,31 @@ class LlmCallErrorPayload(TypedDict):
 
     ``request_id`` mirrors the originating ``llm.call.request`` event id for
     agent-loop correlation (see :class:`yaya.kernel.loop.AgentLoop`).
+
+    ``kind`` is the v1-contract error classifier. Values mirror the
+    :class:`~yaya.kernel.llm.ChatProviderError` hierarchy:
+
+    * ``"connection"`` — :class:`~yaya.kernel.llm.APIConnectionError`
+    * ``"timeout"`` — :class:`~yaya.kernel.llm.APITimeoutError`
+    * ``"status"`` — :class:`~yaya.kernel.llm.APIStatusError` (pair
+      with ``status_code``)
+    * ``"empty"`` — :class:`~yaya.kernel.llm.APIEmptyResponseError`
+    * ``"other"`` — anything else converted via
+      :func:`~yaya.kernel.llm.openai_to_chat_provider_error` /
+      :func:`~yaya.kernel.llm.anthropic_to_chat_provider_error` /
+      :func:`~yaya.kernel.llm.convert_httpx_error`.
+
+    Legacy providers that pre-date the v1 contract (see
+    :mod:`yaya.plugins.llm_openai`, :mod:`yaya.plugins.llm_echo`) omit
+    ``kind``; consumers MUST treat a missing ``kind`` as
+    ``"other"``.
     """
 
     error: str
     retry_after_s: NotRequired[float]
     request_id: NotRequired[str]
+    kind: NotRequired[Literal["connection", "timeout", "status", "empty", "other"]]
+    status_code: NotRequired[int]
 
 
 # --- Tool execution --------------------------------------------------------
@@ -492,6 +539,7 @@ __all__ = [
     "KernelErrorPayload",
     "KernelReadyPayload",
     "KernelShutdownPayload",
+    "LlmCallDeltaPayload",
     "LlmCallErrorPayload",
     "LlmCallRequestPayload",
     "LlmCallResponsePayload",

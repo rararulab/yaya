@@ -8,7 +8,7 @@ wiring.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Generator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -43,7 +43,7 @@ def ctx() -> BDDContext:
 
 
 @pytest.fixture
-def loop() -> asyncio.AbstractEventLoop:
+def loop() -> Generator[asyncio.AbstractEventLoop]:
     """A dedicated loop per scenario so publishes are isolated.
 
     pytest-bdd step defs are synchronous functions; each When that

@@ -268,6 +268,92 @@ Co-Authored-By: <you>
   edge cases that are not worth surfacing in Gherkin. Do not delete
   the existing `tests/<area>/test_<module>.py` when converting the
   spec — they remain the engineering verification.
+- **Async teardown.** pytest-bdd has no scenario-scoped async teardown
+  hook. If your subsystem owns an asyncio lifecycle (e.g. the
+  `PluginRegistry` keeps a bus + worker tasks), schedule its shutdown
+  from the final `@then` of every scenario that creates one, before
+  the `loop` fixture closes. Leaking a live bus across scenarios causes
+  loop-close hangs. See the `_teardown(ctx, loop)` helper pattern in
+  `tests/bdd/test_kernel_registry.py` and the ExitStack usage for
+  multi-patch scenarios.
+- **`unittest.mock.patch` lifetime.** Context-manager form
+  (`with patch(...) as m:`) only survives inside one step function.
+  For multi-step scenarios, use `patcher = patch(...)`,
+  `patcher.start()`, and stash `patcher` on `ctx.extras["patchers"]`
+  so the final `@then` / teardown can `.stop()` them. Use
+  `contextlib.ExitStack` when one scenario needs several concurrent
+  patches.
+- **Parallel-verification race.** When multiple subagents convert
+  specs in parallel, `just check`'s ruff/mypy pass sees all unfinished
+  work and fails on someone else's file. Verify **in isolation** via
+  `uv run python -m pytest tests/bdd/test_<yours>.py -v` and
+  `uv run ruff check tests/bdd/test_<yours>.py` first. The full
+  `just check && just test` gate passes only after every concurrent
+  agent lands.
+
+## Extension patterns (richer scenarios)
+
+### Multi-stage Given then single When
+
+Some scenarios require several Given steps that register plugins /
+configure the subsystem before a single When drives the whole turn.
+The pattern:
+
+```python
+@given("a stub strategy that returns llm then done")
+def _add_strategy(ctx: BDDContext) -> None:
+    ctx.extras.setdefault("plugins", []).append(_FakeStrategy(["llm", "done"]))
+
+@given("a stub LLM provider returning \"hello\"")
+def _add_llm(ctx: BDDContext) -> None:
+    ctx.extras.setdefault("plugins", []).append(_FakeLLM("hello"))
+
+@when("a user.message.received event is published")
+def _drive(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> None:
+    # Construct the subsystem AFTER all Given plugins are staged.
+    bus = EventBus()
+    for p in ctx.extras["plugins"]:
+        p.subscribe(bus)
+    agent_loop = AgentLoop(bus=bus, ...)
+    ctx.extras["agent_loop"] = agent_loop
+    loop.run_until_complete(agent_loop.start())
+    # ... publish the user event and await terminal result
+```
+
+The Gherkin reads naturally as setup → action → assertion; the code
+respects that the subsystem can only be built once the full plugin
+set is known.
+
+### Subprocess-driven scenarios (e2e location)
+
+Scenarios that exercise the installed CLI via `subprocess.run` cannot
+run in the default unit pytest — `yaya` is not on PATH. Put the
+step-def file under `tests/e2e/bdd/test_<slug>.py` instead of
+`tests/bdd/test_<slug>.py`:
+
+- `tests/e2e/` is already `--ignore`d by default pytest config, so
+  the BDD module naturally skips without needing `skipif`.
+- `just test-e2e` and the `e2e-smoke` CI job already run
+  `pytest tests/e2e -v`, which collects the BDD module with no
+  workflow edit.
+- Keep the `.feature` under `tests/bdd/features/` (not under
+  `tests/e2e/bdd/features/`) so `scripts/check_feature_sync.py`
+  finds it. Reference the cross-tree path from the module:
+
+  ```python
+  FEATURE_FILE = (
+      Path(__file__).resolve().parents[2] / "bdd" / "features" / "<slug>.feature"
+  )
+  ```
+
+Reference: `tests/e2e/bdd/test_harness_agent_spec.py`.
+
+### Shared step defs in conftest
+
+Move a step def to `tests/bdd/conftest.py` only when it is **already
+used by two or more feature modules**. Premature hoisting (single-use
+steps in conftest) couples unrelated features and makes changes
+riskier. Every current conftest step is provably multi-use.
 
 ## Verification checklist
 

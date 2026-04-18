@@ -18,6 +18,26 @@ MCP bridge plugin. Spawns external MCP servers configured under `[mcp_bridge.ser
 
 ## Interaction (patterns)
 - **Add a server.** Drop a `[mcp_bridge.servers.<name>]` table in `~/.config/yaya/config.toml` with `command`, `args`, optional `env`, `enabled`. Restart `yaya serve`; tools appear as `mcp_<server>_<tool>`.
+
+Example config:
+
+```toml
+[mcp_bridge.servers.filesystem]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+env = {}  # no env needed
+enabled = true
+requires_approval = true  # default — file access is sensitive
+call_timeout_s = 30.0
+
+[mcp_bridge.servers.github]
+command = "uvx"
+args = ["mcp-server-github"]
+env = { GITHUB_TOKEN = "$GITHUB_TOKEN" }  # expanded from process env
+```
+
+Set `requires_approval = false` per-server only for tools you audit yourself.
+
 - **Env expansion.** `$VAR` / `${VAR}` in `command`, `args`, and `env` values is expanded via `os.path.expandvars` against the process env at boot.
 - **Hot reload.** Not supported at 0.1 — restart `yaya serve` after a config change. Tracked under the wider plugin hot-reload story.
 

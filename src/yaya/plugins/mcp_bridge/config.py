@@ -1,6 +1,6 @@
 """Config parsing for the MCP bridge plugin.
 
-Parses the ``[mcp.servers.<name>]`` sub-tree delivered to the plugin
+Parses the ``[mcp_bridge.servers.<name>]`` sub-tree delivered to the plugin
 via :attr:`KernelContext.config`. Config surface intentionally
 minimal — stdio-transport-only for 0.1. A full surface (SSE, OAuth)
 lands later.
@@ -62,7 +62,7 @@ def _expand(value: str) -> str:
 
 
 def _parse_server(name: str, raw: Any) -> MCPServerConfig:  # noqa: C901 - linear validator; splitting hurts readability.
-    """Validate and normalise one ``[mcp.servers.<name>]`` entry.
+    """Validate and normalise one ``[mcp_bridge.servers.<name>]`` entry.
 
     Raises:
         MCPConfigError: On any missing or mistyped field. The message

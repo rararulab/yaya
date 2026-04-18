@@ -133,6 +133,10 @@ class MCPBridge:
         registry is process-global with no public unregister hook at
         0.1, and stale entries are harmless (their ``run`` will return
         a ``ToolError(kind="crashed")`` once the closed client is hit).
+
+        TODO(#90): once ``yaya.kernel.tool.unregister_tool`` lands,
+        iterate ``record.tool_names`` and unregister before closing
+        the client so hot-reload leaves a clean registry.
         """
         records = list(self._servers.values())
         self._servers.clear()
@@ -255,8 +259,12 @@ class MCPBridge:
 
 # Single session id used for plugin-private bridge events. Bus serializes
 # delivery per session, so a stable id keeps these events well-ordered
-# without polluting any conversation's session_id space.
-_BRIDGE_SESSION = "mcp-bridge"
+# without polluting any conversation's session_id space. The
+# ``_bridge:`` prefix marks this as a private routing channel (distinct
+# from the plugin *name* ``mcp-bridge`` used in the registry) so future
+# subsystems can key on session id for plugin identity without
+# collisions.
+_BRIDGE_SESSION = "_bridge:mcp-bridge"
 
 
 def _default_client_factory(

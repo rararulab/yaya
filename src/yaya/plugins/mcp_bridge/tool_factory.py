@@ -122,7 +122,11 @@ def _build_param_model_fields(
         if prop_name in required:
             fields[prop_name] = (py_type, Field(..., description=description))
         else:
-            fields[prop_name] = (py_type | None, Field(default=None, description=description))
+            # ``Any | None`` collapses to ``Any`` — skip the Optional wrap
+            # when the schema gave us no concrete type so the generated
+            # pydantic schema stays clean.
+            optional_type = py_type if py_type is Any else py_type | None
+            fields[prop_name] = (optional_type, Field(default=None, description=description))
     return fields
 
 
@@ -193,8 +197,6 @@ def build_mcp_tool_class(
     async def _run(self: Tool, ctx: Any) -> ToolReturnValue:
         # Extract the arguments dict from the bound pydantic model.
         args = self.model_dump(mode="json", exclude_none=True)
-        # Strip yaya-only fields that leaked from the Tool base class.
-        args.pop("requires_approval", None)
         try:
             raw_result = await client.call_tool(
                 descriptor.name,

@@ -36,6 +36,25 @@ scope for yaya. Retrospective ceremony merged into the existing
 Karpathy wiki lint operation; no duplicate cadence.
 See: sources/bmad-method.md, ../dev/workflow.md
 
+## [2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)
+Landed the three remaining kernel-built-in CLI commands —
+`yaya serve`, the rewritten `yaya hello`, and the `yaya plugin
+{list, install, remove}` group — completing the 1.0 command surface
+from `docs/dev/cli.md`. `serve` boots EventBus + PluginRegistry +
+AgentLoop in-process, binds 127.0.0.1 only (no `--host` flag per
+GOAL.md non-goals), picks a free port on `--port 0`, and opens the
+browser only when a `web`-prefixed adapter plugin is loaded —
+otherwise it warns via stderr and keeps the kernel up so `yaya
+hello` still round-trips the bus. `plugin install` rejects shell
+metacharacters before any subprocess via the registry's existing
+`_validate_install_source`, refuses to prompt under `--json` (must
+pass `--yes`), and honours `--dry-run`. `plugin remove` surfaces
+the bundled-plugin `ValueError` as `ok=false` with a suggestion
+pointing at `yaya update`. Signal handling uses
+`asyncio.add_signal_handler` so Ctrl+C cleanly stops loop → registry
+→ bus in that order.
+See: ../../specs/cli-kernel-commands.spec, ../../src/yaya/cli/commands/serve.py, ../../src/yaya/cli/commands/hello.py, ../../src/yaya/cli/commands/plugin.py
+
 ## [2026-04-18] ingest | seed plugins (issue #14)
 Landed the four non-adapter seed plugins — one per category — to
 prove the plugin protocol end-to-end against the kernel registry

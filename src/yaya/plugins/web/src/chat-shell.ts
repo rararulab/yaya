@@ -13,8 +13,8 @@
  * lesson #27 for the Dependency-Rule reasoning.
  */
 
-import { LitElement, html, type TemplateResult } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { LitElement, html, nothing, type TemplateResult } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
 
 // Side-effectful imports register the custom elements used below.
 // The `@yaya/...` aliases are resolved by Vite and tsconfig to the
@@ -23,10 +23,12 @@ import { customElement, state } from "lit/decorators.js";
 // drag the full chat panel (and therefore the upstream agent-core
 // runtime) into our bundle. See lesson 27 for the architectural
 // rationale.
-import "@yaya/pi-web-ui/components/MessageList.js";
-import "@yaya/pi-web-ui/components/StreamingMessageContainer.js";
+// NOTE: MessageList / StreamingMessageContainer / Messages are no longer
+// imported — their rendering shape is pi-ai's `AgentMessage` and passes
+// TypeScript but silently renders blank for our `ChatMessage` (bug #71).
+// User and assistant bubbles now render via the local `<yaya-bubble>`
+// component below; tool output stays on pi-web-ui's `<console-block>`.
 import "@yaya/pi-web-ui/components/ConsoleBlock.js";
-import "@yaya/pi-web-ui/components/Messages.js";
 import "@yaya/mini-lit/ThemeToggle.js";
 
 import { Input } from "@yaya/pi-web-ui/components/Input.js";
@@ -35,6 +37,7 @@ import type {
 	AssistantChatMessage,
 	ChatMessage,
 	Frame,
+	TextContent,
 	ToolResultChatMessage,
 	UserChatMessage,
 } from "./types.js";
@@ -186,6 +189,10 @@ export class YayaChat extends LitElement {
 				return;
 			case "plugin.error":
 				this.pushToast("error", `plugin error (${frame.name}): ${frame.error}`);
+				// Bug #71: an error during a turn must release the input.
+				// Without this, the textarea stays disabled until reload.
+				this.inFlight = false;
+				this.streamingMessage = null;
 				return;
 			case "kernel.ready":
 				this.pushToast("info", `kernel ready (v${frame.version})`);
@@ -195,6 +202,9 @@ export class YayaChat extends LitElement {
 				return;
 			case "kernel.error":
 				this.pushToast("error", `kernel error (${frame.source}): ${frame.message}`);
+				// Bug #71: a kernel-level failure aborts the turn; re-enable input.
+				this.inFlight = false;
+				this.streamingMessage = null;
 				return;
 			default:
 				return assertNever(frame);
@@ -283,9 +293,15 @@ export class YayaChat extends LitElement {
 	private pushToast(kind: Toast["kind"], text: string): void {
 		const id = this.nextToastId++;
 		this.toasts = [...this.toasts, { id, kind, text }];
-		window.setTimeout(() => {
-			this.toasts = this.toasts.filter((t) => t.id !== id);
-		}, 6000);
+		// Bug #71: only info toasts auto-dismiss. Error toasts stay until
+		// the user acknowledges them (click anywhere on the toast or the
+		// close glyph). Otherwise a 6s auto-hide buries root-cause info
+		// like a missing API key before the user reads it.
+		if (kind === "info") {
+			window.setTimeout(() => {
+				this.toasts = this.toasts.filter((t) => t.id !== id);
+			}, 6000);
+		}
 	}
 
 	// -- render -----------------------------------------------------------
@@ -325,12 +341,30 @@ export class YayaChat extends LitElement {
 				</header>
 
 				<section class="flex flex-col gap-2">
-					<message-list .messages=${this.messages} .pendingToolCalls=${this.pendingToolCalls} .isStreaming=${this.inFlight}></message-list>
-					<streaming-message-container
-						.isStreaming=${this.inFlight}
-						.pendingToolCalls=${this.pendingToolCalls}
-						${streamingRef(this.streamingMessage)}
-					></streaming-message-container>
+					${this.messages.map((m) => {
+						if (m.role === "user") {
+							const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("");
+							return html`<yaya-bubble role="user" content=${text}></yaya-bubble>`;
+						}
+						if (m.role === "assistant") {
+							const text = m.content
+								.filter((c): c is TextContent => c.type === "text")
+								.map((c) => c.text)
+								.join("");
+							return text ? html`<yaya-bubble role="assistant" content=${text}></yaya-bubble>` : nothing;
+						}
+						// `toolResult` bubbles render via the console blocks below.
+						return nothing;
+					})}
+					${this.streamingMessage
+						? html`<yaya-bubble
+								role="assistant"
+								content=${this.streamingMessage.content
+									.filter((c): c is TextContent => c.type === "text")
+									.map((c) => c.text)
+									.join("")}
+							></yaya-bubble>`
+						: nothing}
 					${this.renderToolBlocks()}
 				</section>
 
@@ -370,14 +404,25 @@ export class YayaChat extends LitElement {
 				<div class="fixed right-4 top-4 flex max-w-xs flex-col gap-2">
 					${this.toasts.map(
 						(t) => html`<div
-							class="rounded border border-border bg-background px-3 py-2 text-xs shadow ${t.kind === "error"
+							class="relative flex items-start gap-2 rounded border border-border bg-background px-3 py-2 pr-6 text-xs shadow ${t.kind ===
+							"error"
 								? "text-destructive"
 								: "text-foreground"}"
 							@click=${() => {
 								this.toasts = this.toasts.filter((x) => x.id !== t.id);
 							}}
 						>
-							${t.text}
+							<span class="flex-1">${t.text}</span>
+							<button
+								aria-label="dismiss"
+								class="absolute right-1 top-1 px-1 leading-none text-muted-foreground hover:text-foreground"
+								@click=${(e: MouseEvent) => {
+									e.stopPropagation();
+									this.toasts = this.toasts.filter((x) => x.id !== t.id);
+								}}
+							>
+								×
+							</button>
 						</div>`,
 					)}
 				</div>
@@ -386,26 +431,38 @@ export class YayaChat extends LitElement {
 	}
 }
 
-// Feed the streaming bubble its in-flight message via the component's
-// imperative `setMessage` API (pi-web-ui batches updates via rAF).
-import { createRef, ref, type Ref } from "lit/directives/ref.js";
+/**
+ * Minimal chat bubble. Rendered in light DOM so the shared Tailwind
+ * stylesheet on the host document applies without cloning it into a
+ * shadow root. We render our own bubbles rather than pi-web-ui's
+ * `<message-list>` because the upstream component consumes pi-ai's
+ * `AgentMessage` shape, which passes our TypeScript structural check
+ * but silently renders blank at runtime (bug #71).
+ */
+@customElement("yaya-bubble")
+export class YayaBubble extends LitElement {
+	@property({ type: String }) override role: "user" | "assistant" = "user";
+	@property({ type: String }) content = "";
 
-interface StreamingElement extends HTMLElement {
-	setMessage(msg: AssistantChatMessage | null, immediate?: boolean): void;
+	protected override createRenderRoot(): HTMLElement | DocumentFragment {
+		return this;
+	}
+
+	override render(): TemplateResult {
+		const isUser = this.role === "user";
+		const align = isUser ? "justify-end" : "justify-start";
+		const skin = isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground";
+		return html`
+			<div class="flex ${align} my-2">
+				<div class="max-w-[75%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${skin}">${this.content}</div>
+			</div>
+		`;
+	}
 }
 
-const streamingRefs: WeakMap<YayaChat, Ref<StreamingElement>> = new WeakMap();
-
-function streamingRef(msg: AssistantChatMessage | null) {
-	return ref((el: Element | undefined) => {
-		if (!el) {
-			return;
-		}
-		(el as StreamingElement).setMessage(msg);
-	});
+declare global {
+	interface HTMLElementTagNameMap {
+		"yaya-chat": YayaChat;
+		"yaya-bubble": YayaBubble;
+	}
 }
-
-// Keep WeakMap and createRef imported — some bundlers tree-shake
-// unused re-exports otherwise.
-void streamingRefs;
-void createRef;

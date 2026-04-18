@@ -38,6 +38,11 @@ class Scenario:
     steps: tuple[str, ...]
 
 
+def _repo_path(path: Path, repo: Path) -> str:
+    """Return a stable repo-relative path for cross-platform logs."""
+    return path.relative_to(repo).as_posix()
+
+
 def parse_scenarios(path: Path) -> list[Scenario]:
     """Return the ordered list of scenarios in ``path``.
 
@@ -110,16 +115,59 @@ def diff_scenarios(spec: list[Scenario], feature: list[Scenario]) -> list[str]:
     return diffs
 
 
+def collect_sync_errors(repo: Path) -> list[str]:
+    """Return human-readable sync errors for all spec/feature pairs."""
+    features_dir = repo / "tests" / "bdd" / "features"
+    specs_dir = repo / "specs"
+
+    errors: list[str] = []
+    specs = sorted(specs_dir.glob("*.spec")) if specs_dir.is_dir() else []
+    features = sorted(features_dir.glob("*.feature")) if features_dir.is_dir() else []
+
+    feature_stems = {feature_path.stem for feature_path in features}
+    for spec_path in specs:
+        if spec_path.stem not in feature_stems:
+            expected = features_dir / f"{spec_path.stem}.feature"
+            errors.append(f"❌ {_repo_path(spec_path, repo)}: no matching {_repo_path(expected, repo)}")
+
+    for feature_path in features:
+        spec_path = specs_dir / f"{feature_path.stem}.spec"
+        if not spec_path.is_file():
+            errors.append(f"❌ {_repo_path(feature_path, repo)}: no matching {_repo_path(spec_path, repo)}")
+            continue
+
+        spec_scenarios = parse_scenarios(spec_path)
+        feature_scenarios = parse_scenarios(feature_path)
+        diffs = diff_scenarios(spec_scenarios, feature_scenarios)
+        if diffs:
+            errors.append(
+                "\n".join([
+                    f"❌ {_repo_path(feature_path, repo)} drift from {_repo_path(spec_path, repo)}:",
+                    *(f"   {line}" for line in diffs),
+                ])
+            )
+
+    return errors
+
+
 def main() -> int:
     repo = Path(__file__).resolve().parents[1]
     features_dir = repo / "tests" / "bdd" / "features"
     specs_dir = repo / "specs"
 
+    if not specs_dir.is_dir():
+        print(f"no specs dir at {specs_dir}; nothing to check")
+        return 0
+
+    errors = collect_sync_errors(repo)
+    if errors:
+        print("\n".join(errors))
+        return 1
+
     if not features_dir.is_dir():
         print(f"no features dir at {features_dir}; nothing to check")
         return 0
 
-    overall_ok = True
     features = sorted(features_dir.glob("*.feature"))
     if not features:
         print(f"no .feature files in {features_dir}; nothing to check")
@@ -127,28 +175,14 @@ def main() -> int:
 
     for feature_path in features:
         spec_path = specs_dir / f"{feature_path.stem}.spec"
-        if not spec_path.is_file():
-            print(f"❌ {feature_path.relative_to(repo)}: no matching {spec_path.relative_to(repo)}")
-            overall_ok = False
-            continue
-
-        spec_scenarios = parse_scenarios(spec_path)
         feature_scenarios = parse_scenarios(feature_path)
-        diffs = diff_scenarios(spec_scenarios, feature_scenarios)
+        print(
+            f"✅ {_repo_path(feature_path, repo)} in sync with "
+            f"{_repo_path(spec_path, repo)} "
+            f"({len(feature_scenarios)} scenarios)"
+        )
 
-        if diffs:
-            overall_ok = False
-            print(f"❌ {feature_path.relative_to(repo)} drift from {spec_path.relative_to(repo)}:")
-            for line in diffs:
-                print(f"   {line}")
-        else:
-            print(
-                f"✅ {feature_path.relative_to(repo)} in sync with "
-                f"{spec_path.relative_to(repo)} "
-                f"({len(feature_scenarios)} scenarios)"
-            )
-
-    return 0 if overall_ok else 1
+    return 0
 
 
 if __name__ == "__main__":

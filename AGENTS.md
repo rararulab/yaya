@@ -34,6 +34,7 @@ These live in the org `.github` repo and apply to every rararulab repo. Fetch vi
 - Use subagents for independent issues in parallel; one worktree per subagent.
 - BDD contracts via [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec)
   are non-negotiable for non-trivial feature work: author `specs/<slug>.spec`,
-  run `agent-spec lifecycle` before commit, let `agent-spec guard` gate CI.
+  run `scripts/check_specs.sh` before commit, and let CI run the same lifecycle
+  wrapper plus `scripts/check_feature_sync.py`.
 - Python code follows the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html);
   every public symbol has a Google-style docstring.

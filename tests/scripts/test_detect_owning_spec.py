@@ -54,7 +54,10 @@ def fake_specs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     [
         ("issue-42-kernel-bus", "kernel-bus"),
         ("issue-11-kernel-bus-and-abi", "kernel-bus-and-abi"),
+        ("codex/issue-42-kernel-bus", "kernel-bus"),
+        ("claude/issue-13-kernel-registry", "kernel-registry"),
         ("feat/plugin-web", "plugin-web"),
+        ("codex/feat/plugin-web", "plugin-web"),
         ("chore/bump-deps", "bump-deps"),
         ("fix-docs-typo", "docs-typo"),
         ("main", ""),
@@ -67,6 +70,13 @@ def test_branch_slug_extraction(detector: Any, branch: str, expected_slug: str) 
 
 def test_branch_match_single_candidate(detector: Any, fake_specs: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_HEAD_REF", "issue-11-kernel-bus")
+    assert detector.detect_owning_spec(fake_specs) == str(fake_specs / "kernel-bus-and-abi.spec")
+
+
+def test_agent_prefixed_branch_match_single_candidate(
+    detector: Any, fake_specs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GITHUB_HEAD_REF", "codex/issue-11-kernel-bus")
     assert detector.detect_owning_spec(fake_specs) == str(fake_specs / "kernel-bus-and-abi.spec")
 
 

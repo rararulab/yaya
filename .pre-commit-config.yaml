@@ -35,3 +35,9 @@ repos:
         language: system
         pass_filenames: false
         files: ^specs/.*\.spec$
+      - id: feature-spec-sync
+        name: feature/spec sync
+        entry: uv run python scripts/check_feature_sync.py
+        language: system
+        pass_filenames: false
+        files: ^(specs/.*\.spec|tests/bdd/features/.*\.feature)$

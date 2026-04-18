@@ -28,7 +28,7 @@ Pytest suite. Mirrors `src/yaya/` one-to-one. Tests are the specification.
 - Prefer real objects + `tmp_path` + `pytest-httpx` over `unittest.mock`.
 - Do NOT hit real network, real filesystem outside `tmp_path`, or real wall-clock time without a seam.
 - Do NOT mark tests `skip` / `xfail` without a linked issue.
-- Every non-trivial change ships with a `specs/<slug>.spec` whose scenarios bind to test functions via `Test:` selectors — `agent-spec guard` rejects unbound scenarios.
+- Every non-trivial change ships with a `specs/<slug>.spec` whose scenarios bind to test functions via `Test:` selectors. `scripts/check_specs.sh` runs the agent-spec lifecycle, and pytest-bdd rejects unbound `.feature` scenarios.
 - New public function/class ⇒ at least one test; coverage must not regress.
 
 ## Budget & Loading

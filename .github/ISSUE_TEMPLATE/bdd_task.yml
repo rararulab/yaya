@@ -186,7 +186,9 @@ body:
         ### Validation
         - `just check`
         - `just test`
-        - `agent-spec lint specs/<slug>.spec`
+        - `just check-specs`
+        - `just check-features`
+        - `uv run python -m pytest tests/bdd/test_<module>.py -v`
 
         ### Failure Modes To Cover
         - 

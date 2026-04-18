@@ -130,9 +130,10 @@ Gate checks (answer `yes` before moving to the next phase):
 
 1. **Analysis → Plan**: Does the issue state *what* and *why* against
    a GOAL.md principle? Are all required labels attached?
-2. **Plan → Solutioning**: Does the `specs/<slug>.spec` lint clean
-   (`agent-spec lint`)? Is every Completion Criteria scenario bound
-   to a concrete test via `Test:`?
+2. **Plan → Solutioning**: Does the `specs/<slug>.spec` pass the
+   lifecycle wrapper (`scripts/check_specs.sh`)? Is every Completion
+   Criteria scenario bound to a concrete test via `Test:` and mirrored
+   by a matching pytest-bdd `.feature` scenario?
 3. **Solutioning → Implementation**: Does the design cite the
    authoritative `docs/dev/*.md` for every new contract it touches?
    Are dependency issues resolved (no forward references to unmerged

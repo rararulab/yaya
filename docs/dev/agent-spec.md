@@ -17,7 +17,10 @@ plugins, behavior changes — must have a spec.
 matching the upstream [`contract-guard.yml`](https://github.com/ZhangHanDong/agent-spec/blob/main/.github/workflows/contract-guard.yml)
 model (which uses `continue-on-error: true` for the same reasons).
 The wrapper then runs in three places: `just check`, the pre-commit
-hook for `specs/*.spec` changes, and the CI `check` job.
+hook for staged `specs/*.spec` changes, and the CI `check` job.
+`scripts/check_feature_sync.py` runs alongside it in `just check`, CI,
+and pre-commit for staged `.spec` / `.feature` changes so executable
+Gherkin cannot drift from the task contract.
 
 **Hard-fail (blocks merge):**
 
@@ -166,15 +169,17 @@ agent-spec lint specs/<slug>.spec
 
 # 3. Implement inside the issue worktree
 
-# 4. Verify locally (full lifecycle)
+# 4. Verify locally (full lifecycle plus executable BDD mirror)
 just check-specs
+just check-features
 
 # 5. Before PR: ensure `just check` is green (it runs check-specs too)
 just check && just test
 ```
 
-Pre-commit runs `agent-spec lint` automatically on any staged
-`.spec` file.
+Pre-commit runs `scripts/check_specs.sh` automatically on any staged
+`.spec` file, and `scripts/check_feature_sync.py` on staged `.spec` or
+`.feature` files.
 
 ## Contract authoring rules
 

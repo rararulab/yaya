@@ -88,8 +88,9 @@ serialization of the event catalog, and mismatches fail CI.
 Every non-trivial feature is backed by a `specs/<slug>.spec` BDD
 contract verified with [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec).
 Scenarios bind to test functions via `Test:` selectors. Run
-`agent-spec lifecycle` before commit; CI runs `agent-spec guard` on
-staged changes. See [agent-spec.md](agent-spec.md).
+`scripts/check_specs.sh` before commit; CI runs the same lifecycle
+wrapper and `scripts/check_feature_sync.py`. See
+[agent-spec.md](agent-spec.md).
 
 ## Code style
 

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>yaya</title>
+    <link rel="stylesheet" href="/assets/main.css" />
+  </head>
+  <body>
+    <main id="app">
+      <header>
+        <h1>yaya</h1>
+        <span id="status" class="status status--pending">connecting…</span>
+      </header>
+      <section id="transcript" aria-live="polite"></section>
+      <form id="composer">
+        <textarea
+          id="input"
+          name="message"
+          rows="2"
+          placeholder="Type a message, press Enter to send (Shift+Enter for newline)."
+          autofocus
+          required
+        ></textarea>
+        <button type="submit" id="send">Send</button>
+      </form>
+      <details id="plugins-panel">
+        <summary>loaded plugins</summary>
+        <ul id="plugins"></ul>
+      </details>
+    </main>
+    <script type="module" src="/assets/main.js"></script>
+  </body>
+</html>

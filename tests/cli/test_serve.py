@@ -188,8 +188,22 @@ async def test_run_serve_opens_browser_when_web_adapter_present(
 
 
 @pytest.mark.asyncio
-async def test_run_serve_warns_when_no_adapter(capsys: pytest.CaptureFixture[str]) -> None:
-    """Without a web adapter plugin, serve warns but stays up."""
+async def test_run_serve_warns_when_no_adapter(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without a web adapter plugin, serve warns but stays up.
+
+    The bundled ``web`` adapter ships in the project's default entry-point
+    group, so we force ``_has_web_adapter`` to ``False`` to reconstruct
+    the "no adapter installed" state a fresh third-party install would
+    see. The test asserts the warning path survives regardless of what
+    plugins happen to be bundled.
+    """
+    from yaya.cli.commands import serve as serve_mod
+
+    monkeypatch.setattr(serve_mod, "_has_web_adapter", lambda _snapshot: False)
+
     shutdown = asyncio.Event()
     state = CLIState(json_output=False)
 

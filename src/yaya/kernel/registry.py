@@ -66,6 +66,7 @@ from yaya.kernel.config import KernelConfig, load_config
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.logging import get_plugin_logger
 from yaya.kernel.plugin import Category, KernelContext, Plugin
+from yaya.kernel.session import Session
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import, breaks an import cycle.
     from yaya.kernel.bus import EventBus, Subscription
@@ -175,6 +176,7 @@ class PluginRegistry:
         failure_threshold: int = _DEFAULT_FAILURE_THRESHOLD,
         entry_point_group: str = _ENTRY_POINT_GROUP,
         kernel_config: KernelConfig | None = None,
+        session: Session | None = None,
     ) -> None:
         """Bind the registry to ``bus``.
 
@@ -201,6 +203,7 @@ class PluginRegistry:
         self._failure_threshold = failure_threshold
         self._entry_point_group = entry_point_group
         self._kernel_config = kernel_config or load_config()
+        self._session = session
 
         # Name → record. Bounded by the install set (not user input), so
         # there is no leak risk even across many discovery cycles.
@@ -578,6 +581,7 @@ class PluginRegistry:
             config=self._kernel_config.plugin_config(plugin.name),
             state_dir=plugin_state,
             plugin_name=plugin.name,
+            session=self._session,
         )
 
     # -- failure accounting -----------------------------------------------------

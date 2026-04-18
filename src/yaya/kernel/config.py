@@ -34,9 +34,9 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast, override
+from typing import Any, Literal, cast, override
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -44,7 +44,13 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
-__all__ = ["CONFIG_PATH", "KernelConfig", "default_config_path", "load_config"]
+__all__ = [
+    "CONFIG_PATH",
+    "KernelConfig",
+    "SessionConfig",
+    "default_config_path",
+    "load_config",
+]
 
 
 def default_config_path() -> Path:
@@ -116,6 +122,25 @@ class _NestedEnvExtras(PydanticBaseSettingsSource):
         return result
 
 
+class SessionConfig(BaseModel):
+    """Session / tape-store settings (see ``docs/dev/plugin-protocol.md``).
+
+    Attributes:
+        store: ``"file"`` persists tapes as jsonl under :attr:`dir`;
+            ``"memory"`` keeps them in-process (tests, ``yaya hello``).
+        dir: Directory for jsonl files. When ``None`` (default) the
+            kernel derives it from ``YAYA_STATE_DIR`` /
+            ``XDG_STATE_HOME`` — see
+            :func:`yaya.kernel.session.default_session_dir`.
+        default_id: Session id assumed when no explicit ``--resume``
+            is supplied. ``None`` means "mint a fresh id per run".
+    """
+
+    store: Literal["file", "memory"] = "file"
+    dir: Path | None = None
+    default_id: str | None = None
+
+
 class KernelConfig(BaseSettings):
     """Resolved kernel + plugin configuration.
 
@@ -151,6 +176,9 @@ class KernelConfig(BaseSettings):
 
     log_level: str = "INFO"
     """Root log level. Per-plugin overrides happen via ``YAYA_LOG_LEVEL``."""
+
+    session: SessionConfig = Field(default_factory=SessionConfig)
+    """Session / tape-store policy. See :class:`SessionConfig`."""
 
     @classmethod
     @override

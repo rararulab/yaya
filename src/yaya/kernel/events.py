@@ -66,6 +66,12 @@ PublicEventKind = Literal[
     "kernel.ready",
     "kernel.shutdown",
     "kernel.error",
+    # Session lifecycle (kernel → all; issue #32).
+    "session.started",
+    "session.handoff",
+    "session.reset",
+    "session.archived",
+    "session.forked",
 ]
 
 PUBLIC_EVENT_KINDS: frozenset[str] = frozenset(get_args(PublicEventKind))
@@ -510,6 +516,81 @@ class KernelShutdownPayload(TypedDict):
     reason: str
 
 
+class SessionStartedPayload(TypedDict):
+    """``session.started`` — a session opened against the tape store.
+
+    Emitted by :class:`~yaya.kernel.session.SessionStore` the first
+    time a session is opened in a process (either fresh or resumed
+    from disk). ``tape_name`` is the derived tape id — see
+    :func:`~yaya.kernel.session.tape_name_for` for the hashing rule.
+    ``workspace`` is the absolute workspace path the tape is scoped
+    to; two sessions with the same ``session_id`` in different
+    workspaces get distinct tapes.
+
+    ``request_id`` is optional and echoes the event id that caused
+    the open (where applicable) for log correlation.
+    """
+
+    session_id: str
+    tape_name: str
+    workspace: str
+    request_id: NotRequired[str]
+
+
+class SessionHandoffPayload(TypedDict):
+    """``session.handoff`` — an anchor was appended to a session tape.
+
+    Anchors mark boundaries on the append-only log — session start,
+    compaction points, fork points. The ``state`` dict carries
+    handoff-specific metadata that future context selectors can read
+    via :class:`~republic.TapeContext` anchor selection.
+    """
+
+    session_id: str
+    name: str
+    state: dict[str, Any]
+    request_id: NotRequired[str]
+
+
+class SessionResetPayload(TypedDict):
+    """``session.reset`` — a session tape was reset.
+
+    When ``archive_path`` is a string, the previous tape content was
+    copied to that jsonl file under ``tapes/.archive/`` before the
+    tape was cleared. When ``None`` the reset was non-archiving.
+    """
+
+    session_id: str
+    archive_path: str | None
+    request_id: NotRequired[str]
+
+
+class SessionArchivedPayload(TypedDict):
+    """``session.archived`` — a session was archived to ``archive_path``.
+
+    Emitted right after the jsonl dump completes. Distinct from
+    ``session.reset`` because callers can archive without resetting
+    (audit flow).
+    """
+
+    session_id: str
+    archive_path: str
+    request_id: NotRequired[str]
+
+
+class SessionForkedPayload(TypedDict):
+    """``session.forked`` — a child session was created from a parent.
+
+    The child overlays the parent's tape: the child sees parent
+    entries plus its own appends; appends on the child never mutate
+    the parent. See :meth:`~yaya.kernel.session.Session.fork`.
+    """
+
+    parent_id: str
+    child_id: str
+    request_id: NotRequired[str]
+
+
 class KernelErrorPayload(TypedDict):
     """``kernel.error`` — the kernel itself failed; ``yaya serve`` exits non-zero.
 
@@ -625,6 +706,11 @@ __all__ = [
     "PluginReloadedPayload",
     "PluginRemovedPayload",
     "PublicEventKind",
+    "SessionArchivedPayload",
+    "SessionForkedPayload",
+    "SessionHandoffPayload",
+    "SessionResetPayload",
+    "SessionStartedPayload",
     "StrategyDecideRequestPayload",
     "StrategyDecideResponsePayload",
     "ToolCall",

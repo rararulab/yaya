@@ -17,6 +17,7 @@ from yaya.kernel.events import Event, new_event
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import, breaks an import cycle.
     from yaya.kernel.bus import EventBus
+    from yaya.kernel.session import Session
 
 
 class Category(StrEnum):
@@ -98,6 +99,7 @@ class KernelContext:
         config: Mapping[str, object],
         state_dir: Path,
         plugin_name: str,
+        session: Session | None = None,
     ) -> None:
         """Bind the context to a specific plugin.
 
@@ -118,6 +120,7 @@ class KernelContext:
         self._config = config
         self._state_dir = state_dir
         self._plugin_name = plugin_name
+        self._session = session
 
     @property
     def bus(self) -> EventBus:
@@ -152,6 +155,26 @@ class KernelContext:
     def state_dir(self) -> Path:
         """Writable per-plugin state directory."""
         return self._state_dir
+
+    @property
+    def session(self) -> Session | None:
+        """The active :class:`~yaya.kernel.session.Session`, if any.
+
+        Exposed read-only so plugins can call ``ctx.session.tape`` or
+        ``ctx.session.info()`` from inside ``on_load`` / ``on_event``
+        without reaching into the registry's private state. Plugins
+        SHOULD still drive writes via :meth:`emit` — direct
+        ``append_*`` calls bypass the bus and are therefore invisible
+        to other subscribers. This property is the same kind of
+        kernel-side escape hatch as :attr:`bus`, and carries the same
+        caveat.
+
+        Returns ``None`` when the kernel was booted without a
+        :class:`~yaya.kernel.session.SessionStore` (e.g. the
+        ``yaya plugin list`` transient stack) — plugin code must
+        handle that gracefully.
+        """
+        return self._session
 
     async def emit(
         self,

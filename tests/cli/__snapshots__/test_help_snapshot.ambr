@@ -22,6 +22,7 @@
   | version Print the installed version.
   | config Inspect resolved yaya configuration.
   | plugin Manage installed plugins.
+  | session Manage session tapes (persisted append-only event log).
   +---+
   
   '''

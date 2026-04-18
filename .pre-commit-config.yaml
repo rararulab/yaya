@@ -23,6 +23,18 @@ repos:
     hooks:
       - id: uv-lock
 
+  # No third-party agent frameworks (AGENT.md §4). Runs whenever a
+  # dependency declaration or a Python source file changes — the script
+  # is stdlib-only, completes in <1s on this repo.
+  - repo: local
+    hooks:
+      - id: check-banned-frameworks
+        name: No banned agent frameworks
+        entry: uv run python scripts/check_banned_frameworks.py
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|src/.*\.py|tests/.*\.py)$
+
   # agent-spec enforcement. Runs only when a `.spec` file is staged.
   # Script runs lifecycle (lint hard-gated, boundary/verify reported).
   # If `agent-spec` is not installed locally, the wrapper prints a skip

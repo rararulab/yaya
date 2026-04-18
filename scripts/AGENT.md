@@ -11,6 +11,7 @@ Release-time and CI helper scripts. Not imported by the package.
 
 ## Constraints
 - `check_version_tag.py` — verifies the git tag matches `pyproject.toml` version at release time.
+- `check_banned_frameworks.py` — enforces AGENT.md §4 (no third-party agent frameworks). Scans `pyproject.toml` declared deps and AST imports under `src/` + `tests/` against a hardcoded ban list. Stdlib only. Takes `--json` for CI integration. Wired into pre-commit + the `Lint & type check` CI job.
 - Scripts are **standalone**: runnable with `python scripts/<name>.py` using only stdlib (or clearly documented deps available in the CI environment).
 - No imports from `yaya.*` unless strictly required — scripts may run before install in CI.
 - Every script has a module-level docstring stating: what it does, when it runs, exit-code semantics.

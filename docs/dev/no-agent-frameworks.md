@@ -93,3 +93,48 @@ issue before writing the import.
 - `vendor/` contains reference repos (e.g. `bub/`, `kimi-cli/`) — they
   are NEVER imported at runtime; `src/yaya/` must not reference
   anything under `vendor/`.
+
+### Mechanical enforcement
+
+`scripts/check_banned_frameworks.py` is the grep-enforced layer for
+this rule. It runs in two places:
+
+- **Pre-commit hook** — fires on changes to `pyproject.toml` or any
+  `src/**.py` / `tests/**.py` file.
+- **CI** — runs as a step in the `Lint & type check` job in
+  `.github/workflows/main.yml`.
+
+The script is stdlib-only (no dep on any framework to check
+frameworks) and scans two surfaces:
+
+1. Declared dependencies in `pyproject.toml` — `[project]
+   dependencies`, every `[dependency-groups]` table, and every
+   `[project.optional-dependencies]` extra. Names are normalized per
+   the [PyPA name normalization spec](https://packaging.python.org/en/latest/specifications/name-normalization/)
+   before comparison, so `Lang_Chain`, `LangChain`, and `langchain`
+   all collide.
+2. AST-walked `import` / `from … import …` statements under `src/`
+   and `tests/`. AST is used (not regex) so string mentions of a
+   banned name in a docstring or comment are NOT false positives.
+
+The ban list is hardcoded in the script and must stay in sync with
+AGENT.md §4 — a PR that edits one MUST edit the other.
+
+#### Known limitations
+
+- **Dynamic imports** via `importlib.import_module("langchain")` are
+  not caught — AST cannot see strings. The ban is policy enforcement,
+  not a hermetic sandbox. If a known offender shows up, add a runtime
+  guard.
+- **Transitive dependencies** (a permitted package that itself pulls
+  in a banned one through `uv.lock`) are not scanned today. The
+  declared-dep gate catches the common case; transitive coverage is
+  tracked for a follow-up.
+
+#### Carve-outs
+
+None today. If a legitimately-needed package collides with a banned
+name (e.g. an internal tool whose distribution name happens to start
+with `smol-`), document the carveout here AND skip-list it
+explicitly in the script's `BANNED_PACKAGES` set with a comment
+linking to the justifying issue.

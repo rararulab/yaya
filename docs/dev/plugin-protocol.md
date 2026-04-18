@@ -73,6 +73,18 @@ class Event(TypedDict):
 | `tool.call.result` | tool → kernel | `{ id: str, ok: bool, value?: Any, error?: str, envelope?: dict, request_id?: str }` |
 | `tool.error` | kernel → originator | `{ id: str, kind: "validation" \| "not_found" \| "rejected", brief: str, detail?: dict, request_id?: str }` |
 
+#### Approval (kernel ↔ adapter)
+
+| kind | direction | payload |
+|---|---|---|
+| `approval.request` | kernel → adapter | `{ id: str, tool_name: str, params: dict, brief: str }` |
+| `approval.response` | adapter → kernel | `{ id: str, response: "approve" \| "approve_for_session" \| "reject", feedback?: str }` |
+| `approval.cancelled` | kernel → adapter | `{ id: str, reason: "timeout" \| "shutdown" }` |
+
+All three envelopes route on the reserved `"kernel"` session id — NOT
+the originating tool call's session. See **Approval flow** below for
+the deadlock rationale (lesson #2).
+
 #### Memory (kernel ↔ memory)
 
 | kind | direction | payload |
@@ -257,11 +269,12 @@ Additional kinds may be introduced additively.
 5. Emits `tool.call.result` with `{"id", "ok", "envelope":
    <model_dump>, "request_id"}`.
 
-**Approval hook shape (placeholder)** — `requires_approval: ClassVar[bool]
-= False` and `async def pre_approve(self, ctx) -> bool` exist on the
-contract today. The real approval runtime (prompt the user, cancel on
-interrupt, resume on approval) lands in a follow-up issue. Default
-behaviour is no-approval.
+**Approval runtime** — see the **Approval flow** section below. A
+`Tool` subclass with `requires_approval: ClassVar[bool] = True`
+routes through the runtime automatically; the default `pre_approve`
+awaits the user's answer via bus events. Subclasses MAY override
+`approval_brief(self) -> str` (≤80 chars) to give the prompt a
+clearer headline.
 
 **Backward compatibility** — A `tool.call.request` payload without
 `schema_version` falls through to whatever plugin subscribed via
@@ -274,6 +287,69 @@ same tool name, the registry logs a WARNING; duplicate
 emitted only by the v1 dispatcher (never by plugins). Adapters
 typically render it inline with the originating assistant turn rather
 than as a tool-pane update, because the target tool never ran.
+
+### Approval flow
+
+Tools that mutate state (shell, filesystem writes, network writes)
+declare `requires_approval: ClassVar[bool] = True`. The kernel's
+approval runtime (see `yaya.kernel.approval.ApprovalRuntime`) runs
+between validation and `run()`:
+
+```
+tool.call.request (session=S)
+  → dispatcher validates args, finds requires_approval=True
+  → runtime.request(Approval(id=A, session_id=S, ...))
+    → approval.request (session="kernel")          # bus-routing session
+      → adapter renders prompt to user
+      → user clicks approve / approve_for_session / reject
+    ← approval.response (session="kernel", id=A)
+  ← ApprovalResult(id=A, response=..., feedback=...)
+  → dispatcher calls tool.run()   OR   emits tool.error(kind="rejected")
+```
+
+**Routing on `"kernel"` (lesson #2).** All three approval events
+(`approval.request`, `approval.response`, `approval.cancelled`) MUST
+carry `session_id="kernel"` on the envelope. The dispatcher runs
+inside the originating tool-call session's drain worker; that worker
+is blocked on `await pending_future` while the prompt is outstanding.
+A response delivered on the **same** session would queue behind the
+blocked handler and only drain after the 60s approval timeout —
+effectively a deadlock. Routing the response on `"kernel"` resolves
+the future from a different worker and lets the original session
+worker wake up.
+
+**`approve_for_session` cache.** When the user picks
+`approve_for_session`, the runtime caches the tuple
+`(tool_name, params_fingerprint)` under the originating session id
+(carried inside the `Approval` model, NOT the envelope's routing
+session). Subsequent identical calls on the same session skip the
+prompt entirely — exactly one `approval.request` is emitted per
+unique tuple. Cache is in-memory, never persisted, never
+auto-evicted in 0.2 (process-bounded).
+
+**Timeout.** If the adapter does not publish an `approval.response`
+within 60s (configurable per `ApprovalRuntime`), the runtime:
+
+1. Pops the pending future (no leak, lesson #6).
+2. Emits `approval.cancelled` with `reason="timeout"`.
+3. Raises `ApprovalCancelledError`; the dispatcher converts this to
+   `tool.error` with `kind="rejected"` and a `brief` that carries
+   the cancellation reason.
+
+**Shutdown.** `PluginRegistry.stop` uninstalls the runtime before
+`kernel.shutdown`. Pending futures observe
+`ApprovalCancelledError(reason="shutdown")` so the loop tears down
+cleanly instead of hanging on the per-request timeout.
+
+**Adapter responsibilities.**
+
+1. Subscribe to `approval.request` and render the prompt — display
+   `tool_name`, `params` (sanitise!), and `brief`.
+2. Offer three actions: approve / approve_for_session / reject. A
+   reject MAY collect a free-text `feedback`.
+3. Publish `approval.response` with the user's answer. Echo the
+   request `id` verbatim. Publish on session `"kernel"`.
+4. Subscribe to `approval.cancelled` to withdraw stale prompts.
 
 ### LLM providers (v1 contract)
 

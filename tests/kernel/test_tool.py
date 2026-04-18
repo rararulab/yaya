@@ -68,7 +68,7 @@ class GatedTool(Tool):
     description: ClassVar[str] = "A tool that always refuses approval."
     requires_approval: ClassVar[bool] = True
 
-    async def pre_approve(self, ctx: KernelContext) -> bool:
+    async def pre_approve(self, ctx: KernelContext, *, session_id: str = "kernel") -> bool:
         return False
 
     async def run(self, ctx: KernelContext) -> ToolReturnValue:

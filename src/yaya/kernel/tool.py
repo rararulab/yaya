@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Union, cast
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -222,20 +223,77 @@ class Tool(BaseModel):
         """
         raise NotImplementedError
 
-    async def pre_approve(self, ctx: KernelContext) -> bool:
+    async def pre_approve(self, ctx: KernelContext, *, session_id: str = "kernel") -> bool:
         """Approval gate invoked by the dispatcher when :attr:`requires_approval` is ``True``.
 
-        Default returns ``True``. Subclasses that need gating override
-        this and return ``False`` (or raise) to abort the call. The
-        dispatcher translates a ``False`` return into a
-        ``tool.error`` with ``kind="rejected"``.
+        Default behaviour:
 
-        The real approval runtime — prompting the user through an
-        adapter, cancelling on interrupt, resuming on approval — is
-        tracked in issue #28. This method is the hook shape that the
-        runtime will plug into.
+        * If an :class:`~yaya.kernel.approval.ApprovalRuntime` is
+          installed on ``ctx.bus``, build an
+          :class:`~yaya.kernel.approval.Approval` and await the user's
+          response via the runtime. ``approve`` /
+          ``approve_for_session`` → returns ``True``; ``reject`` or a
+          timeout → returns ``False``.
+        * If no runtime is installed (test harness path), falls
+          through to the pre-#28 allow-all behaviour so existing
+          bundled tools keep working.
+
+        Subclasses MAY override to short-circuit (return ``True``
+        unconditionally, validate against a local policy, or raise).
+        The ``session_id`` kwarg is the originating tool-call session
+        — used by the runtime's ``approve_for_session`` cache and
+        passed in by :func:`dispatch`; defaults to ``"kernel"`` so
+        manual callers can ignore it.
+
+        Args:
+            ctx: Per-plugin kernel view.
+            session_id: Originating tool-call session id, threaded in
+                by the dispatcher from the ``tool.call.request``
+                envelope. Keyword-only so adding it stays additive for
+                subclasses that overrode the previous shape.
         """
+        # Import locally to avoid a cycle with approval → tool on module load.
+        from yaya.kernel.approval import (
+            Approval,
+            ToolRejectedError,
+            get_approval_runtime,
+        )
+
+        runtime = get_approval_runtime(ctx.bus)
+        if runtime is None:
+            # No runtime installed — preserve the pre-#28 default
+            # (allow-all) for test harnesses that skip registry boot.
+            return True
+
+        approval = Approval(
+            id=uuid4().hex,
+            tool_name=self.name,
+            params=self.model_dump(mode="json"),
+            brief=self.approval_brief(),
+            session_id=session_id,
+        )
+        # ``ApprovalCancelledError`` propagates to the dispatcher so the
+        # cancellation reason (timeout / shutdown) survives into the
+        # surfaced ``tool.error`` brief. ``reject`` is translated to
+        # ``ToolRejectedError`` so the user's free-text feedback flows
+        # through the same path rather than being flattened into a
+        # generic boolean.
+        result = await runtime.request(approval)
+        if result.response == "reject":
+            raise ToolRejectedError(result.feedback)
         return True
+
+    def approval_brief(self) -> str:
+        """Return the ≤80-char one-liner surfaced to the approval prompt.
+
+        Default rendering: ``"<name>: <params>"`` truncated to 80
+        chars. Subclasses with richer context (e.g. the bundled
+        ``bash`` tool wanting to show the actual command) SHOULD
+        override for a clearer user-facing headline.
+        """
+        params = self.model_dump(mode="json")
+        rendered = f"{self.name}: {params}"
+        return rendered[:80]
 
     @classmethod
     def openai_function_spec(cls) -> dict[str, Any]:
@@ -427,7 +485,33 @@ async def dispatch(ev: Event, ctx: KernelContext) -> None:
         return
 
     if tool.requires_approval:
-        approved = await tool.pre_approve(ctx)
+        # Import locally to keep the approval subsystem optional at
+        # module-load time — tests exercising the dispatcher without
+        # the runtime still import cleanly.
+        from yaya.kernel.approval import ApprovalCancelledError, ToolRejectedError
+
+        try:
+            approved = await tool.pre_approve(ctx, session_id=ev.session_id)
+        except ApprovalCancelledError as exc:
+            await _emit_tool_error(
+                ctx,
+                ev,
+                call_id=call_id,
+                kind="rejected",
+                brief=f"approval {exc.reason} for tool {tool_name!r}"[:80],
+            )
+            return
+        except ToolRejectedError as exc:
+            await _emit_tool_error(
+                ctx,
+                ev,
+                call_id=call_id,
+                kind="rejected",
+                brief=(
+                    f"tool {tool_name!r} rejected: {exc.feedback}" if exc.feedback else f"tool {tool_name!r} rejected"
+                )[:80],
+            )
+            return
         if not approved:
             await _emit_tool_error(
                 ctx,

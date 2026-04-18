@@ -120,6 +120,21 @@ class KernelContext:
         self._plugin_name = plugin_name
 
     @property
+    def bus(self) -> EventBus:
+        """Underlying :class:`~yaya.kernel.bus.EventBus`.
+
+        Surfaced read-only so kernel-side subsystems that live outside
+        the plugin (the approval runtime, future dispatcher
+        helpers) can look themselves up by bus identity from code
+        executing inside a plugin's context without reaching into a
+        private attribute. Plugins should still emit via
+        :meth:`emit`; direct bus access is intended for kernel code
+        invoked *from* a plugin path (e.g. the default
+        :meth:`~yaya.kernel.tool.Tool.pre_approve`).
+        """
+        return self._bus
+
+    @property
     def logger(self) -> Any:
         """Plugin-scoped logger.
 

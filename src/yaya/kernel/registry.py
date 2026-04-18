@@ -63,6 +63,7 @@ from urllib.parse import urlparse
 
 from yaya.kernel.config import KernelConfig, load_config
 from yaya.kernel.events import Event, new_event
+from yaya.kernel.logging import get_plugin_logger
 from yaya.kernel.plugin import Category, KernelContext, Plugin
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import, breaks an import cycle.
@@ -558,7 +559,7 @@ class PluginRegistry:
         plugin_state.mkdir(parents=True, exist_ok=True)
         return KernelContext(
             bus=self._bus,
-            logger=logging.getLogger(f"yaya.plugin.{plugin.name}"),
+            logger=get_plugin_logger(plugin.name),
             config=self._kernel_config.plugin_config(plugin.name),
             state_dir=plugin_state,
             plugin_name=plugin.name,

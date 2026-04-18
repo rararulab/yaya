@@ -59,7 +59,13 @@ async def test_raising_subscriber_isolated() -> None:
     err = errors[0]
     assert err.kind == "plugin.error"
     assert err.source == "kernel"
-    assert err.payload == {"name": "bad-plugin", "error": "boom"}
+    # plugin.error payload now also carries `kind` + `error_hash` (issue #30);
+    # assert the original required fields here and the extras in the dedicated
+    # tests/kernel/test_errors.py.
+    assert err.payload["name"] == "bad-plugin"
+    assert err.payload["error"] == "boom"
+    assert err.payload["kind"] == "plugin_error"
+    assert len(err.payload["error_hash"]) == 8
 
 
 async def test_extension_namespace_routes() -> None:

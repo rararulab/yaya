@@ -8,7 +8,6 @@ this module is its Python surface. Kernel layering: no imports from
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
@@ -95,7 +94,7 @@ class KernelContext:
         self,
         *,
         bus: EventBus,
-        logger: logging.Logger,
+        logger: Any,
         config: Mapping[str, object],
         state_dir: Path,
         plugin_name: str,
@@ -105,6 +104,11 @@ class KernelContext:
         Args:
             bus: The kernel's running event bus.
             logger: Pre-scoped logger for this plugin (name already bound).
+                At runtime this is a ``loguru.Logger`` returned by
+                :func:`yaya.kernel.logging.get_plugin_logger`. Typed as
+                :data:`Any` so loguru does not leak into the Plugin ABI —
+                plugins call standard ``info`` / ``warning`` / ``error``
+                methods which loguru exposes API-compatibly with stdlib.
             config: Read-only plugin configuration.
             state_dir: Writable directory under ``<XDG_DATA_HOME>/yaya/plugins/<name>/``.
             plugin_name: The owning plugin's ``name``; used as ``source`` on emit.
@@ -116,8 +120,12 @@ class KernelContext:
         self._plugin_name = plugin_name
 
     @property
-    def logger(self) -> logging.Logger:
-        """Plugin-scoped logger."""
+    def logger(self) -> Any:
+        """Plugin-scoped logger.
+
+        Returns the loguru ``Logger`` bound with ``plugin=<name>`` —
+        typed as :data:`Any` per the constructor's rationale.
+        """
         return self._logger
 
     @property

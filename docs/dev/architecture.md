@@ -116,6 +116,44 @@ env vars set.
 matching `r".*(token|key|secret|password|passphrase).*"` (case-insensitive)
 render as `"***"` so dumping the config in a bug report is safe.
 
+## Logging and errors
+
+Loguru is the only logger. `src/yaya/kernel/logging.py::configure_logging`
+runs once from the CLI root callback and wires:
+
+- a stderr sink at `KernelConfig.log_level` (rich-coloured if stderr
+  is a TTY, plain otherwise; one JSON object per line when
+  `YAYA_LOG_JSON=1` so structured-log consumers can ingest the
+  stream verbatim);
+- a rotated file sink at `$XDG_STATE_HOME/yaya/logs/yaya.log` —
+  always DEBUG, 10 MiB rotation x 5 retained backups;
+- a stdlib `logging` intercept handler on the root logger so
+  third-party libraries still appear in the unified stream.
+
+A redaction filter scrubs any `record["extra"]` field whose key
+matches `r".*(token|key|secret|password|passphrase).*"` (the same
+regex `yaya config show` uses) and any value shaped like `sk-...`
+or `Bearer ...`. Plugins receive a pre-bound logger via
+`KernelContext.logger = get_plugin_logger(name)` so every record
+carries `plugin=<name>` for grep-by-plugin.
+
+The error taxonomy in `src/yaya/kernel/errors.py` is closed at 1.0:
+
+| Class                | When to raise                                           |
+|----------------------|---------------------------------------------------------|
+| `YayaError`          | Base — catch this to net every yaya-defined error.       |
+| `KernelError`        | Kernel invariant violated; let it propagate.             |
+| `PluginError`        | Recoverable plugin failure; bus isolates and reports.    |
+| `ConfigError`        | User-facing config problem; CLI prints, exits non-zero.  |
+| `YayaTimeoutError`   | Generic yaya-level timeout (NOT `asyncio.TimeoutError`). |
+
+When a handler raises `PluginError` (or any other exception), the
+bus's failure-isolation path synthesises a `plugin.error` event whose
+payload carries `kind` (the exception subclass name, or
+`"plugin_error"` for non-`PluginError` exceptions) and an 8-char
+`error_hash` derived from `sha1(traceback)[:8]`. Operators dedup
+noisy plugins in a log scrape by grouping on `error_hash`.
+
 ## Code style
 
 Python follows the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)

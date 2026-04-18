@@ -56,6 +56,29 @@ scope for yaya. Retrospective ceremony merged into the existing
 Karpathy wiki lint operation; no duplicate cadence.
 See: sources/bmad-method.md, ../dev/workflow.md
 
+## [2026-04-18] ingest | structured logging + error taxonomy (issue #30)
+Landed `src/yaya/kernel/logging.py` and `src/yaya/kernel/errors.py`:
+loguru-based stderr + rotated file sinks (10 MiB x 5 backups under
+`$XDG_STATE_HOME/yaya/logs/yaya.log`), JSON-per-line mode on
+`YAYA_LOG_JSON=1`, and a redaction filter scrubbing both secret-looking
+keys (`token`/`key`/`secret`/`password`/`passphrase`) and inline secret
+values (`sk-...`, `Bearer ...`). Stdlib `logging` records are routed
+through a depth-walking InterceptHandler installed on the root logger so
+third-party libs appear in the unified stream — the kernel modules keep
+`import logging` + `logging.getLogger(__name__)` rather than importing
+loguru directly. Plugins receive a pre-bound logger via
+`KernelContext.logger = get_plugin_logger(name)` (typed `Any` to keep
+loguru out of the Plugin ABI). Error taxonomy is closed: `YayaError`
+→ `KernelError`/`PluginError`/`ConfigError`/`YayaTimeoutError`. The bus's
+`_report_handler_failure` now annotates `plugin.error` payloads with
+`kind` (exception subclass name) plus an 8-char `error_hash` from
+`sha1(traceback)[:8]` so operators can dedupe noisy plugins in log scrapes.
+CLI gains `--log-level`; the existing `-v`/`-q` flags still work but
+`--log-level` wins. Hard stop avoided: did not shadow
+`builtins.TimeoutError` (renamed to `YayaTimeoutError`) — too many call
+sites catch the builtin with asyncio semantics in mind.
+See: ../../specs/kernel-logging.spec, ../../src/yaya/kernel/logging.py, ../../src/yaya/kernel/errors.py
+
 ## [2026-04-18] ingest | ordered config loading (issue #23)
 Landed `src/yaya/kernel/config.py`: a pydantic-settings `KernelConfig`
 that resolves settings in fixed order — CLI flags → `YAYA_*` env vars

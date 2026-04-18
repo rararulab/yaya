@@ -7,13 +7,13 @@ Command modules register themselves onto the app. Shared options
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 
 import typer
 from loguru import logger
 
 from yaya import __version__
+from yaya.kernel import KernelConfig, configure_logging, load_config
 
 app = typer.Typer(
     name="yaya",
@@ -28,18 +28,32 @@ class CLIState:
     json_output: bool = False
     verbose: int = 0
     quiet: bool = False
+    config: KernelConfig | None = None
 
 
-def _configure_logging(state: CLIState) -> None:
-    logger.remove()
-    if state.quiet:
-        return
-    level = "WARNING"
-    if state.verbose == 1:
-        level = "INFO"
-    elif state.verbose >= 2:
-        level = "DEBUG"
-    logger.add(sys.stderr, level=level, format="{level: <8} {message}")
+def _resolve_log_level(
+    *,
+    base: str,
+    log_level_flag: str | None,
+    verbose: int,
+    quiet: bool,
+) -> str:
+    """Reconcile the explicit ``--log-level`` flag with ``-v`` / ``-q``.
+
+    Precedence (highest first): ``--quiet`` short-circuits to CRITICAL,
+    then ``--log-level`` if provided, then ``-v`` count, then the
+    config-resolved default. Keeping the legacy verbosity flags makes
+    the agent-friendly CLI table unchanged for downstream scripts.
+    """
+    if quiet:
+        return "CRITICAL"
+    if log_level_flag is not None:
+        return log_level_flag.upper()
+    if verbose >= 2:
+        return "DEBUG"
+    if verbose == 1:
+        return "INFO"
+    return base.upper()
 
 
 @app.callback(invoke_without_command=True)
@@ -63,6 +77,11 @@ def _root(
         "--quiet",
         help="Suppress all log output.",
     ),
+    log_level: str | None = typer.Option(
+        None,
+        "--log-level",
+        help="Override log level (DEBUG, INFO, WARNING, ERROR). Defaults to config.",
+    ),
     version_flag: bool = typer.Option(
         False,
         "--version",
@@ -73,9 +92,19 @@ def _root(
     if version_flag:
         typer.echo(__version__)
         raise typer.Exit
-    state = CLIState(json_output=json_output, verbose=verbose, quiet=quiet)
-    _configure_logging(state)
+    config = load_config()
+    config.log_level = _resolve_log_level(
+        base=config.log_level,
+        log_level_flag=log_level,
+        verbose=verbose,
+        quiet=quiet,
+    )
+    configure_logging(config)
+    state = CLIState(json_output=json_output, verbose=verbose, quiet=quiet, config=config)
+    # Stash on ctx.obj so subcommands reuse the same resolved config
+    # without re-running the loader (deterministic but env-touching).
     ctx.obj = state
+    _ = logger  # keep import alive: re-exported for downstream `from yaya.cli import logger`
 
     if ctx.invoked_subcommand is None:
         typer.echo(ctx.get_help())

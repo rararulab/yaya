@@ -55,7 +55,8 @@ def test_injected_httpx_import_is_flagged(tmp_path: Path, scanner: Any) -> None:
     assert hits, "expected httpx import to be flagged"
     assert any(h.package == "httpx" for h in hits)
     assert all(h.surface == "llm-plugin-import" for h in hits)
-    assert any("llm_fake/plugin.py" in h.location for h in hits)
+    # Use os.sep-agnostic assertion — Windows renders path separators as ``\``.
+    assert any("llm_fake" in h.location and "plugin.py" in h.location for h in hits)
 
 
 def test_injected_requests_from_import_is_flagged(tmp_path: Path, scanner: Any) -> None:

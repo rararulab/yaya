@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#architecture">Architecture</a></li>
-        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#layering-rules">Layering rules</a></li><li><a href="#kernel-adapter-contract">Kernel ↔ adapter contract</a></li><li><a href="#specs-live-next-to-code">Specs live next to code</a></li><li><a href="#configuration">Configuration</a></li><li><a href="#code-style">Code style</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#layering-rules">Layering rules</a></li><li><a href="#kernel-adapter-contract">Kernel ↔ adapter contract</a></li><li><a href="#specs-live-next-to-code">Specs live next to code</a></li><li><a href="#configuration">Configuration</a></li><li><a href="#logging-and-errors">Logging and errors</a></li><li><a href="#code-style">Code style</a></li>
     </ul>
 </nav>
 </aside>
@@ -555,6 +555,62 @@ env vars set.</p>
 <p><code>yaya config show [--json]</code> is the read-only diagnostic surface. Keys
 matching <code>r".*(token|key|secret|password|passphrase).*"</code> (case-insensitive)
 render as <code>"***"</code> so dumping the config in a bug report is safe.</p>
+<h2 id="logging-and-errors">Logging and errors<a class="headerlink" href="#logging-and-errors" title="Permanent link">&para;</a></h2>
+<p>Loguru is the only logger. <code>src/yaya/kernel/logging.py::configure_logging</code>
+runs once from the CLI root callback and wires:</p>
+<ul>
+<li>a stderr sink at <code>KernelConfig.log_level</code> (rich-coloured if stderr
+  is a TTY, plain otherwise; one JSON object per line when
+  <code>YAYA_LOG_JSON=1</code> so structured-log consumers can ingest the
+  stream verbatim);</li>
+<li>a rotated file sink at <code>$XDG_STATE_HOME/yaya/logs/yaya.log</code> —
+  always DEBUG, 10 MiB rotation x 5 retained backups;</li>
+<li>a stdlib <code>logging</code> intercept handler on the root logger so
+  third-party libraries still appear in the unified stream.</li>
+</ul>
+<p>A redaction filter scrubs any <code>record["extra"]</code> field whose key
+matches <code>r".*(token|key|secret|password|passphrase).*"</code> (the same
+regex <code>yaya config show</code> uses) and any value shaped like <code>sk-...</code>
+or <code>Bearer ...</code>. Plugins receive a pre-bound logger via
+<code>KernelContext.logger = get_plugin_logger(name)</code> so every record
+carries <code>plugin=&lt;name&gt;</code> for grep-by-plugin.</p>
+<p>The error taxonomy in <code>src/yaya/kernel/errors.py</code> is closed at 1.0:</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>When to raise</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>YayaError</code></td>
+<td>Base — catch this to net every yaya-defined error.</td>
+</tr>
+<tr>
+<td><code>KernelError</code></td>
+<td>Kernel invariant violated; let it propagate.</td>
+</tr>
+<tr>
+<td><code>PluginError</code></td>
+<td>Recoverable plugin failure; bus isolates and reports.</td>
+</tr>
+<tr>
+<td><code>ConfigError</code></td>
+<td>User-facing config problem; CLI prints, exits non-zero.</td>
+</tr>
+<tr>
+<td><code>YayaTimeoutError</code></td>
+<td>Generic yaya-level timeout (NOT <code>asyncio.TimeoutError</code>).</td>
+</tr>
+</tbody>
+</table>
+<p>When a handler raises <code>PluginError</code> (or any other exception), the
+bus's failure-isolation path synthesises a <code>plugin.error</code> event whose
+payload carries <code>kind</code> (the exception subclass name, or
+<code>"plugin_error"</code> for non-<code>PluginError</code> exceptions) and an 8-char
+<code>error_hash</code> derived from <code>sha1(traceback)[:8]</code>. Operators dedup
+noisy plugins in a log scrape by grouping on <code>error_hash</code>.</p>
 <h2 id="code-style">Code style<a class="headerlink" href="#code-style" title="Permanent link">&para;</a></h2>
 <p>Python follows the <a href="https://google.github.io/styleguide/pyguide.html">Google Python Style Guide</a>
 with yaya overlays in <a href="../code-comments/">code-comments.md</a>. Enforced by

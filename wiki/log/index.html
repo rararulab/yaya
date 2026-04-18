@@ -453,7 +453,7 @@
 <nav>
     <ul>
         <li><a href="#wiki-log">Wiki Log</a></li>
-        <li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li>
+        <li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-structured-logging-error-taxonomy-issue-30">[2026-04-18] ingest | structured logging + error taxonomy (issue #30)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li>
     </ul>
 </nav>
 </aside>
@@ -510,6 +510,28 @@ party mode, and the BMB/TEA/BMGD/CIS sibling modules — out of
 scope for yaya. Retrospective ceremony merged into the existing
 Karpathy wiki lint operation; no duplicate cadence.
 See: sources/bmad-method.md, ../dev/workflow.md</p>
+<h2 id="2026-04-18-ingest-structured-logging-error-taxonomy-issue-30">[2026-04-18] ingest | structured logging + error taxonomy (issue #30)<a class="headerlink" href="#2026-04-18-ingest-structured-logging-error-taxonomy-issue-30" title="Permanent link">&para;</a></h2>
+<p>Landed <code>src/yaya/kernel/logging.py</code> and <code>src/yaya/kernel/errors.py</code>:
+loguru-based stderr + rotated file sinks (10 MiB x 5 backups under
+<code>$XDG_STATE_HOME/yaya/logs/yaya.log</code>), JSON-per-line mode on
+<code>YAYA_LOG_JSON=1</code>, and a redaction filter scrubbing both secret-looking
+keys (<code>token</code>/<code>key</code>/<code>secret</code>/<code>password</code>/<code>passphrase</code>) and inline secret
+values (<code>sk-...</code>, <code>Bearer ...</code>). Stdlib <code>logging</code> records are routed
+through a depth-walking InterceptHandler installed on the root logger so
+third-party libs appear in the unified stream — the kernel modules keep
+<code>import logging</code> + <code>logging.getLogger(__name__)</code> rather than importing
+loguru directly. Plugins receive a pre-bound logger via
+<code>KernelContext.logger = get_plugin_logger(name)</code> (typed <code>Any</code> to keep
+loguru out of the Plugin ABI). Error taxonomy is closed: <code>YayaError</code>
+→ <code>KernelError</code>/<code>PluginError</code>/<code>ConfigError</code>/<code>YayaTimeoutError</code>. The bus's
+<code>_report_handler_failure</code> now annotates <code>plugin.error</code> payloads with
+<code>kind</code> (exception subclass name) plus an 8-char <code>error_hash</code> from
+<code>sha1(traceback)[:8]</code> so operators can dedupe noisy plugins in log scrapes.
+CLI gains <code>--log-level</code>; the existing <code>-v</code>/<code>-q</code> flags still work but
+<code>--log-level</code> wins. Hard stop avoided: did not shadow
+<code>builtins.TimeoutError</code> (renamed to <code>YayaTimeoutError</code>) — too many call
+sites catch the builtin with asyncio semantics in mind.
+See: ../../specs/kernel-logging.spec, ../../src/yaya/kernel/logging.py, ../../src/yaya/kernel/errors.py</p>
 <h2 id="2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)<a class="headerlink" href="#2026-04-18-ingest-ordered-config-loading-issue-23" title="Permanent link">&para;</a></h2>
 <p>Landed <code>src/yaya/kernel/config.py</code>: a pydantic-settings <code>KernelConfig</code>
 that resolves settings in fixed order — CLI flags → <code>YAYA_*</code> env vars

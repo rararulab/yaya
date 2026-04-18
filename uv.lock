@@ -1484,6 +1484,7 @@ dev = [
     { name = "ruff" },
     { name = "syrupy" },
     { name = "tox-uv" },
+    { name = "websockets" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -1521,6 +1522,7 @@ dev = [
     { name = "ruff", specifier = ">=0.7.0" },
     { name = "syrupy", specifier = ">=4.7.0" },
     { name = "tox-uv", specifier = ">=1.16.0" },
+    { name = "websockets", specifier = ">=13.0" },
 ]
 docs = [
     { name = "mkdocs", specifier = ">=1.6.0" },

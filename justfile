@@ -61,7 +61,7 @@ test-e2e:
     python3.14 -m venv .smoke-venv
     . .smoke-venv/bin/activate
     python -m pip install --upgrade pip >/dev/null
-    python -m pip install "$wheel" pytest pytest-timeout pytest-bdd >/dev/null
+    python -m pip install "$wheel" pytest pytest-timeout pytest-bdd pytest-asyncio websockets >/dev/null
     python -m pytest tests/e2e -v
 
 # Remove build artifacts

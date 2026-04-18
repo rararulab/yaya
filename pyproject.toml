@@ -57,6 +57,7 @@ dev = [
     "pytest-bdd>=8.0",
     "hypothesis>=6.115.0",
     "syrupy>=4.7.0",
+    "websockets>=13.0",
 ]
 docs = [
     "mkdocs>=1.6.0",

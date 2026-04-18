@@ -467,7 +467,7 @@ async def test_stop_runs_on_unload_in_reverse_order(tmp_path: Path) -> None:
     await bus.close()
 
 
-def testvalidate_install_source_accepts_common_forms(tmp_path: Path) -> None:
+def test_validate_install_source_accepts_common_forms(tmp_path: Path) -> None:
     """PyPI names, absolute paths, and file:// / https:// URLs are accepted."""
     validate_install_source("yaya-tool-bash")
     validate_install_source("yaya-tool-bash==1.2.3")
@@ -476,7 +476,7 @@ def testvalidate_install_source_accepts_common_forms(tmp_path: Path) -> None:
     validate_install_source("https://example.com/plugin.whl")
 
 
-def testvalidate_install_source_rejects_hazards() -> None:
+def test_validate_install_source_rejects_hazards() -> None:
     """Unsupported schemes, empty input, and embedded newlines are rejected.
 
     Shell-metachar filtering is deliberately NOT in scope — safety comes
@@ -516,8 +516,20 @@ async def test_run_package_command_terminates_child_on_cancel() -> None:
     real_exec = asyncio.create_subprocess_exec
     sleeper_argv = (sys.executable, "-c", "import time; time.sleep(30)")
 
+    terminate_calls: list[int] = []
+
     async def _hijacked_exec(*_a, **kw):  # type: ignore[no-untyped-def]
         proc = await real_exec(*sleeper_argv, **kw)
+        # Spy on ``terminate`` to prove the cancel handler actually ran it,
+        # not merely that the child died for some other reason. We wrap
+        # rather than replace so the real SIGTERM still fires.
+        real_terminate = proc.terminate
+
+        def _spy_terminate() -> None:
+            terminate_calls.append(1)
+            real_terminate()
+
+        proc.terminate = _spy_terminate  # type: ignore[method-assign]
         spawned.append(proc)
         return proc
 
@@ -530,6 +542,11 @@ async def test_run_package_command_terminates_child_on_cancel() -> None:
         with pytest.raises(asyncio.CancelledError):
             await task
 
+    # The cancel handshake MUST have invoked terminate() at least once —
+    # proves the except branch ran, not just that the child happened to
+    # exit. kill() is only the fallback after a 5s grace; we do not
+    # require it here.
+    assert terminate_calls, "proc.terminate() was not called on cancel"
     # The child must be reaped — returncode is non-None once wait() resolved.
     proc = spawned[0]
     assert proc.returncode is not None, "child process was not terminated on cancel"

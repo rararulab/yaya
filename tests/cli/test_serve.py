@@ -319,6 +319,83 @@ async def test_run_serve_teardown_runs_when_startup_signalled_early(
 
 
 @pytest.mark.asyncio
+async def test_run_serve_registers_signal_handlers_before_registry_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Signal handlers must be wired BEFORE awaiting ``registry.start``.
+
+    Regression for finding #1 / lesson #29. The prior
+    ``teardown_runs_when_startup_signalled_early`` test passed its own
+    ``shutdown_event`` (``owned_event=False``), so the ``add_signal_handler``
+    branch was never exercised — it failed to prove the ordering rule.
+    This test takes the ``owned_event=True`` path (no shutdown_event
+    argument), records the call timestamps of
+    ``loop.add_signal_handler`` and ``PluginRegistry.start``, and asserts
+    the former happens first.
+
+    Fast exit: ``registry.start`` is monkeypatched to raise ``SystemExit``
+    so ``run_serve`` unwinds immediately after signal handlers are
+    observed — we still assert ordering via timestamps captured before
+    the raise.
+    """
+    from yaya.cli.commands import serve as serve_mod
+
+    events: list[tuple[str, float]] = []
+
+    real_add = asyncio.get_event_loop_policy  # placeholder to satisfy lint
+    del real_add
+
+    # Wrap add_signal_handler on the running loop. We monkeypatch via the
+    # instance at call time by intercepting ``asyncio.get_running_loop``
+    # and returning a proxy whose ``add_signal_handler`` records + delegates.
+    real_get_running_loop = asyncio.get_running_loop
+
+    def _proxied_get_running_loop():  # type: ignore[no-untyped-def]
+        loop = real_get_running_loop()
+        original = loop.add_signal_handler
+
+        def _recording(sig, callback, *args):  # type: ignore[no-untyped-def]
+            events.append(("add_signal_handler", asyncio.get_running_loop().time()))
+            # Platforms without signal support (Windows ProactorEventLoop)
+            # raise NotImplementedError — the ordering is what we verify;
+            # actual signal delivery is out of scope for this test.
+            with contextlib.suppress(NotImplementedError, RuntimeError):
+                original(sig, callback, *args)
+
+        loop.add_signal_handler = _recording  # type: ignore[method-assign]
+        return loop
+
+    monkeypatch.setattr(serve_mod.asyncio, "get_running_loop", _proxied_get_running_loop)
+
+    async def _recording_start(self) -> None:  # type: ignore[no-untyped-def]
+        events.append(("registry.start", asyncio.get_running_loop().time()))
+        # Fail fast so run_serve returns 1 via its startup error branch —
+        # we have already captured the ordering we care about.
+        raise RuntimeError("fast-exit for ordering test")
+
+    monkeypatch.setattr(serve_mod.PluginRegistry, "start", _recording_start)
+
+    state = CLIState(json_output=True)
+    # owned_event=True → signal handlers must be installed.
+    code = await run_serve(
+        state,
+        port=0,
+        no_open=True,
+        strategy="react",
+        dev=False,
+    )
+    # startup_failed path returns 1.
+    assert code == 1
+
+    signal_calls = [i for i, (name, _) in enumerate(events) if name == "add_signal_handler"]
+    start_calls = [i for i, (name, _) in enumerate(events) if name == "registry.start"]
+    assert signal_calls, "add_signal_handler was not called on the owned-event path"
+    assert start_calls, "registry.start was not reached"
+    # Every signal-handler install must come strictly before registry.start.
+    assert max(signal_calls) < min(start_calls), f"signal handlers installed AFTER registry.start; order: {events}"
+
+
+@pytest.mark.asyncio
 async def test_run_serve_calls_webbrowser_in_executor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

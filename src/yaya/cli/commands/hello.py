@@ -103,6 +103,7 @@ def register(app: typer.Typer) -> None:
         timeout: float = typer.Option(
             _SENTINEL_TIMEOUT_S,
             "--timeout",
+            # If CI-machine flakes surface on tight timeouts, raise the floor to 0.5.
             min=0.1,
             help="Seconds to wait for the sentinel event before declaring the bus unresponsive.",
         ),

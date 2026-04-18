@@ -100,7 +100,8 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
         Process exit code (``0`` on clean shutdown, non-zero on startup
         failure).
     """
-    del strategy  # accepted via Click choice; real dispatch ships with #23.
+    # accepted for forward-compat; click.Choice already narrowed the value to "react".
+    del strategy
 
     cfg = kernel_config or load_config()
 
@@ -199,6 +200,9 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
             # Best-effort; ``webbrowser.open`` can block for seconds on
             # macOS (launching Safari), so run it on the default
             # executor instead of stalling the event loop.
+            # best-effort: executor thread may outlive Ctrl+C since asyncio.run()'s
+            # default-executor shutdown does not forcibly join in-flight work.
+            # Acceptable for a local dev tool; flagged in PR #85 re-review.
             try:
                 await asyncio.get_running_loop().run_in_executor(
                     None,

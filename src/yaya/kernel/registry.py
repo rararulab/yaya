@@ -824,6 +824,9 @@ async def _run_package_command(args: list[str]) -> None:
     )
     try:
         _stdout, stderr = await proc.communicate()
+    # PEP 758 (py3.12+) tuple-except without parens; ruff format normalizes
+    # parenthesised form back to this under ``target-version = "py314"``
+    # (lesson #16). Both catch the same BaseException subclasses.
     except asyncio.CancelledError, KeyboardInterrupt:
         # Ask politely, then force — never return until the child is
         # reaped so we do not leak a defunct-hunting zombie.

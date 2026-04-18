@@ -1,3 +1,4 @@
+# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 """SQLite memory plugin implementation.
 
 Schema::

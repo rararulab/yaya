@@ -1,3 +1,4 @@
+# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
 """Bash tool plugin implementation.
 
 Argv-only by construction — ``shell=True`` is never used because it
@@ -10,6 +11,11 @@ Timeout defaults to 30 s; on overrun the child is killed and the
 result payload reports ``error="timeout"``. ``request_id`` is echoed
 on every emit so the agent loop can correlate concurrent tool calls
 (lesson #15).
+
+The file-level ``pyright: reportUnknown*=false`` pragmas silence
+``Unknown`` propagation through ``Event.payload: dict[str, Any]``;
+every outbound payload is a plain ``dict[str, Any]`` by construction
+so the bus contract stays typed.
 """
 
 from __future__ import annotations
@@ -64,7 +70,7 @@ class BashTool:
         args = cast("dict[str, Any]", raw_args) if isinstance(raw_args, dict) else {}
         cmd: Any = args.get("cmd")
 
-        cmd_list: list[Any] = list(cmd) if isinstance(cmd, list) else []  # pyright: ignore[reportUnknownArgumentType]
+        cmd_list: list[Any] = list(cmd) if isinstance(cmd, list) else []
         if not (isinstance(cmd, list) and all(isinstance(x, str) for x in cmd_list)):
             await self._emit_result(
                 ctx,

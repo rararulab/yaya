@@ -105,6 +105,12 @@ from typing import Any
 
 from yaya.kernel.bus import EventBus, Subscription
 from yaya.kernel.events import Event, Message, new_event
+from yaya.kernel.payload import (
+    payload_dict,
+    payload_int,
+    payload_list_of_dicts,
+    payload_str,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -327,7 +333,7 @@ class AgentLoop:
         """
         session_id = user_ev.session_id
         state = _TurnState(
-            messages=[{"role": "user", "content": user_ev.payload.get("text", "")}],
+            messages=[{"role": "user", "content": payload_str(user_ev.payload, "text")}],
         )
 
         try:
@@ -373,20 +379,15 @@ class AgentLoop:
             if response.kind == "llm.call.error":
                 await self._emit_kernel_error(
                     session_id,
-                    f"llm_error: {response.payload.get('error', 'unknown')}",
+                    f"llm_error: {payload_str(response.payload, 'error', 'unknown')}",
                 )
                 return True
-            state.last_llm_text = response.payload.get("text", "") or state.last_llm_text
-            raw_tool_calls = response.payload.get("tool_calls")
-            tool_calls: list[dict[str, Any]] = (
-                [dict(tc) for tc in raw_tool_calls] if isinstance(raw_tool_calls, list) else []
-            )
-            state.last_tool_calls = tool_calls
+            state.last_llm_text = payload_str(response.payload, "text") or state.last_llm_text
+            state.last_tool_calls = payload_list_of_dicts(response.payload, "tool_calls")
             state.messages.append({"role": "assistant", "content": state.last_llm_text})
             return False
         if next_step == "tool":
-            raw_tool_call = decision.payload.get("tool_call") or {}
-            tool_call: dict[str, Any] = dict(raw_tool_call) if isinstance(raw_tool_call, dict) else {}
+            tool_call = payload_dict(decision.payload, "tool_call")
             result = await self._call_tool(session_id, tool_call)
             state.last_tool_result = dict(result.payload)
             return False
@@ -424,12 +425,8 @@ class AgentLoop:
 
     async def _query_memory(self, session_id: str, decision: Event) -> list[dict[str, Any]]:
         """Run a ``memory.query`` round-trip using the strategy's parameters."""
-        query = str(decision.payload.get("query", ""))
-        k_raw = decision.payload.get("k", 5)
-        try:
-            k = int(k_raw) if k_raw is not None else 5
-        except TypeError, ValueError:
-            k = 5
+        query = payload_str(decision.payload, "query")
+        k = payload_int(decision.payload, "k", 5)
         req = new_event(
             "memory.query",
             {"query": query, "k": k},
@@ -437,9 +434,7 @@ class AgentLoop:
             source=_SOURCE,
         )
         result = await self._request(req)
-        raw_hits = result.payload.get("hits") or []
-        hits: list[dict[str, Any]] = [dict(h) for h in raw_hits] if isinstance(raw_hits, list) else []
-        return hits
+        return payload_list_of_dicts(result.payload, "hits")
 
     async def _call_llm(
         self,
@@ -452,23 +447,23 @@ class AgentLoop:
         The strategy's decision payload supplies provider/model/params; the
         loop assembles the message list it has been accumulating.
         """
-        payload: dict[str, Any] = {
-            "provider": decision.payload.get("provider") or "",
-            "model": decision.payload.get("model") or "",
+        llm_payload: dict[str, Any] = {
+            "provider": payload_str(decision.payload, "provider"),
+            "model": payload_str(decision.payload, "model"),
             "messages": list(messages),
-            "params": dict(decision.payload.get("params") or {}),
+            "params": payload_dict(decision.payload, "params"),
         }
-        tools = decision.payload.get("tools")
-        if tools is not None:
-            payload["tools"] = tools
-        req = new_event("llm.call.request", payload, session_id=session_id, source=_SOURCE)
+        tools = payload_list_of_dicts(decision.payload, "tools")
+        if tools:
+            llm_payload["tools"] = tools
+        req = new_event("llm.call.request", llm_payload, session_id=session_id, source=_SOURCE)
         return await self._request(req)
 
     async def _call_tool(self, session_id: str, tool_call: dict[str, Any]) -> Event:
         """Emit ``tool.call.start`` for adapters, then run the tool round-trip."""
-        tool_id = str(tool_call.get("id", ""))
-        name = str(tool_call.get("name", ""))
-        args = dict(tool_call.get("args", {}))
+        tool_id = payload_str(tool_call, "id")
+        name = payload_str(tool_call, "name")
+        args = payload_dict(tool_call, "args")
 
         # Broadcast to adapters so the UI can render progress. This is a
         # fire-and-forget signal; there is no corresponding response event.
@@ -507,8 +502,8 @@ class AgentLoop:
 
     async def _maybe_write_memory(self, session_id: str, decision: Event) -> None:
         """Honor an optional ``memory.write`` request flagged by the strategy."""
-        entry = decision.payload.get("write_memory")
-        if not isinstance(entry, dict):
+        entry = payload_dict(decision.payload, "write_memory")
+        if not entry:
             return
         await self._bus.publish(
             new_event(

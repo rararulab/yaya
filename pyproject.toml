@@ -101,26 +101,22 @@ reportMissingTypeStubs = false
 # Narrowing-related flags worth surfacing explicitly (strict turns them on,
 # but pinning them here means a future `typeCheckingMode = "basic"` can't
 # silently relax the bar).
-reportUnnecessaryTypeIgnoreComment = "warning"
+reportUnnecessaryTypeIgnoreComment = "error"
 reportImplicitOverride = "error"
-reportShadowedImports = "error"
+# `reportShadowedImports` removed because pyright 1.1.400 does not
+# recognize it (Config unrecognized). If upstream adds it back as a
+# real rule, reinstate with severity "error".
 reportUninitializedInstanceVariable = "error"
 reportInvalidTypeVarUse = "error"
 # typer registers commands via decorators — pyright can't see that a
 # function is "used" through @app.command(). Disabling globally is the
 # documented workaround; the equivalent check for dead code is ruff F401.
 reportUnusedFunction = "none"
-# Cross-class private access (_foo) is common for in-module helpers;
-# surface it as a warning rather than a hard error.
-reportPrivateUsage = "warning"
-# The Unknown* triad fires when Any transits a typed boundary. Mypy's
-# warn_return_any covers the genuine leaks; pyright's strict-mode
-# version is louder and fires on every dict/list access downstream of
-# `payload: dict[str, Any]`. Keep them as warnings so real regressions
-# (missing returns, bad narrowing) still error.
-reportUnknownVariableType = "warning"
-reportUnknownArgumentType = "warning"
-reportUnknownMemberType = "warning"
+# Every other rule stays at strict-mode defaults (error). Real bugs —
+# untyped vars, Unknown transits, private-API reaches across classes —
+# fail the build. If a specific callsite is a legitimate tool gap,
+# suppress it with an explicit `# pyright: ignore[<rule>]` comment on
+# the line and say why in the diff.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

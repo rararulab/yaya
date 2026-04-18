@@ -204,3 +204,28 @@ types mirror `events.py` with an exhaustive `assertNever` (lesson
 19). CI gains a Web UI job that runs `npm run check/test/build` and
 fails if `static/` drifts.
 See: ../../specs/plugin-web.spec, ../../src/yaya/plugins/web/, ../dev/web-ui.md
+
+## [2026-04-18] ingest | approval runtime PR #83 review fixes (issue #28)
+P2/P3 follow-up on the merged approval-runtime PR. Three code fixes:
+(P2-1) `ApprovalRuntime.stop()` now emits
+`approval.cancelled(reason="shutdown")` for each pending approval
+before resolving futures — the literal was previously unreachable.
+(P2-2) Tool dispatcher widens its `pre_approve` `try/except` from the
+two sentinel error types to `except Exception`, so arbitrary subclass
+crashes translate to a terminal `tool.error(kind="rejected")` instead
+of leaking through the bus recursion guard and orphaning the
+originating `tool.call.request`. (P2-3) `install_approval_runtime`
+now distinguishes "no `timeout_s` passed" from "default value passed"
+via a sentinel and raises `RuntimeError` when re-installed with a
+different override rather than silently dropping it. Doc notes added
+for parallel-gated-call UI grouping (`docs/dev/plugin-protocol.md`
+adapter responsibilities), non-JSON fingerprinting rationale, and the
+single-event-loop invariant (`approval.py` module docstring). New
+lesson #29 captures the rule: ALL pre-`run` checkpoint exceptions
+must translate to a terminal `tool.error` so the caller's future
+resolves. Tests: shutdown-cancelled-per-pending,
+pre_approve crash → tool.error, install-with-different-timeout
+raises, registry install-before-`kernel.ready` /
+uninstall-before-`kernel.shutdown` ordering, cross-session
+end-to-end round-trip (lesson #2 regression).
+See: ../../src/yaya/kernel/approval.py, ../../src/yaya/kernel/tool.py, ../dev/plugin-protocol.md, lessons-learned.md

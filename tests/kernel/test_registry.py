@@ -356,6 +356,74 @@ async def test_remove_bundled_plugin_raises(tmp_path: Path) -> None:
     await bus.close()
 
 
+async def test_approval_runtime_installed_before_kernel_ready(tmp_path: Path) -> None:
+    """The approval runtime MUST be live by the time ``kernel.ready`` fires.
+
+    Locks in the contract that any plugin / loop subscribed to
+    ``kernel.ready`` can already publish ``approval.request`` (or look
+    up the runtime) without racing the registry's install step.
+    """
+    from yaya.kernel.approval import get_approval_runtime
+
+    bus = EventBus()
+    seen_runtime: list[bool] = []
+
+    async def on_ready(ev: Event) -> None:
+        _ = ev
+        seen_runtime.append(get_approval_runtime(bus) is not None)
+
+    bus.subscribe("kernel.ready", on_ready, source="observer")
+
+    with patch(
+        "yaya.kernel.registry.entry_points",
+        side_effect=_fake_entry_points([]),
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path)
+        await registry.start()
+
+    # Drain so the kernel.ready handler runs.
+    await asyncio.wait_for(_drain_until(lambda: bool(seen_runtime), bus), timeout=1.0)
+    assert seen_runtime == [True]
+    assert get_approval_runtime(bus) is not None
+
+    await registry.stop()
+    await bus.close()
+
+
+async def test_approval_runtime_uninstalled_before_kernel_shutdown(tmp_path: Path) -> None:
+    """``stop`` MUST uninstall the approval runtime before ``kernel.shutdown``.
+
+    Ensures any handler reacting to ``kernel.shutdown`` does not see a
+    half-torn-down runtime that would deadlock on the per-request
+    timeout when it tries to drain pending approvals.
+    """
+    from yaya.kernel.approval import get_approval_runtime
+
+    bus = EventBus()
+    observed: list[bool] = []
+
+    async def on_shutdown(ev: Event) -> None:
+        _ = ev
+        observed.append(get_approval_runtime(bus) is None)
+
+    bus.subscribe("kernel.shutdown", on_shutdown, source="observer")
+
+    with patch(
+        "yaya.kernel.registry.entry_points",
+        side_effect=_fake_entry_points([]),
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path)
+        await registry.start()
+        assert get_approval_runtime(bus) is not None
+        await registry.stop()
+
+    await asyncio.wait_for(_drain_until(lambda: bool(observed), bus), timeout=1.0)
+    assert observed == [True]
+    assert get_approval_runtime(bus) is None
+
+    await bus.close()
+
+
 async def test_stop_runs_on_unload_in_reverse_order(tmp_path: Path) -> None:
     """``stop`` invokes ``on_unload`` on every loaded plugin and emits kernel.shutdown."""
     bus = EventBus()

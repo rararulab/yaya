@@ -501,6 +501,10 @@ async def test_approve_for_session_is_per_session() -> None:
 
         # Each session prompts at least once.
         assert len(request_events) == 2
+        # And the tool actually ran on each session — guards against a
+        # regression where the cache silently swallows the second call's
+        # ``run`` invocation (lesson #10: silent no-op primitives).
+        assert len(_GatedTool.run_counter) == 2
     finally:
         await uninstall_approval_runtime(bus)
         await bus.close()
@@ -601,6 +605,206 @@ async def test_invalid_response_coerces_to_reject() -> None:
         bus.subscribe("approval.request", bad_adapter, source="adapter")
         result = await runtime.request(approval)
         assert result.response == "reject"
+    finally:
+        await uninstall_approval_runtime(bus)
+        await bus.close()
+
+
+# ---------------------------------------------------------------------------
+# P2-1 — stop() emits approval.cancelled(reason="shutdown") for each pending.
+# ---------------------------------------------------------------------------
+
+
+async def test_stop_emits_shutdown_cancelled_for_each_pending() -> None:
+    """Every pending approval at shutdown produces a matching cancelled event.
+
+    Pre-fix the ``"shutdown"`` literal in :class:`ApprovalCancelledError`
+    was reachable but the ``approval.cancelled`` envelope's matching
+    literal was unreachable: ``stop()`` only set the future's exception
+    and skipped emit. Adapters that watched ``approval.cancelled`` to
+    withdraw stale prompts therefore never saw shutdown reasons.
+    """
+    bus = EventBus()
+    cancelled: list[Event] = []
+
+    async def on_cancelled(ev: Event) -> None:
+        cancelled.append(ev)
+
+    bus.subscribe("approval.cancelled", on_cancelled, source="observer")
+    try:
+        runtime = await install_approval_runtime(bus, timeout_s=5.0)
+        approvals = [
+            Approval(id=f"a-shut-{i}", tool_name="gated", params={"i": i}, brief="x", session_id="s") for i in range(2)
+        ]
+
+        async def wait_for(a: Approval) -> ApprovalResult:
+            return await runtime.request(a)
+
+        tasks = [asyncio.create_task(wait_for(a)) for a in approvals]
+        # Let both requests register their futures before shutdown.
+        await asyncio.sleep(0.01)
+        await runtime.stop()
+        for task in tasks:
+            with pytest.raises(ApprovalCancelledError) as exc_info:
+                await task
+            assert exc_info.value.reason == "shutdown"
+
+        # Drain so the publish bookkeeping settles before we assert.
+        await asyncio.sleep(0.01)
+        observed_ids = {ev.payload["id"] for ev in cancelled if ev.payload.get("reason") == "shutdown"}
+        assert observed_ids == {"a-shut-0", "a-shut-1"}
+    finally:
+        await bus.close()
+
+
+# ---------------------------------------------------------------------------
+# P2-2 — subclass pre_approve crash translates to tool.error(kind="rejected").
+# ---------------------------------------------------------------------------
+
+
+class _CrashyApprovalTool(Tool):
+    """A tool whose ``pre_approve`` raises an unexpected exception.
+
+    The dispatcher must translate the failure into a terminal
+    ``tool.error`` so the caller's ``tool.call.request`` future does not
+    orphan (lesson #29).
+    """
+
+    name: ClassVar[str] = "crashy"
+    description: ClassVar[str] = "pre_approve always crashes."
+    requires_approval: ClassVar[bool] = True
+
+    async def pre_approve(self, ctx: KernelContext, *, session_id: str) -> bool:
+        _ = ctx, session_id
+        raise RuntimeError("boom")
+
+    async def run(self, ctx: KernelContext) -> ToolReturnValue:  # pragma: no cover - never reached
+        _ = ctx
+        return ToolOk(brief="unreachable", display=TextBlock(text="never"))
+
+
+async def test_pre_approve_crash_translates_to_tool_error() -> None:
+    """An arbitrary subclass exception in ``pre_approve`` must surface as tool.error."""
+    bus = EventBus()
+    install_dispatcher(bus)
+    register_tool(_CrashyApprovalTool)
+    errors: list[Event] = []
+
+    async def collect(ev: Event) -> None:
+        errors.append(ev)
+
+    bus.subscribe("tool.error", collect, source="observer")
+    try:
+        await install_approval_runtime(bus, timeout_s=5.0)
+        await _emit_tool_call(
+            bus,
+            tool_name="crashy",
+            args={},
+            session_id="sess-crash",
+            call_id="c-crash",
+        )
+
+        # Wait for the dispatcher's error emit. No tool.call.result lands
+        # because the dispatcher returns early after emitting tool.error.
+        deadline = asyncio.get_running_loop().time() + 2.0
+        while asyncio.get_running_loop().time() < deadline:
+            if errors:
+                break
+            await asyncio.sleep(0.01)
+        assert errors, "dispatcher must emit tool.error when pre_approve crashes"
+        payload = errors[0].payload
+        assert payload["kind"] == "rejected"
+        assert "pre_approve crashed" in payload["brief"]
+        assert payload["id"] == "c-crash"
+    finally:
+        await uninstall_approval_runtime(bus)
+        await bus.close()
+
+
+# ---------------------------------------------------------------------------
+# P2-3 — install with a different timeout raises rather than silently dropping.
+# ---------------------------------------------------------------------------
+
+
+async def test_install_with_different_timeout_raises() -> None:
+    """Re-installing with a non-matching ``timeout_s`` must fail loud."""
+    bus = EventBus()
+    try:
+        await install_approval_runtime(bus, timeout_s=5.0)
+        # Same value (or unspecified) is fine — idempotent path.
+        await install_approval_runtime(bus, timeout_s=5.0)
+        await install_approval_runtime(bus)
+        # Different value must raise.
+        with pytest.raises(RuntimeError, match="already installed"):
+            await install_approval_runtime(bus, timeout_s=10.0)
+    finally:
+        await uninstall_approval_runtime(bus)
+        await bus.close()
+
+
+# ---------------------------------------------------------------------------
+# AC-05 (extended) — cross-session round-trip end-to-end through dispatcher.
+# ---------------------------------------------------------------------------
+
+
+async def test_cross_session_roundtrip_does_not_deadlock() -> None:
+    """End-to-end: tool call on sess-A, approval response on kernel session.
+
+    Reproduces the failure mode lesson #2 was written for. A naïve
+    implementation that routes ``approval.response`` on the originating
+    tool-call session deadlocks here because the session worker is
+    blocked inside ``runtime.request``. The runtime routes responses on
+    ``"kernel"`` so a separate worker resolves the future and the
+    original session worker can wake up to publish ``tool.call.result``.
+    """
+    _GatedTool.run_counter.clear()
+    bus = EventBus()
+    install_dispatcher(bus)
+    register_tool(_GatedTool)
+    results: list[Event] = []
+
+    async def collect_results(ev: Event) -> None:
+        results.append(ev)
+
+    bus.subscribe("tool.call.result", collect_results, source="observer")
+
+    async def adapter(ev: Event) -> None:
+        # Adapter receives approval.request on session "kernel" and
+        # publishes approval.response on the same routing session.
+        assert ev.session_id == "kernel"
+        await bus.publish(
+            new_event(
+                "approval.response",
+                {"id": ev.payload["id"], "response": "approve"},
+                session_id="kernel",
+                source="adapter",
+            )
+        )
+
+    bus.subscribe("approval.request", adapter, source="adapter")
+    try:
+        await install_approval_runtime(bus, timeout_s=5.0)
+        await _emit_tool_call(
+            bus,
+            tool_name="gated",
+            args={"payload": "cross-session"},
+            session_id="sess-A",
+            call_id="c-cross",
+        )
+
+        async def wait_for_result() -> Event:
+            while True:
+                for ev in results:
+                    if ev.payload.get("id") == "c-cross":
+                        return ev
+                await asyncio.sleep(0.01)
+
+        ev = await asyncio.wait_for(wait_for_result(), timeout=1.0)
+        assert ev.payload["ok"] is True
+        # The result rides the ORIGINATING tool-call session, not the
+        # approval routing session — that is the contract end-to-end.
+        assert ev.session_id == "sess-A"
+        assert len(_GatedTool.run_counter) == 1
     finally:
         await uninstall_approval_runtime(bus)
         await bus.close()

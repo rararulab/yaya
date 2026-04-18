@@ -622,6 +622,44 @@ was reviewed.
 
 ---
 
+## 29. Subclass `pre_approve` exceptions silently orphan tool calls
+
+**Symptom** — A `Tool` subclass overrides `pre_approve` and raises
+something other than `ApprovalCancelledError` / `ToolRejectedError`
+(say a `KeyError` from a custom allowlist lookup, or a stray
+`AssertionError` from a defensive check). The dispatcher's narrow
+`except` only catches the two sentinel errors, so the unexpected
+exception propagates back to the bus, surfaces as a `plugin.error`
+with `source="kernel"`, hits the bus's recursion guard
+(`_report_handler_failure` short-circuits kernel-source failures),
+and gets dropped. The originating `tool.call.request` is now an
+orphan: no `tool.call.result`, no `tool.error`, and the agent loop
+hangs on the unresolved future until the entire kernel shuts down.
+
+**Root cause** — Any checkpoint inserted **between** a request event
+and its terminal result event must translate ALL unexpected
+exceptions to a terminal event. Catching only the "expected" sentinel
+types is brittle: subclasses, third-party tools, and even stdlib
+calls inside the checkpoint can raise something the dispatcher never
+imagined, and once the failure escapes the checkpoint the request
+event has nowhere to land.
+
+**Rule** — Wrap every pre-`run` checkpoint in `except Exception`
+(NOT `BaseException`, so cooperative cancellation still works), log
+with `_logger.exception(...)`, and emit a terminal `tool.error` so
+the caller's future resolves. The same rule applies to any future
+checkpoint in the same dispatch path (rate limit, capability check,
+sandbox setup, ...).
+
+**Reference** — PR #83 review finding P2-2.
+`src/yaya/kernel/tool.py::dispatch` (the `if tool.requires_approval:`
+block). Test:
+`tests/kernel/test_approval.py::test_pre_approve_crash_translates_to_tool_error`.
+Related to lesson #15 (silent "no request_id" drops hang plugin
+authors) — same family of "request lost without trace" hazards.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

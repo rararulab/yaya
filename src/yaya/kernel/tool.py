@@ -484,43 +484,8 @@ async def dispatch(ev: Event, ctx: KernelContext) -> None:
         )
         return
 
-    if tool.requires_approval:
-        # Import locally to keep the approval subsystem optional at
-        # module-load time — tests exercising the dispatcher without
-        # the runtime still import cleanly.
-        from yaya.kernel.approval import ApprovalCancelledError, ToolRejectedError
-
-        try:
-            approved = await tool.pre_approve(ctx, session_id=ev.session_id)
-        except ApprovalCancelledError as exc:
-            await _emit_tool_error(
-                ctx,
-                ev,
-                call_id=call_id,
-                kind="rejected",
-                brief=f"approval {exc.reason} for tool {tool_name!r}"[:80],
-            )
-            return
-        except ToolRejectedError as exc:
-            await _emit_tool_error(
-                ctx,
-                ev,
-                call_id=call_id,
-                kind="rejected",
-                brief=(
-                    f"tool {tool_name!r} rejected: {exc.feedback}" if exc.feedback else f"tool {tool_name!r} rejected"
-                )[:80],
-            )
-            return
-        if not approved:
-            await _emit_tool_error(
-                ctx,
-                ev,
-                call_id=call_id,
-                kind="rejected",
-                brief=f"tool {tool_name!r} rejected by pre_approve",
-            )
-            return
+    if tool.requires_approval and not await _run_pre_approve(tool, ev, ctx, call_id=call_id, tool_name=tool_name):
+        return
 
     result: Any
     try:
@@ -549,6 +514,80 @@ async def dispatch(ev: Event, ctx: KernelContext) -> None:
         },
         session_id=ev.session_id,
     )
+
+
+async def _run_pre_approve(
+    tool: Tool,
+    ev: Event,
+    ctx: KernelContext,
+    *,
+    call_id: str,
+    tool_name: str,
+) -> bool:
+    """Run ``tool.pre_approve`` and translate every failure to ``tool.error``.
+
+    Returns:
+        True if the tool is approved and dispatch should proceed to
+        ``run``. False if the dispatcher already emitted a terminal
+        ``tool.error`` (rejected / crashed / cancelled) and must abort.
+
+    Lesson #29: every exception path — including arbitrary subclass
+    failures — must terminate the request with a ``tool.error`` so the
+    caller's future resolves. Allowing :class:`BaseException` (e.g.
+    :class:`asyncio.CancelledError`) to propagate keeps cooperative
+    cancellation honest.
+    """
+    # Import locally to keep the approval subsystem optional at
+    # module-load time — tests exercising the dispatcher without
+    # the runtime still import cleanly.
+    from yaya.kernel.approval import ApprovalCancelledError, ToolRejectedError
+
+    try:
+        approved = await tool.pre_approve(ctx, session_id=ev.session_id)
+    except ApprovalCancelledError as exc:
+        await _emit_tool_error(
+            ctx,
+            ev,
+            call_id=call_id,
+            kind="rejected",
+            brief=f"approval {exc.reason} for tool {tool_name!r}"[:80],
+        )
+        return False
+    except ToolRejectedError as exc:
+        await _emit_tool_error(
+            ctx,
+            ev,
+            call_id=call_id,
+            kind="rejected",
+            brief=(f"tool {tool_name!r} rejected: {exc.feedback}" if exc.feedback else f"tool {tool_name!r} rejected")[
+                :80
+            ],
+        )
+        return False
+    except Exception as exc:
+        _logger.exception(
+            "tool %r pre_approve raised unexpectedly; translating to tool.error",
+            tool_name,
+        )
+        await _emit_tool_error(
+            ctx,
+            ev,
+            call_id=call_id,
+            kind="rejected",
+            brief=f"pre_approve crashed: {type(exc).__name__}: {exc}"[:80],
+        )
+        return False
+
+    if not approved:
+        await _emit_tool_error(
+            ctx,
+            ev,
+            call_id=call_id,
+            kind="rejected",
+            brief=f"tool {tool_name!r} rejected by pre_approve",
+        )
+        return False
+    return True
 
 
 async def _emit_tool_error(

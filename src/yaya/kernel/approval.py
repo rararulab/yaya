@@ -53,6 +53,28 @@ still identifies the tool call's origin for UI grouping; only the
 event envelope's routing session changes.
 
 Layering: no imports from ``cli``, ``plugins``, or ``core``.
+
+Fingerprint params (non-JSON values)
+------------------------------------
+
+:func:`_fingerprint` calls ``json.dumps(..., default=str)`` so non-JSON
+param values (``Path``, ``datetime``, pydantic ``HttpUrl``, ...) coerce
+to ``repr``-ish strings rather than crashing. This is a **deliberate
+fingerprint-stability choice**, not a security boundary: the fingerprint
+keys an in-memory ``approve_for_session`` cache; collisions cause
+extra approval prompts (safe) or skipped prompts within an already-
+allowlisted session (which the user explicitly opted into for that
+session). The cache is never persisted, never shared across sessions.
+
+Single-event-loop invariant
+---------------------------
+
+All :class:`ApprovalRuntime` methods MUST be called from the asyncio
+loop that installed the runtime. ``_pending`` is a plain ``dict`` of
+loop-bound :class:`asyncio.Future` objects; cross-loop use corrupts
+the bookkeeping and silently leaks futures. The kernel installs and
+drives the runtime on a single loop — fixtures composing multiple
+loops must install one runtime per loop (and uninstall on teardown).
 """
 
 from __future__ import annotations
@@ -61,7 +83,7 @@ import asyncio
 import hashlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -242,6 +264,11 @@ class ApprovalRuntime:
         self._sub: Subscription | None = None
         self._started: bool = False
 
+    @property
+    def timeout_s(self) -> float:
+        """Per-request approval deadline this runtime was constructed with."""
+        return self._timeout_s
+
     async def start(self) -> None:
         """Subscribe to ``approval.response``.
 
@@ -270,8 +297,22 @@ class ApprovalRuntime:
             self._sub.unsubscribe()
             self._sub = None
         # Cancel every awaiter so the dispatch path unwinds instead
-        # of hanging on the 60s timeout during shutdown.
-        for approval_id, fut in list(self._pending.items()):
+        # of hanging on the 60s timeout during shutdown. Order matters:
+        # emit ``approval.cancelled`` FIRST so adapters observing the
+        # bus see the shutdown reason before the awaiting future raises;
+        # then resolve the future; finally clear bookkeeping. We swallow
+        # publish errors per-approval — a single misbehaving subscriber
+        # must NOT prevent the remaining pending approvals from waking
+        # up and unwinding.
+        pending = list(self._pending.items())
+        for approval_id, fut in pending:
+            try:
+                await self._emit_cancelled(approval_id, "shutdown")
+            except Exception:
+                _logger.exception(
+                    "approval.cancelled emit failed during shutdown id=%s",
+                    approval_id,
+                )
             if not fut.done():
                 fut.set_exception(ApprovalCancelledError(approval_id, "shutdown"))
         self._pending.clear()
@@ -444,11 +485,18 @@ class ApprovalRuntime:
 # :func:`uninstall_approval_runtime` on teardown.
 _runtimes: dict[int, ApprovalRuntime] = {}
 
+# Sentinel distinguishing "caller did not pass timeout_s" from
+# "caller explicitly passed the default value". We need this to detect
+# a re-install with a different override and fail loud — silently
+# dropping the new value would leave operators wondering why their
+# tuned timeout had no effect.
+_UNSET: Final[object] = object()
+
 
 async def install_approval_runtime(
     bus: EventBus,
     *,
-    timeout_s: float = DEFAULT_APPROVAL_TIMEOUT_S,
+    timeout_s: float | object = _UNSET,
 ) -> ApprovalRuntime:
     """Create, start, and register an :class:`ApprovalRuntime` for ``bus``.
 
@@ -468,11 +516,25 @@ async def install_approval_runtime(
         The newly installed runtime. Callers that want to inject
         fakes for tests can bypass :func:`get_approval_runtime` and
         pass the instance explicitly.
+
+    Raises:
+        RuntimeError: If a runtime is already installed for ``bus`` and
+            the caller passed an explicit ``timeout_s`` that does not
+            match the existing runtime's value. Re-installing with the
+            same (or unspecified) timeout returns the existing instance
+            unchanged.
     """
     existing = _runtimes.get(id(bus))
     if existing is not None:
+        if timeout_s is not _UNSET and float(cast("float", timeout_s)) != existing.timeout_s:
+            raise RuntimeError(
+                f"ApprovalRuntime already installed on bus with timeout_s="
+                f"{existing.timeout_s!r}; refusing to re-install with "
+                f"timeout_s={timeout_s!r}. Uninstall first if the override is intentional."
+            )
         return existing
-    runtime = ApprovalRuntime(bus, timeout_s=timeout_s)
+    actual_timeout = DEFAULT_APPROVAL_TIMEOUT_S if timeout_s is _UNSET else float(cast("float", timeout_s))
+    runtime = ApprovalRuntime(bus, timeout_s=actual_timeout)
     await runtime.start()
     _runtimes[id(bus)] = runtime
     return runtime

@@ -351,6 +351,20 @@ cleanly instead of hanging on the per-request timeout.
    request `id` verbatim. Publish on session `"kernel"`.
 4. Subscribe to `approval.cancelled` to withdraw stale prompts.
 
+When an LLM emits **parallel tool calls** that each gate through the
+approval runtime, adapters MAY observe multiple `approval.request`
+events for the same `(tool_name, params)` before the user has
+answered the first prompt. Adapters SHOULD stack or group these in
+the UI (one row per `(tool_name, params)` with a count badge), and
+once the first answer arrives they SHOULD auto-respond to the
+remaining matching requests with the same decision so the user only
+clicks once. This is a UI affordance only — the kernel does NOT
+deduplicate at the protocol level (the `approve_for_session` cache
+short-circuits subsequent identical calls but only AFTER the first
+prompt resolves), and proposals to add protocol-level dedup are out
+of scope through 1.0 (would require a request-coalescing key that
+adapters cannot author for arbitrary new tools).
+
 ### LLM providers (v1 contract)
 
 Since 0.2, llm-provider plugins implement the streaming

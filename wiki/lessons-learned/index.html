@@ -448,7 +448,7 @@
     <ul>
         <li><a href="#agent-lessons-learned">Agent Lessons Learned</a></li>
         <li><a href="#1-asynciolock-is-not-reentrant-never-serialize-per-key-fifo-with-a-shared-lock">1. asyncio.Lock is not reentrant — never serialize per-key FIFO with a shared lock</a></li><li><a href="#2-heuristic-external-vs-reentrant-must-detect-any-worker-context-not-just-the-targets">2. Heuristic "external-vs-reentrant" must detect any worker context, not just the target's</a></li><li><a href="#3-except-baseexception-swallows-asynciocancellederror">3. except BaseException swallows asyncio.CancelledError</a></li><li><a href="#4-typeddict-totalfalse-is-the-wrong-default-for-payloads-whose-fields-split-requiredoptional">4. TypedDict total=False is the wrong default for payloads whose fields split required/optional</a></li><li><a href="#5-from-__future__-import-annotations-breaks-notrequired-partitioning">5. from __future__ import annotations breaks NotRequired partitioning</a></li><li><a href="#6-unbounded-per-key-dicts-leak-in-long-running-async-processes">6. Unbounded per-key dicts leak in long-running async processes</a></li><li><a href="#7-default-dataclass-__eq__-breaks-identity-based-listremove">7. Default dataclass __eq__ breaks identity-based list.remove</a></li><li><a href="#8-subagent-findings-for-the-next-issue-are-usually-bugs-in-this-pr">8. Subagent "findings for the next issue" are usually bugs in THIS PR</a></li><li><a href="#9-no-speculative-state-for-future-extensions">9. No speculative state "for future extensions"</a></li><li><a href="#10-silent-no-op-primitives-are-a-ux-bug">10. Silent no-op primitives are a UX bug</a></li><li><a href="#11-empirical-probes-beat-static-reasoning">11. Empirical probes beat static reasoning</a></li><li><a href="#12-code-review-rounds-re-enter-until-genuinely-clean">12. Code-review rounds re-enter until genuinely clean</a></li><li><a href="#13-document-non-obvious-design-decisions-in-the-specs-decisions">13. Document non-obvious design decisions in the spec's ## Decisions</a></li><li><a href="#14-pre-commit-hook-drift-just-check-all-is-currently-broken">14. Pre-commit hook drift: just check-all is currently broken</a></li><li><a href="#15-silent-no-request_id-drops-hang-plugin-authors">15. Silent "no request_id" drops hang plugin authors</a></li><li><a href="#16-reviewers-verify-the-flagged-pattern-is-actually-wrong">16. Reviewers: verify the flagged pattern is actually wrong</a></li><li><a href="#17-consecutive-vs-cumulative-in-failure-policies">17. "Consecutive" vs "cumulative" in failure policies</a></li><li><a href="#18-authoritative-source-checks-at-enforcement-points-not-cached-state">18. Authoritative-source checks at enforcement points, not cached state</a></li><li><a href="#19-author-specs-in-the-tools-format-not-the-protocol-docs-pseudo-format">19. Author specs in the tool's format, not the protocol doc's pseudo-format</a></li><li><a href="#20-sqlite3-check_same_threadfalse-is-not-a-safety-flag">20. sqlite3 check_same_thread=False is not a safety flag</a></li><li><a href="#21-blanket-file-level-pyright-pragmas-silence-more-than-they-should">21. Blanket file-level pyright pragmas silence more than they should</a></li><li><a href="#23-cli-flags-that-will-work-later-must-be-observably-inert">23. CLI flags that "will work later" must be observably inert</a></li><li><a href="#10-silent-no-ops-removing-the-flag-entirely-until-it-works-is">10 (silent no-ops). Removing the flag entirely until it works is</a></li>
-        <li><a href="#25-late-subscribe-plugins-miss-events-fired-before-on_load">25. Late-subscribe plugins miss events fired before on_load</a></li><li><a href="#how-to-use-this-doc">How to use this doc</a></li>
+        <li><a href="#25-late-subscribe-plugins-miss-events-fired-before-on_load">25. Late-subscribe plugins miss events fired before on_load</a></li><li><a href="#27-framework-modules-pass-the-dependency-rule-only-if-their-assumptions-align-with-your-use-case-direction">27. Framework modules pass the Dependency Rule only if their assumptions align with your use-case direction</a></li><li><a href="#how-to-use-this-doc">How to use this doc</a></li>
     </ul>
 </nav>
 </aside>
@@ -847,6 +847,40 @@ is what a durable bus would be, and yaya's bus deliberately isn't.</p>
 <p><strong>Reference</strong> — PR #65 review round 1. Distinct from lessons #6
 (leak-prone dicts) and #15 (missing correlation field): this is
 specifically about startup-race event loss.</p>
+<hr />
+<h2 id="27-framework-modules-pass-the-dependency-rule-only-if-their-assumptions-align-with-your-use-case-direction">27. Framework modules pass the Dependency Rule only if their assumptions align with your use-case direction<a class="headerlink" href="#27-framework-modules-pass-the-dependency-rule-only-if-their-assumptions-align-with-your-use-case-direction" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — pi-web-ui ships a complete UI library. The tempting
+path is "use everything"; the architectural path is "use only the
+exports that don't drag in a conflicting use case." Several
+pi-web-ui exports assume the browser owns the LLM-calling agent,
+the user's API keys, and conversation state. yaya's architecture
+inverts each one: Python kernel owns the agent, env vars hold keys,
+a future Python memory plugin holds sessions. Importing any of
+those modules would have dragged pi-web-ui's use-case assumptions
+into yaya's inner rings.</p>
+<p><strong>Root cause</strong> — "Framework ring" is a direction, not a folder. A
+framework-adjacent library can still contain USE-CASE-level
+assumptions disguised as components. The Dependency Rule demands
+that we evaluate EACH export, not the library as a unit.</p>
+<p><strong>Rule</strong> — When adopting a framework library, enumerate its
+exports and classify each by the USE CASE it assumes:</p>
+<ol>
+<li><strong>Pure presentation</strong> (markdown rendering, button styles,
+   message bubbles, streaming containers): framework-ring, import
+   freely.</li>
+<li><strong>Use-case-coupled</strong> (agent loop, API-key storage, provider
+   routing, browser-side session persistence): blacklisted if the
+   assumed use case differs from yours. "Defer" is the wrong
+   disposition — if architectural, say "never".</li>
+<li><strong>Pragmatic boundaries</strong> (localStorage for theme preference):
+   framework-ring-ok because the choice is trivially replaceable.</li>
+</ol>
+<p>Publish the whitelist AND blacklist in the subpackage's AGENT.md
+so future agents don't relitigate. Enforce with a pre-commit grep.</p>
+<p><strong>Reference</strong> — PR for issue #66 (real pi-web-ui integration).
+Companion to lesson #19 (author in tool format): here we author
+imports against architectural constraints, not available
+components.</p>
 <hr />
 <h2 id="how-to-use-this-doc">How to use this doc<a class="headerlink" href="#how-to-use-this-doc" title="Permanent link">&para;</a></h2>
 <ul>

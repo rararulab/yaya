@@ -75,6 +75,54 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  web-ui:
+    name: Web UI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/yaya/plugins/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('src/yaya/plugins/web/package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+      - name: Install web adapter dependencies
+        run: npm ci
+      - name: TypeScript strict check
+        run: npm run check
+      - name: Unit tests (vitest)
+        run: npm run test
+      - name: Build Vite bundle
+        run: npm run build
+      - name: Verify fresh build references hashed assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          IDX="src/yaya/plugins/web/static/index.html"
+          if ! grep -qE '/assets/[A-Za-z0-9._-]+-[A-Za-z0-9_-]{8,}\.js' "$IDX"; then
+            echo "static/index.html does not reference a Vite-hashed JS bundle" >&2
+            echo "---content---" >&2
+            head -50 "$IDX" >&2
+            exit 1
+          fi
+          if ! grep -qE '/assets/[A-Za-z0-9._-]+-[A-Za-z0-9_-]{8,}\.css' "$IDX"; then
+            echo "static/index.html does not reference a Vite-hashed CSS bundle" >&2
+            exit 1
+          fi
+          # Reject known placeholder markers from the old vanilla-JS shell.
+          if grep -qiE 'plugins-panel|preview' "$IDX"; then
+            echo "static/index.html still contains placeholder markers" >&2
+            exit 1
+          fi
+        working-directory: ${{ github.workspace }}
+
   build-wheel:
     name: Build wheel + sdist
     runs-on: ubuntu-latest

@@ -1,0 +1,30 @@
+/*
+ * Import pi-web-ui's pre-built Tailwind CSS bundle.
+ *
+ * pi-web-ui ships its own compiled `app.css` at the package root
+ * which contains the tailwind reset, theme tokens, and any
+ * component-specific utilities referenced by its components. We
+ * inherit it verbatim so MessageList / ConsoleBlock / Input render
+ * with the same look as upstream. Our own local utility classes are
+ * emitted through the @tailwindcss/vite plugin below.
+ */
+
+@import "@mariozechner/pi-web-ui/app.css";
+
+@import "tailwindcss";
+
+/* Restrict Tailwind v4's auto-detection to our own source tree so
+ * the generated CSS is identical across host OS / Node version.
+ * Without an explicit allowlist, the plugin crawls every file under
+ * the Vite root (including node_modules scan rules that depend on
+ * the host filesystem's iteration order), which drifts between Linux
+ * CI and macOS dev environments. */
+@source "./**/*.{ts,html}";
+@source "../index.html";
+
+/* Local overrides kept deliberately tiny — everything structural
+   should come from pi-web-ui. */
+yaya-chat {
+	display: block;
+	min-height: 100vh;
+}

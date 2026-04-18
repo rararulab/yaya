@@ -45,10 +45,26 @@ broadcast to every connected client.
   directory is git-tracked and shipped in the wheel; the server
   resolves it via `files("yaya.plugins.web") / "static"` so the
   path works in editable installs and installed wheels.
-- **0.1 preview UI** lives in `static/` as hand-written
-  HTML/CSS/vanilla-JS so `pip install yaya && yaya serve` works
-  without Node. A `@mariozechner/pi-web-ui`-based replacement is a
-  future PR; the WS schema is the stable contract.
+- **UI bundle.** The shipped `static/` directory is the output of
+  `vite build` inside `src/yaya/plugins/web/` — a Vite-built
+  integration of `@mariozechner/pi-web-ui@0.67.6` (MessageList,
+  StreamingMessageContainer, Input, ConsoleBlock) plus the yaya
+  WebSocket client and chat shell. End users still install via
+  `pip` — Node is a contributor-only dependency. CI rebuilds
+  `static/` on every PR and shape-checks that `index.html` still
+  references Vite-hashed assets; placeholder markers fail the
+  build.
+- **Framework ring boundary.** pi-web-ui modules that assume the
+  browser owns the agent loop, API keys, or session storage are
+  **forbidden** to preserve the Dependency Rule. Whitelist:
+  `MessageList`, `StreamingMessageContainer`, `Input`,
+  `ConsoleBlock`. Blacklist (pre-commit grep enforces): the
+  upstream chat panel class, settings store and dialog,
+  provider-keys store, sessions store, IndexedDB storage backend,
+  upstream app storage, and every export from
+  `@mariozechner/pi-agent-core`. See
+  [`docs/wiki/lessons-learned.md`](../docs/wiki/lessons-learned.md)
+  entry 27.
 - **Uvicorn lifecycle.** Started via
   `asyncio.create_task(server.serve())` during `on_load`; stopped on
   `on_unload` via `server.should_exit = True` +
@@ -65,9 +81,13 @@ broadcast to every connected client.
 - src/yaya/plugins/web/__init__.py
 - src/yaya/plugins/web/plugin.py
 - src/yaya/plugins/web/AGENT.md
-- src/yaya/plugins/web/static/index.html
-- src/yaya/plugins/web/static/assets/main.js
-- src/yaya/plugins/web/static/assets/main.css
+- src/yaya/plugins/web/static/
+- src/yaya/plugins/web/src/
+- src/yaya/plugins/web/package.json
+- src/yaya/plugins/web/package-lock.json
+- src/yaya/plugins/web/tsconfig.json
+- src/yaya/plugins/web/vite.config.ts
+- src/yaya/plugins/web/index.html
 - tests/plugins/web/__init__.py
 - tests/plugins/web/test_web_adapter.py
 - tests/cli/test_serve.py
@@ -144,10 +164,17 @@ Scenario: on_unload stops uvicorn within the timeout
   When on_unload is awaited
   Then the uvicorn server task completes and clients are closed
 
+Scenario: Shipped static bundle is a real Vite build
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_adapter.py::test_static_bundle_is_real_vite_build
+  Level: unit
+  Given the packaged web plugin static directory
+  When its index.html is inspected
+  Then it references Vite-hashed JS assets and no placeholder markers remain
+
 ## Out of Scope
 
-- `@mariozechner/pi-web-ui` integration — tracked as a follow-up
-  PR; the hand-written `static/` preview is the 0.1 surface.
 - Authentication, authorization, and public-bind support — GOAL.md
   non-goals through 1.0.
 - `yaya serve --dev` vite HMR proxy — flag is accepted and warns

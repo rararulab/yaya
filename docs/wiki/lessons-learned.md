@@ -539,6 +539,46 @@ specifically about startup-race event loss.
 
 ---
 
+## 27. Framework modules pass the Dependency Rule only if their assumptions align with your use-case direction
+
+**Symptom** — pi-web-ui ships a complete UI library. The tempting
+path is "use everything"; the architectural path is "use only the
+exports that don't drag in a conflicting use case." Several
+pi-web-ui exports assume the browser owns the LLM-calling agent,
+the user's API keys, and conversation state. yaya's architecture
+inverts each one: Python kernel owns the agent, env vars hold keys,
+a future Python memory plugin holds sessions. Importing any of
+those modules would have dragged pi-web-ui's use-case assumptions
+into yaya's inner rings.
+
+**Root cause** — "Framework ring" is a direction, not a folder. A
+framework-adjacent library can still contain USE-CASE-level
+assumptions disguised as components. The Dependency Rule demands
+that we evaluate EACH export, not the library as a unit.
+
+**Rule** — When adopting a framework library, enumerate its
+exports and classify each by the USE CASE it assumes:
+
+1. **Pure presentation** (markdown rendering, button styles,
+   message bubbles, streaming containers): framework-ring, import
+   freely.
+2. **Use-case-coupled** (agent loop, API-key storage, provider
+   routing, browser-side session persistence): blacklisted if the
+   assumed use case differs from yours. "Defer" is the wrong
+   disposition — if architectural, say "never".
+3. **Pragmatic boundaries** (localStorage for theme preference):
+   framework-ring-ok because the choice is trivially replaceable.
+
+Publish the whitelist AND blacklist in the subpackage's AGENT.md
+so future agents don't relitigate. Enforce with a pre-commit grep.
+
+**Reference** — PR for issue #66 (real pi-web-ui integration).
+Companion to lesson #19 (author in tool format): here we author
+imports against architectural constraints, not available
+components.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

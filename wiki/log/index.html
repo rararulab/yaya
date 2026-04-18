@@ -453,7 +453,7 @@
 <nav>
     <ul>
         <li><a href="#wiki-log">Wiki Log</a></li>
-        <li><a href="#2026-04-18-ingest-llm-provider-contract-v1-issue-26">[2026-04-18] ingest | llm-provider contract v1 (issue #26)</a></li><li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-structured-logging-error-taxonomy-issue-30">[2026-04-18] ingest | structured logging + error taxonomy (issue #30)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li>
+        <li><a href="#2026-04-18-ingest-llm-provider-contract-v1-issue-26">[2026-04-18] ingest | llm-provider contract v1 (issue #26)</a></li><li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-structured-logging-error-taxonomy-issue-30">[2026-04-18] ingest | structured logging + error taxonomy (issue #30)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li><li><a href="#2026-04-18-ingest-approval-runtime-pr-83-review-fixes-issue-28">[2026-04-18] ingest | approval runtime PR #83 review fixes (issue #28)</a></li>
     </ul>
 </nav>
 </aside>
@@ -651,6 +651,30 @@ types mirror <code>events.py</code> with an exhaustive <code>assertNever</code> 
 19). CI gains a Web UI job that runs <code>npm run check/test/build</code> and
 fails if <code>static/</code> drifts.
 See: ../../specs/plugin-web.spec, ../../src/yaya/plugins/web/, ../dev/web-ui.md</p>
+<h2 id="2026-04-18-ingest-approval-runtime-pr-83-review-fixes-issue-28">[2026-04-18] ingest | approval runtime PR #83 review fixes (issue #28)<a class="headerlink" href="#2026-04-18-ingest-approval-runtime-pr-83-review-fixes-issue-28" title="Permanent link">&para;</a></h2>
+<p>P2/P3 follow-up on the merged approval-runtime PR. Three code fixes:
+(P2-1) <code>ApprovalRuntime.stop()</code> now emits
+<code>approval.cancelled(reason="shutdown")</code> for each pending approval
+before resolving futures — the literal was previously unreachable.
+(P2-2) Tool dispatcher widens its <code>pre_approve</code> <code>try/except</code> from the
+two sentinel error types to <code>except Exception</code>, so arbitrary subclass
+crashes translate to a terminal <code>tool.error(kind="rejected")</code> instead
+of leaking through the bus recursion guard and orphaning the
+originating <code>tool.call.request</code>. (P2-3) <code>install_approval_runtime</code>
+now distinguishes "no <code>timeout_s</code> passed" from "default value passed"
+via a sentinel and raises <code>RuntimeError</code> when re-installed with a
+different override rather than silently dropping it. Doc notes added
+for parallel-gated-call UI grouping (<code>docs/dev/plugin-protocol.md</code>
+adapter responsibilities), non-JSON fingerprinting rationale, and the
+single-event-loop invariant (<code>approval.py</code> module docstring). New
+lesson #29 captures the rule: ALL pre-<code>run</code> checkpoint exceptions
+must translate to a terminal <code>tool.error</code> so the caller's future
+resolves. Tests: shutdown-cancelled-per-pending,
+pre_approve crash → tool.error, install-with-different-timeout
+raises, registry install-before-<code>kernel.ready</code> /
+uninstall-before-<code>kernel.shutdown</code> ordering, cross-session
+end-to-end round-trip (lesson #2 regression).
+See: ../../src/yaya/kernel/approval.py, ../../src/yaya/kernel/tool.py, ../dev/plugin-protocol.md, lessons-learned.md</p>
 </section>
 
             </main>

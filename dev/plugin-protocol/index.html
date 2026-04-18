@@ -629,6 +629,36 @@ multiple packages.</p>
 </tr>
 </tbody>
 </table>
+<h4 id="approval-kernel-adapter">Approval (kernel ↔ adapter)<a class="headerlink" href="#approval-kernel-adapter" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>direction</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>approval.request</code></td>
+<td>kernel → adapter</td>
+<td><code>{ id: str, tool_name: str, params: dict, brief: str }</code></td>
+</tr>
+<tr>
+<td><code>approval.response</code></td>
+<td>adapter → kernel</td>
+<td><code>{ id: str, response: "approve" \| "approve_for_session" \| "reject", feedback?: str }</code></td>
+</tr>
+<tr>
+<td><code>approval.cancelled</code></td>
+<td>kernel → adapter</td>
+<td><code>{ id: str, reason: "timeout" \| "shutdown" }</code></td>
+</tr>
+</tbody>
+</table>
+<p>All three envelopes route on the reserved <code>"kernel"</code> session id — NOT
+the originating tool call's session. See <strong>Approval flow</strong> below for
+the deadlock rationale (lesson #2).</p>
 <h4 id="memory-kernel-memory">Memory (kernel ↔ memory)<a class="headerlink" href="#memory-kernel-memory" title="Permanent link">&para;</a></h4>
 <table>
 <thead>
@@ -861,11 +891,12 @@ Additional kinds may be introduced additively.</p>
 <li>Emits <code>tool.call.result</code> with <code>{"id", "ok", "envelope":
    &lt;model_dump&gt;, "request_id"}</code>.</li>
 </ol>
-<p><strong>Approval hook shape (placeholder)</strong> — <code>requires_approval: ClassVar[bool]
-= False</code> and <code>async def pre_approve(self, ctx) -&gt; bool</code> exist on the
-contract today. The real approval runtime (prompt the user, cancel on
-interrupt, resume on approval) lands in a follow-up issue. Default
-behaviour is no-approval.</p>
+<p><strong>Approval runtime</strong> — see the <strong>Approval flow</strong> section below. A
+<code>Tool</code> subclass with <code>requires_approval: ClassVar[bool] = True</code>
+routes through the runtime automatically; the default <code>pre_approve</code>
+awaits the user's answer via bus events. Subclasses MAY override
+<code>approval_brief(self) -&gt; str</code> (≤80 chars) to give the prompt a
+clearer headline.</p>
 <p><strong>Backward compatibility</strong> — A <code>tool.call.request</code> payload without
 <code>schema_version</code> falls through to whatever plugin subscribed via
 <code>on_event</code>. Bundled plugins that pre-date v1 (e.g. <code>tool_bash</code>) keep
@@ -876,6 +907,75 @@ same tool name, the registry logs a WARNING; duplicate
 emitted only by the v1 dispatcher (never by plugins). Adapters
 typically render it inline with the originating assistant turn rather
 than as a tool-pane update, because the target tool never ran.</p>
+<h3 id="approval-flow">Approval flow<a class="headerlink" href="#approval-flow" title="Permanent link">&para;</a></h3>
+<p>Tools that mutate state (shell, filesystem writes, network writes)
+declare <code>requires_approval: ClassVar[bool] = True</code>. The kernel's
+approval runtime (see <code>yaya.kernel.approval.ApprovalRuntime</code>) runs
+between validation and <code>run()</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>tool.call.request (session=S)
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  → dispatcher validates args, finds requires_approval=True
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>  → runtime.request(Approval(id=A, session_id=S, ...))
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    → approval.request (session=&quot;kernel&quot;)          # bus-routing session
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>      → adapter renders prompt to user
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>      → user clicks approve / approve_for_session / reject
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    ← approval.response (session=&quot;kernel&quot;, id=A)
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>  ← ApprovalResult(id=A, response=..., feedback=...)
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>  → dispatcher calls tool.run()   OR   emits tool.error(kind=&quot;rejected&quot;)
+</code></pre></div>
+<p><strong>Routing on <code>"kernel"</code> (lesson #2).</strong> All three approval events
+(<code>approval.request</code>, <code>approval.response</code>, <code>approval.cancelled</code>) MUST
+carry <code>session_id="kernel"</code> on the envelope. The dispatcher runs
+inside the originating tool-call session's drain worker; that worker
+is blocked on <code>await pending_future</code> while the prompt is outstanding.
+A response delivered on the <strong>same</strong> session would queue behind the
+blocked handler and only drain after the 60s approval timeout —
+effectively a deadlock. Routing the response on <code>"kernel"</code> resolves
+the future from a different worker and lets the original session
+worker wake up.</p>
+<p><strong><code>approve_for_session</code> cache.</strong> When the user picks
+<code>approve_for_session</code>, the runtime caches the tuple
+<code>(tool_name, params_fingerprint)</code> under the originating session id
+(carried inside the <code>Approval</code> model, NOT the envelope's routing
+session). Subsequent identical calls on the same session skip the
+prompt entirely — exactly one <code>approval.request</code> is emitted per
+unique tuple. Cache is in-memory, never persisted, never
+auto-evicted in 0.2 (process-bounded).</p>
+<p><strong>Timeout.</strong> If the adapter does not publish an <code>approval.response</code>
+within 60s (configurable per <code>ApprovalRuntime</code>), the runtime:</p>
+<ol>
+<li>Pops the pending future (no leak, lesson #6).</li>
+<li>Emits <code>approval.cancelled</code> with <code>reason="timeout"</code>.</li>
+<li>Raises <code>ApprovalCancelledError</code>; the dispatcher converts this to
+   <code>tool.error</code> with <code>kind="rejected"</code> and a <code>brief</code> that carries
+   the cancellation reason.</li>
+</ol>
+<p><strong>Shutdown.</strong> <code>PluginRegistry.stop</code> uninstalls the runtime before
+<code>kernel.shutdown</code>. Pending futures observe
+<code>ApprovalCancelledError(reason="shutdown")</code> so the loop tears down
+cleanly instead of hanging on the per-request timeout.</p>
+<p><strong>Adapter responsibilities.</strong></p>
+<ol>
+<li>Subscribe to <code>approval.request</code> and render the prompt — display
+   <code>tool_name</code>, <code>params</code> (sanitise!), and <code>brief</code>.</li>
+<li>Offer three actions: approve / approve_for_session / reject. A
+   reject MAY collect a free-text <code>feedback</code>.</li>
+<li>Publish <code>approval.response</code> with the user's answer. Echo the
+   request <code>id</code> verbatim. Publish on session <code>"kernel"</code>.</li>
+<li>Subscribe to <code>approval.cancelled</code> to withdraw stale prompts.</li>
+</ol>
+<p>When an LLM emits <strong>parallel tool calls</strong> that each gate through the
+approval runtime, adapters MAY observe multiple <code>approval.request</code>
+events for the same <code>(tool_name, params)</code> before the user has
+answered the first prompt. Adapters SHOULD stack or group these in
+the UI (one row per <code>(tool_name, params)</code> with a count badge), and
+once the first answer arrives they SHOULD auto-respond to the
+remaining matching requests with the same decision so the user only
+clicks once. This is a UI affordance only — the kernel does NOT
+deduplicate at the protocol level (the <code>approve_for_session</code> cache
+short-circuits subsequent identical calls but only AFTER the first
+prompt resolves), and proposals to add protocol-level dedup are out
+of scope through 1.0 (would require a request-coalescing key that
+adapters cannot author for arbitrary new tools).</p>
 <h3 id="llm-providers-v1-contract">LLM providers (v1 contract)<a class="headerlink" href="#llm-providers-v1-contract" title="Permanent link">&para;</a></h3>
 <p>Since 0.2, llm-provider plugins implement the streaming
 <code>LLMProvider</code> Protocol in <code>yaya.kernel.llm</code>. Providers yield an
@@ -902,33 +1002,33 @@ rule scans every <code>src/yaya/plugins/llm_*/**/*.py</code> for direct imports
 of <code>httpx</code> / <code>requests</code> / <code>aiohttp</code> and fails CI on a hit). The
 SDKs themselves use <code>httpx</code> internally; that is fine because the
 plugin does not import it.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ClassVar</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">yaya.kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">Category</span><span class="p">,</span> <span class="n">KernelContext</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">yaya.kernel.llm</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">APIConnectionError</span><span class="p">,</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">ContentPart</span><span class="p">,</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">LLMProvider</span><span class="p">,</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">StreamedMessage</span><span class="p">,</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">TokenUsage</span><span class="p">,</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">openai_to_chat_provider_error</span><span class="p">,</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="k">class</span><span class="w"> </span><span class="nc">OpenAIProvider</span><span class="p">:</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;openai&quot;</span>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;gpt-4o-mini&quot;</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>    <span class="n">thinking_effort</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;off&quot;</span>
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
-<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>        <span class="bp">self</span><span class="p">,</span>
-<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>        <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>        <span class="n">system_prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>        <span class="n">tools</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
-<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>        <span class="n">history</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
-<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">StreamedMessage</span><span class="p">:</span>
-<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>        <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>            <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stream_with_sdk</span><span class="p">(</span><span class="n">system_prompt</span><span class="p">,</span> <span class="n">tools</span><span class="p">,</span> <span class="n">history</span><span class="p">)</span>
-<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>            <span class="k">raise</span> <span class="n">openai_to_chat_provider_error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ClassVar</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">yaya.kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">Category</span><span class="p">,</span> <span class="n">KernelContext</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">yaya.kernel.llm</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">APIConnectionError</span><span class="p">,</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">ContentPart</span><span class="p">,</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">LLMProvider</span><span class="p">,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">StreamedMessage</span><span class="p">,</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">TokenUsage</span><span class="p">,</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">openai_to_chat_provider_error</span><span class="p">,</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="p">)</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="k">class</span><span class="w"> </span><span class="nc">OpenAIProvider</span><span class="p">:</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;openai&quot;</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>    <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;gpt-4o-mini&quot;</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>    <span class="n">thinking_effort</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;off&quot;</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>        <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>        <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>        <span class="n">system_prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>        <span class="n">tools</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>        <span class="n">history</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">StreamedMessage</span><span class="p">:</span>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>        <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>            <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stream_with_sdk</span><span class="p">(</span><span class="n">system_prompt</span><span class="p">,</span> <span class="n">tools</span><span class="p">,</span> <span class="n">history</span><span class="p">)</span>
+<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>            <span class="k">raise</span> <span class="n">openai_to_chat_provider_error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
 </code></pre></div>
 <p><strong>Token usage</strong> — <code>TokenUsage</code> carries four raw counters
 (<code>input_other</code>, <code>input_cache_read</code>, <code>input_cache_creation</code>, <code>output</code>)
@@ -992,13 +1092,13 @@ legacy path in the Tool-contract PR.</p>
 </ul>
 <h2 id="agent-loop-kernel-owned">Agent loop (kernel-owned)<a class="headerlink" href="#agent-loop-kernel-owned" title="Permanent link">&para;</a></h2>
 <p>The loop shape is fixed. Each turn runs this sequence:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>user.message.received
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  → strategy.decide.request  →  strategy.decide.response
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    → memory.query           →  memory.result (if requested)
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    → llm.call.request       →  llm.call.response
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>      → tool.call.request    →  tool.call.result   (repeat per tool)
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    → assistant.message.done
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  → memory.write (if requested by strategy)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>user.message.received
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  → strategy.decide.request  →  strategy.decide.response
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    → memory.query           →  memory.result (if requested)
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    → llm.call.request       →  llm.call.response
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>      → tool.call.request    →  tool.call.result   (repeat per tool)
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    → assistant.message.done
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  → memory.write (if requested by strategy)
 </code></pre></div>
 <p>Strategies control: which tools to offer, when to call memory, when to
 stop. Strategies <strong>do not</strong> change the ordering of the sequence —

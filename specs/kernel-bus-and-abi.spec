@@ -1,6 +1,5 @@
 spec: task
 name: "kernel-bus-and-abi"
-inherits: project
 tags: [kernel, bus, abi]
 ---
 

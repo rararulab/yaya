@@ -47,7 +47,7 @@ jobs:
             cargo install agent-spec --version 0.2.7 --locked
           fi
           agent-spec --version
-      - name: Lint specs (agent-spec)
+      - name: Enforce specs (agent-spec lifecycle — lint hard, boundary/verify report)
         run: bash scripts/check_specs.sh
 
   tests:

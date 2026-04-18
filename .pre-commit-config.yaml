@@ -23,13 +23,14 @@ repos:
     hooks:
       - id: uv-lock
 
-  # agent-spec: lint BDD specs. Runs only when a `.spec` file is staged.
+  # agent-spec enforcement. Runs only when a `.spec` file is staged.
+  # Script runs lifecycle (lint hard-gated, boundary/verify reported).
   # If `agent-spec` is not installed locally, the wrapper prints a skip
   # notice (CI enforces). See docs/dev/agent-spec.md.
   - repo: local
     hooks:
-      - id: agent-spec-lint
-        name: agent-spec lint
+      - id: agent-spec-enforce
+        name: agent-spec lifecycle
         entry: bash scripts/check_specs.sh
         language: system
         pass_filenames: false

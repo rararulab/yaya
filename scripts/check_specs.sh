@@ -1,37 +1,99 @@
 #!/usr/bin/env bash
-# Lint every specs/*.spec via agent-spec. Skip with a warning when the
-# binary is absent locally (dev ergonomics); CI always has it, so CI
-# enforces. Fails the run on any parse/format error.
+# Drive `agent-spec lifecycle` over every specs/*.spec, enforcing the
+# two layers we can verify deterministically without an AI backend:
+#   - lint     (parse + quality score; hard gate)
+#   - boundary (declared Allowed/Forbidden paths vs actual diff; hard gate)
 #
-# See docs/dev/agent-spec.md for install instructions.
+# Scenario-level verify SKIPs (no verifier covered this step) are
+# expected today — they would need an AI backend per upstream's
+# `--ai-mode` option and the `agent-spec-tool-first` skill. We count
+# the SKIP total for visibility but do NOT fail the run on them.
+#
+# Locally without the binary: prints an install hint and exits 0 so a
+# commit is not blocked. CI always has it, so CI enforces.
+#
+# See docs/dev/agent-spec.md for install and semantics.
 set -euo pipefail
 
+MIN_SCORE="${MIN_SCORE:-0.6}"
+SPEC_DIR="${SPEC_DIR:-specs}"
+CODE_DIR="${CODE_DIR:-.}"
+CHANGE_SCOPE="${CHANGE_SCOPE:-worktree}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PARSER="$SCRIPT_DIR/_parse_spec_result.py"
+
 if ! command -v agent-spec >/dev/null 2>&1; then
-  echo "⚠️  agent-spec not installed; skipping spec lint."
+  echo "⚠️  agent-spec not installed; skipping spec enforcement."
   echo "    Install: cargo install agent-spec --version 0.2.7 --locked"
   echo "    See docs/dev/agent-spec.md"
   exit 0
 fi
 
 shopt -s nullglob
-specs=(specs/*.spec)
-
+specs=("$SPEC_DIR"/*.spec)
 if [ ${#specs[@]} -eq 0 ]; then
-  echo "ℹ️  no specs found under specs/*.spec (skip)"
+  echo "ℹ️  no specs found under $SPEC_DIR/*.spec (skip)"
   exit 0
 fi
 
-failed=0
+# Assemble explicit --change flags from git diff. agent-spec 0.2.7's
+# --change-scope worktree/staged produces broken paths on macOS
+# (missing leading slash) so we feed relative paths directly.
+change_args=()
+if [ "$CHANGE_SCOPE" != "none" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+  case "$CHANGE_SCOPE" in
+    worktree)
+      mapfile -t files < <(
+        { git diff --name-only HEAD; git ls-files --others --exclude-standard; } 2>/dev/null | sort -u
+      )
+      ;;
+    staged)
+      mapfile -t files < <(git diff --cached --name-only 2>/dev/null)
+      ;;
+    *)
+      mapfile -t files < <(git diff --name-only HEAD 2>/dev/null)
+      ;;
+  esac
+  for f in "${files[@]}"; do
+    [ -z "$f" ] && continue
+    change_args+=(--change "$f")
+  done
+fi
+
+overall_exit=0
+declare -a summary
+
 for spec in "${specs[@]}"; do
-  echo "🧪 lint $spec"
-  if ! agent-spec lint "$spec"; then
-    failed=1
+  # lifecycle without --layers so the boundary pseudo-scenario appears
+  # in verification.results; the parser filters on the "[boundaries]"
+  # prefix to separate boundary fails from scenario skips.
+  output="$(
+    agent-spec lifecycle "$spec" \
+      --code "$CODE_DIR" \
+      --min-score "$MIN_SCORE" \
+      "${change_args[@]}" \
+      --format json 2>/dev/null || true
+  )"
+
+  if line="$(printf '%s' "$output" | python3 "$PARSER" --spec "$spec" --min-score "$MIN_SCORE")"; then
+    echo "✅ $line"
+    summary+=("✅ $line")
+  else
+    echo "❌ $line"
+    summary+=("❌ $line")
+    overall_exit=1
   fi
 done
 
-if [ $failed -ne 0 ]; then
-  echo "❌ one or more specs failed agent-spec lint"
+echo
+echo "── agent-spec lifecycle summary ───────────────────"
+printf '  %s\n' "${summary[@]}"
+echo
+
+if [ $overall_exit -ne 0 ]; then
+  echo "❌ agent-spec enforcement failed"
   exit 1
 fi
 
-echo "✅ all specs passed agent-spec lint"
+echo "✅ agent-spec enforcement green"

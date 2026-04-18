@@ -1,6 +1,5 @@
 spec: task
 name: "kernel-registry"
-inherits: project
 tags: [kernel, registry, plugins]
 ---
 

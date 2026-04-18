@@ -51,6 +51,8 @@ jobs:
         run: bash scripts/check_specs.sh
       - name: Verify .feature / .spec sync
         run: uv run python scripts/check_feature_sync.py
+      - name: No banned agent frameworks (AGENT.md §4)
+        run: uv run python scripts/check_banned_frameworks.py
 
   tests:
     name: Tests (${{ matrix.os }}, py${{ matrix.python-version }})

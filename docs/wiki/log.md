@@ -101,6 +101,24 @@ TODO(#23) — provider-selection policy migrates to `ctx.config` once
 the config-loading PR lands. Stdlib-only implementation; no LLM SDK.
 See: ../../specs/plugin-llm_echo.spec, ../../src/yaya/plugins/llm_echo/, ../../src/yaya/plugins/strategy_react/plugin.py
 
+## [2026-04-18] ingest | banned-framework scanner (issue #33)
+Operationalized AGENT.md §4 — the "no third-party agent frameworks"
+rule was previously honor-system. Landed `scripts/check_banned_frameworks.py`,
+a stdlib-only Python scanner that checks two surfaces: declared
+dependencies in `pyproject.toml` (`[project] dependencies`,
+`[dependency-groups]`, `[project.optional-dependencies]`) and AST-walked
+imports under `src/` + `tests/`. Names are normalized per PyPA before
+comparison so case + separator variants collide. Wired into pre-commit
+(fires on `pyproject.toml` or `**/*.py` changes) and the `Lint & type
+check` CI job. AST scan deliberately avoids regex so docstring / comment
+mentions of a banned name don't false-positive (lesson 27 — Dependency
+Rule classification is per-export, not per-library; this script is the
+mechanical layer of the same idea applied to top-level distributions).
+Known limitation: dynamic `importlib.import_module(...)` calls are not
+caught (policy enforcement, not hermetic sandbox); transitive `uv.lock`
+deps are deferred.
+See: ../../scripts/check_banned_frameworks.py, ../dev/no-agent-frameworks.md
+
 ## [2026-04-18] ingest | pi-web-ui landing (issue #66)
 Replaced the 305-line vanilla-JS placeholder under
 `src/yaya/plugins/web/static/` with a Vite-built integration of

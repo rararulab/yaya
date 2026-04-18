@@ -117,6 +117,16 @@ the deadlock rationale (lesson #2).
 | `kernel.shutdown` | `{ reason: str }` |
 | `kernel.error` | `{ source: str, message: str, detail?: dict }` |
 
+#### Session lifecycle (kernel → all)
+
+| kind | payload |
+|---|---|
+| `session.started` | `{ session_id: str, tape_name: str, workspace: str }` |
+| `session.handoff` | `{ session_id: str, name: str, state: dict }` |
+| `session.reset` | `{ session_id: str, archive_path: str \| null }` |
+| `session.archived` | `{ session_id: str, archive_path: str }` |
+| `session.forked` | `{ parent_id: str, child_id: str }` |
+
 ### Extension namespace
 
 Plugins may emit and subscribe to events named `x.<plugin>.<kind>`.
@@ -545,6 +555,76 @@ required in practice for the kernel loop to observe a response.
   during the race window.
 - **The kernel never crashes because a plugin did**. If the kernel
   itself raises, `kernel.error` fires, and `yaya serve` exits non-zero.
+
+## Sessions and tape
+
+A **session** is the kernel's canonical conversational state: an
+append-only log of :class:`~republic.TapeEntry` values backed by a
+:class:`~yaya.kernel.session.SessionStore`. Every bus event that
+carries a "normal" ``session_id`` (i.e. not the reserved
+``"kernel"`` session) is mirrored onto that session's tape by a
+kernel subscriber; the LLM context is a derived view over the tape
+(see :mod:`yaya.kernel.tape_context`), never a mutable history list
+kept in memory.
+
+### Persistence table
+
+The bus auto-persister maps bus events onto tape entries:
+
+| Bus event | Tape kind | Notes |
+|---|---|---|
+| `user.message.received` | `message` role=`user` | |
+| `assistant.message.delta` | *(skipped)* | Too chatty — deltas only |
+| `assistant.message.done` | `message` role=`assistant` | Final turn |
+| `tool.call.request` | `tool_call` | `{id, name, args}` |
+| `tool.call.result` | `tool_result` | Correlated by `tool_call_id` |
+| `llm.call.delta` | *(skipped)* | Streaming chunk — too chatty |
+| `session.*` | *(skipped)* | Lifecycle mirrors the tape itself |
+| any other public kind | `event` | `name=<kind>`, `data=<payload>` |
+
+Plugins can opt an event out of persistence with a kernel-level
+`persist=False` key on the payload (accepted as `"__persist__"` too
+for extensions that want to keep the top-level payload clean).
+Anything on session `"kernel"` is never persisted.
+
+### Tape naming
+
+Every tape is named `md5(workspace_abspath)[:16] + "__" +
+md5(session_id)[:16]` so two sessions with the same `session_id` in
+different workspaces live on different tapes. MD5 is a
+collision-tolerant identifier — not a security primitive — hence
+`hashlib.md5(..., usedforsecurity=False)`.
+
+### Fork / compaction / reset
+
+- **Fork** (`Session.fork(child_id)`): returns a child session backed
+  by an overlay store. Reads see parent-entries + child-entries;
+  writes land only on the child; `reset()` on the child does not
+  touch the parent. Tooling for subagents.
+- **Compaction**: append a summary anchor via `Session.handoff(name,
+  state)` and run subsequent context queries with
+  `after_last_anchor` (see :func:`yaya.kernel.tape_context.after_last_anchor`).
+  Compaction never rewrites past entries — the summarised prefix
+  stays on disk and is filtered out of the LLM context only.
+- **Reset** (`Session.reset(archive=True)`): archives the current
+  entries to `tapes/.archive/<tape>.jsonl.<stamp>.bak`, clears the
+  tape, and re-seeds a `session/start` anchor. Safe for
+  long-running conversations that have drifted off-topic.
+
+### Auto-persister guarantees
+
+- **Best-effort, not transactional.** A tape-write failure logs at
+  WARNING and emits a `plugin.error` with `source="kernel-session-persister"`;
+  the session keeps receiving events. Losing an observational entry
+  is strictly better than halting the session worker.
+- **No bus recursion.** The persister writes entries directly — it
+  never re-publishes on the bus. Failure notifications use a
+  non-`"kernel"` source so the bus recursion guard (lesson #2)
+  still surfaces them through `plugin.error`.
+- **Kernel session skipped.** Events emitted on session `"kernel"`
+  (approval prompts, plugin lifecycle, kernel errors, etc.) do not
+  land on any tape. Those events belong to the control plane; if
+  an adapter needs to render them it subscribes to them directly.
 
 ## Security posture (1.0)
 

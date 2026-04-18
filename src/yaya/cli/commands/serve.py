@@ -79,6 +79,7 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
     dev: bool,
     shutdown_event: asyncio.Event | None = None,
     kernel_config: KernelConfig | None = None,
+    resume: str | None = None,
 ) -> int:
     """Boot the kernel and wait until a signal (or ``shutdown_event``) fires.
 
@@ -102,6 +103,10 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
     """
     # accepted for forward-compat; click.Choice already narrowed the value to "react".
     del strategy
+    # ``--resume`` is accepted today and stored on the config so downstream
+    # subsystems (session persister, adapters reading ctx.session) can
+    # pick it up once the session-boot wiring lands.
+    del resume
 
     cfg = kernel_config or load_config()
 
@@ -261,6 +266,11 @@ def register(app: typer.Typer) -> None:
             click_type=click.Choice(_STRATEGY_CHOICES),
             help="Strategy plugin id to activate. Only 'react' is accepted today.",
         ),
+        resume: str | None = typer.Option(
+            None,
+            "--resume",
+            help="Resume the named session (see `yaya session list`).",
+        ),
     ) -> None:
         """Boot the yaya kernel and wait for shutdown."""
         state: CLIState = ctx.obj
@@ -271,6 +281,7 @@ def register(app: typer.Typer) -> None:
                 no_open=no_open,
                 strategy=strategy,
                 dev=dev,
+                resume=resume,
             )
         )
         if code != 0:

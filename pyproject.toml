@@ -23,6 +23,13 @@ dependencies = [
     "openai>=1.52.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
+    # Event-sourcing primitives for the session tape store (issue #32).
+    # republic ships Tape / TapeEntry / TapeStore / AsyncTapeStore /
+    # TapeQuery / TapeContext / ForkTapeStore — plain data structures
+    # with a persistence-adapter layer. It is NOT an agent / chain /
+    # orchestration framework and therefore not covered by the ban in
+    # AGENT.md §4.
+    "republic>=0.5.4",
 ]
 
 [project.entry-points."yaya.plugins.v1"]
@@ -132,6 +139,23 @@ enable_error_code = [
     "possibly-undefined",
     "explicit-override",
 ]
+
+# ``republic`` ships without a py.typed marker. Combined with
+# ``ignore_missing_imports = true`` every symbol transits as implicit
+# ``Any`` and trips ``disallow_any_unimported`` wherever we touch
+# republic's tape primitives — which is exactly the kernel's session
+# and persister layer. We disable the check on those two modules
+# rather than weaken the project-wide flag. Every other file keeps
+# the strict bar; when republic ships a ``py.typed`` marker we drop
+# these overrides. See issue #32 rationale in the PR body.
+[[tool.mypy.overrides]]
+module = [
+    "yaya.kernel.session",
+    "yaya.kernel.session_persister",
+    "yaya.kernel.tape_context",
+]
+disallow_any_unimported = false
+warn_return_any = false
 
 # Second type-checker gate. Pyright is the engine behind VS Code's Pylance,
 # so its CI verdict matches what contributors see live in the editor — closes

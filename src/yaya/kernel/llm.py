@@ -422,11 +422,10 @@ def anthropic_to_chat_provider_error(exc: BaseException) -> ChatProviderError:
     :class:`ChatProviderError` when the SDK is missing.
     """
     try:
-        # Soft dependency: the ``anthropic`` SDK is optional until an
-        # Anthropic provider plugin ships. Suppress pyright's missing-import
-        # diagnostic so users who haven't installed it still get a clean
-        # kernel build.
-        import anthropic as _anthropic  # pyright: ignore[reportMissingImports]
+        # Soft dependency: the ``anthropic`` SDK is currently pulled in as a
+        # transitive of ``republic`` (issue #32). The import stays guarded so
+        # the kernel keeps booting if a future republic release drops it.
+        import anthropic as _anthropic
     except ImportError:
         return ChatProviderError(str(exc) or type(exc).__name__)
 

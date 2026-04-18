@@ -79,6 +79,11 @@ def test_public_catalog_matches_protocol_document() -> None:
         "kernel.ready",
         "kernel.shutdown",
         "kernel.error",
+        "session.started",
+        "session.handoff",
+        "session.reset",
+        "session.archived",
+        "session.forked",
     }
     assert expected == PUBLIC_EVENT_KINDS
 

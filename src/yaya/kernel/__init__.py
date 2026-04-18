@@ -20,7 +20,13 @@ from yaya.kernel.approval import (
     uninstall_approval_runtime,
 )
 from yaya.kernel.bus import DEFAULT_HANDLER_TIMEOUT_S, EventBus, EventHandler, Subscription
-from yaya.kernel.config import CONFIG_PATH, KernelConfig, default_config_path, load_config
+from yaya.kernel.config import (
+    CONFIG_PATH,
+    KernelConfig,
+    SessionConfig,
+    default_config_path,
+    load_config,
+)
 from yaya.kernel.errors import (
     ConfigError,
     KernelError,
@@ -56,6 +62,20 @@ from yaya.kernel.logging import configure_logging, get_plugin_logger
 from yaya.kernel.loop import AgentLoop, LoopConfig
 from yaya.kernel.plugin import Category, KernelContext, Plugin
 from yaya.kernel.registry import PluginRegistry, PluginStatus, validate_install_source
+from yaya.kernel.session import (
+    MemoryTapeStore,
+    Session,
+    SessionInfo,
+    SessionStore,
+    default_session_dir,
+    tape_name_for,
+)
+from yaya.kernel.session_persister import SessionPersister, install_session_persister
+from yaya.kernel.tape_context import (
+    after_last_anchor,
+    default_tape_context,
+    select_messages,
+)
 from yaya.kernel.tool import (
     DisplayBlock,
     JsonBlock,
@@ -103,12 +123,18 @@ __all__ = [
     "LLMProvider",
     "LoopConfig",
     "MarkdownBlock",
+    "MemoryTapeStore",
     "Plugin",
     "PluginError",
     "PluginRegistry",
     "PluginStatus",
     "PublicEventKind",
     "RetryableChatProvider",
+    "Session",
+    "SessionConfig",
+    "SessionInfo",
+    "SessionPersister",
+    "SessionStore",
     "StreamPart",
     "StreamedMessage",
     "Subscription",
@@ -124,22 +150,28 @@ __all__ = [
     "ToolReturnValue",
     "YayaError",
     "YayaTimeoutError",
+    "after_last_anchor",
     "anthropic_to_chat_provider_error",
     "configure_logging",
     "convert_httpx_error",
     "default_config_path",
+    "default_session_dir",
+    "default_tape_context",
     "dispatch",
     "get_approval_runtime",
     "get_plugin_logger",
     "get_tool",
     "install_approval_runtime",
     "install_dispatcher",
+    "install_session_persister",
     "load_config",
     "mark_legacy_tool",
     "new_event",
     "openai_to_chat_provider_error",
     "register_tool",
     "registered_tools",
+    "select_messages",
+    "tape_name_for",
     "uninstall_approval_runtime",
     "validate_install_source",
 ]

@@ -38,8 +38,13 @@ a deterministic load-order tie-breaker, never a behavioral branch.
   `asyncio.create_subprocess_exec` (never `shell=True`) and re-runs
   entry-point discovery so a freshly installed plugin comes online
   without a kernel restart.
-- `install` source validation rejects shell metacharacters and other
-  hazards with `ValueError` before any subprocess is spawned.
+- `install` source validation rejects sources that do not match an
+  accepted shape (PyPI name/spec, absolute path, `file://` or
+  `https://` URL) with `ValueError` before any subprocess is spawned.
+  Shell-injection safety comes from `create_subprocess_exec` (no
+  shell), not from character filtering — unsupported URL schemes
+  (e.g. `git+ssh://`), relative paths, plain `http://`, empty input,
+  and embedded `\n`/`\r` are all rejected.
 - `remove(name)` raises `ValueError` referencing "bundled" when the
   named plugin is bundled, re-deriving bundled membership from
   entry-point metadata at the enforcement point.
@@ -132,12 +137,12 @@ Scenario: install shells to uv pip via subprocess_exec and re-runs discovery
   Then asyncio.create_subprocess_exec is invoked with "uv pip install yaya-tool-bash"
   And entry-point discovery re-runs so the freshly installed plugin comes online
 
-Scenario: Error path — install source validation rejects shell metacharacters
+Scenario: Error path — install source validation rejects unsupported scheme
   Test:
     Package: yaya
     Filter: tests/kernel/test_registry.py::test_validate_install_source_rejects_hazards
   Level: unit
-  Given a source string containing shell metacharacters like ";"
+  Given a source string with an unsupported URL scheme like "git+ssh"
   When registry.install(source) is called
   Then ValueError is raised by source validation before any subprocess is spawned
 

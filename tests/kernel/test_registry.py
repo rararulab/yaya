@@ -467,7 +467,7 @@ async def test_stop_runs_on_unload_in_reverse_order(tmp_path: Path) -> None:
     await bus.close()
 
 
-def testvalidate_install_source_accepts_common_forms(tmp_path: Path) -> None:
+def test_validate_install_source_accepts_common_forms(tmp_path: Path) -> None:
     """PyPI names, absolute paths, and file:// / https:// URLs are accepted."""
     validate_install_source("yaya-tool-bash")
     validate_install_source("yaya-tool-bash==1.2.3")
@@ -476,11 +476,80 @@ def testvalidate_install_source_accepts_common_forms(tmp_path: Path) -> None:
     validate_install_source("https://example.com/plugin.whl")
 
 
-def testvalidate_install_source_rejects_hazards() -> None:
-    """Shell metachars, unsupported schemes, and empty input are rejected."""
-    for bad in ["", "foo; rm -rf /", "git+ssh://example.com/x.git", "http://plain"]:
+def test_validate_install_source_rejects_hazards() -> None:
+    """Unsupported schemes, empty input, and embedded newlines are rejected.
+
+    Shell-metachar filtering is deliberately NOT in scope — safety comes
+    from ``_run_package_command`` using ``create_subprocess_exec`` (no
+    shell). See the validator docstring. The newline reject exists only
+    because embedded ``\\n`` / ``\\r`` can break argv logging and tools
+    that parse line-oriented subprocess output.
+    """
+    for bad in ["", "foo\nrm -rf /", "foo\rbar", "git+ssh://example.com/x.git", "http://plain"]:
         with pytest.raises(ValueError):
             validate_install_source(bad)
+
+
+async def test_run_package_command_terminates_child_on_cancel() -> None:
+    """Finding #3 / lesson #30 — cancelling the awaiting coroutine kills the child.
+
+    ``asyncio.create_subprocess_exec`` does NOT auto-kill the spawned
+    process when the caller is cancelled; without explicit terminate
+    the child happily keeps mutating the user's Python environment
+    (think pip half-installing a package). The fix wraps
+    ``communicate()`` in ``except (CancelledError, KeyboardInterrupt)``
+    and forces the child down before re-raising. We assert exactly
+    that contract: spawn a long-running child, cancel the task, then
+    verify the child is reaped within the 5s grace.
+    """
+    import sys
+
+    from yaya.kernel import registry as registry_mod
+
+    # ``_run_package_command`` resolves ``uv`` (or the caller's tool)
+    # and prepends it to argv, so we cannot pass arbitrary argv. Hijack
+    # ``create_subprocess_exec`` itself to spawn a 30s sleep regardless
+    # of what the function decided to run — the contract we are
+    # testing is the cancel/terminate handshake on the returned Process,
+    # not pip resolution.
+    spawned: list[asyncio.subprocess.Process] = []
+    real_exec = asyncio.create_subprocess_exec
+    sleeper_argv = (sys.executable, "-c", "import time; time.sleep(30)")
+
+    terminate_calls: list[int] = []
+
+    async def _hijacked_exec(*_a, **kw):  # type: ignore[no-untyped-def]
+        proc = await real_exec(*sleeper_argv, **kw)
+        # Spy on ``terminate`` to prove the cancel handler actually ran it,
+        # not merely that the child died for some other reason. We wrap
+        # rather than replace so the real SIGTERM still fires.
+        real_terminate = proc.terminate
+
+        def _spy_terminate() -> None:
+            terminate_calls.append(1)
+            real_terminate()
+
+        proc.terminate = _spy_terminate  # type: ignore[method-assign]
+        spawned.append(proc)
+        return proc
+
+    with patch.object(registry_mod.asyncio, "create_subprocess_exec", _hijacked_exec):
+        task = asyncio.create_task(registry_mod._run_package_command(["pip", "install", "noop"]))
+        # Give the subprocess time to actually start.
+        await asyncio.sleep(0.2)
+        assert spawned, "expected create_subprocess_exec to spawn a child"
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    # The cancel handshake MUST have invoked terminate() at least once —
+    # proves the except branch ran, not just that the child happened to
+    # exit. kill() is only the fallback after a 5s grace; we do not
+    # require it here.
+    assert terminate_calls, "proc.terminate() was not called on cancel"
+    # The child must be reaped — returncode is non-None once wait() resolved.
+    proc = spawned[0]
+    assert proc.returncode is not None, "child process was not terminated on cancel"
 
 
 def test_plugin_status_values() -> None:

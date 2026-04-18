@@ -36,15 +36,22 @@ def test_plugin_remove_bundled_rejected(runner: CliRunner, cli_app) -> None:
 
 
 def test_plugin_install_shell_metachars_rejected(runner: CliRunner, cli_app) -> None:
-    """Validator rejects shell metacharacters *before* any pip subprocess."""
+    """Validator rejects unsupported sources *before* any pip subprocess.
+
+    Shell-injection safety comes from ``_run_package_command`` using
+    ``create_subprocess_exec`` (no shell) — not from character
+    filtering. This test covers the surviving surface of
+    ``validate_install_source``: unsupported URL schemes like
+    ``git+ssh`` are rejected before any subprocess runs.
+    """
     result = runner.invoke(
         cli_app,
-        ["--json", "plugin", "install", "foo;rm -rf /", "--yes"],
+        ["--json", "plugin", "install", "git+ssh://example.com/foo.git", "--yes"],
     )
     assert result.exit_code == 1
     payload = json.loads(result.stdout)
     assert payload["ok"] is False
-    assert "disallowed" in payload["error"] or "characters" in payload["error"]
+    assert "scheme" in payload["error"] or "supported" in payload["error"]
 
 
 def test_plugin_install_json_requires_yes(runner: CliRunner, cli_app) -> None:

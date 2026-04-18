@@ -26,6 +26,7 @@ import signal
 import socket
 import webbrowser
 
+import click
 import typer
 
 from yaya.cli import CLIState
@@ -43,6 +44,10 @@ Examples:
 
 _BIND_HOST = "127.0.0.1"
 """Hard-coded bind — see module docstring and GOAL.md non-goals."""
+
+_STRATEGY_CHOICES = ["react"]
+"""Accepted ``--strategy`` values. Additions here must land alongside
+real dispatch wiring (lesson #23) — unknown values exit 2 at argv time."""
 
 
 def _pick_free_port() -> int:
@@ -81,18 +86,23 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
         state: Shared CLI state (JSON mode flag, verbosity).
         port: Requested port. ``0`` means auto-pick a free one.
         no_open: If True, suppress the browser launch attempt.
-        strategy: Strategy plugin id to prefer once per-plugin config
-            plumbing lands. Currently accepted but not yet dispatched.
+        strategy: Strategy plugin id. Currently only ``"react"`` is
+            accepted; Click rejects unknown values at argv time, so
+            this argument is effectively a single-element enum.
         dev: If True, reserved for a future vite-HMR proxy mode. The
             web adapter plugin owns the actual proxy behaviour.
         shutdown_event: Test-only hook. When provided, the caller drives
             shutdown by setting the event; signal handlers are NOT
             registered (the test owns the lifecycle).
+        kernel_config: Optional pre-loaded kernel config (test hook).
 
     Returns:
         Process exit code (``0`` on clean shutdown, non-zero on startup
         failure).
     """
+    # accepted for forward-compat; click.Choice already narrowed the value to "react".
+    del strategy
+
     cfg = kernel_config or load_config()
 
     # Merge order: explicit --port (non-zero) wins; otherwise fall back
@@ -105,71 +115,22 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
     else:
         bound_port = _pick_free_port()
 
-    bus = EventBus()
-    registry = PluginRegistry(bus, kernel_config=cfg)
-    loop = AgentLoop(bus)
-
-    try:
-        await registry.start()
-        await loop.start()
-    except Exception as exc:
-        emit_error(
-            state,
-            error=f"kernel_startup_failed: {exc}",
-            suggestion="run with -v / -vv for a detailed traceback",
-        )
-        # Best-effort teardown of whatever did come up.
-        await loop.stop()
-        await registry.stop()
-        await bus.close()
-        return 1
-
-    # Lesson #23 + #10 — flags that don't yet dispatch must warn, not silently ignore.
-    if strategy != "react":
-        warn(
-            f"[yellow]--strategy {strategy!r} is accepted but not yet dispatched;[/] "
-            "config plumbing landed in #23 (ctx.config is now populated from env + "
-            "config.toml), but strategy dispatch on top of it ships separately. "
-            "Falling back to the default strategy plugin."
-        )
+    # Lesson #23 — flags that don't yet dispatch must warn. ``--strategy``
+    # typos are rejected by Click at argv time (see _STRATEGY_CHOICES),
+    # so the only observably-inert flag left here is ``--dev``.
     if dev:
         warn(
             "[yellow]--dev is accepted but not yet implemented;[/] "
             "the vite HMR proxy ships with the web adapter plugin (#16)."
         )
 
-    snapshot = registry.snapshot()
-    web_present = _has_web_adapter(snapshot)
-    if not web_present:
-        warn(
-            "[yellow]kernel is running but no web adapter plugin is loaded;[/] "
-            "install an adapter plugin to interact with yaya. "
-            "`yaya hello` verifies the bus round-trip in the meantime."
-        )
-
-    emit_ok(
-        state,
-        text=(
-            f"[green]yaya kernel live[/] on "
-            f"[bold]{_BIND_HOST}:{bound_port}[/] (pid {os.getpid()})\n"
-            "[dim]note: the web adapter may bind a different port; "
-            "check http://127.0.0.1:<adapter-port>/api/health or set "
-            "YAYA_WEB_PORT to pin it.[/]\n"
-            "press Ctrl+C to stop."
-        ),
-        action="serve.started",
-        addr=f"{_BIND_HOST}:{bound_port}",
-        pid=os.getpid(),
-    )
-
-    if not no_open and web_present:
-        # Best-effort; do not fail serve if the browser refuses to open.
-        try:
-            webbrowser.open(f"http://{_BIND_HOST}:{bound_port}/")
-        except Exception as exc:
-            warn(f"[yellow]failed to open browser:[/] {exc}")
-
-    # Wire the shutdown trigger.
+    # Install the shutdown trigger BEFORE awaiting any startup coroutine.
+    # ``KeyboardInterrupt`` is a ``BaseException``, not ``Exception`` —
+    # a SIGINT arriving between ``EventBus()`` and ``registry.start()``
+    # would otherwise escape past any ``except Exception`` and skip
+    # teardown (lesson #29). Converting SIGINT into ``event.set()`` up
+    # front keeps the invariant that the outer ``try/finally`` always
+    # runs teardown for whatever did come up.
     owned_event = shutdown_event is None
     event = shutdown_event if shutdown_event is not None else asyncio.Event()
 
@@ -186,20 +147,80 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
                 continue
             # add_signal_handler is not available on every platform
             # (Windows ProactorEventLoop); when absent we fall back to
-            # Python's default SIG behaviour — KeyboardInterrupt raised
-            # inside ``await event.wait()`` below is still handled.
+            # Python's default SIG behaviour — ``KeyboardInterrupt``
+            # inside ``await event.wait()`` is caught explicitly below.
             with contextlib.suppress(NotImplementedError, RuntimeError):
                 aio_loop.add_signal_handler(sig, _trigger)
 
+    bus = EventBus()
+    registry = PluginRegistry(bus, kernel_config=cfg)
+    loop = AgentLoop(bus)
+    registry_started = False
+    loop_started = False
+
     try:
-        await event.wait()
-    except KeyboardInterrupt, asyncio.CancelledError:
-        # Either fallback path surfaces as interrupt; treat both as a
-        # clean shutdown signal.
-        pass
+        try:
+            await registry.start()
+            registry_started = True
+            await loop.start()
+            loop_started = True
+        except Exception as exc:
+            emit_error(
+                state,
+                error=f"kernel_startup_failed: {exc}",
+                suggestion="run with -v / -vv for a detailed traceback",
+            )
+            return 1
+
+        snapshot = registry.snapshot()
+        web_present = _has_web_adapter(snapshot)
+        if not web_present:
+            warn(
+                "[yellow]kernel is running but no web adapter plugin is loaded;[/] "
+                "install an adapter plugin to interact with yaya. "
+                "`yaya hello` verifies the bus round-trip in the meantime."
+            )
+
+        emit_ok(
+            state,
+            text=(
+                f"[green]yaya kernel live[/] on "
+                f"[bold]{_BIND_HOST}:{bound_port}[/] (pid {os.getpid()})\n"
+                "[dim]note: the web adapter may bind a different port; "
+                "check http://127.0.0.1:<adapter-port>/api/health or set "
+                "YAYA_WEB_PORT to pin it.[/]\n"
+                "press Ctrl+C to stop."
+            ),
+            action="serve.started",
+            addr=f"{_BIND_HOST}:{bound_port}",
+            pid=os.getpid(),
+        )
+
+        if not no_open and web_present:
+            # Best-effort; ``webbrowser.open`` can block for seconds on
+            # macOS (launching Safari), so run it on the default
+            # executor instead of stalling the event loop.
+            # best-effort: executor thread may outlive Ctrl+C since asyncio.run()'s
+            # default-executor shutdown does not forcibly join in-flight work.
+            # Acceptable for a local dev tool; flagged in PR #85 re-review.
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    webbrowser.open,
+                    f"http://{_BIND_HOST}:{bound_port}/",
+                )
+            except Exception as exc:
+                warn(f"[yellow]failed to open browser:[/] {exc}")
+
+        # Either fallback path surfaces as an interrupt; treat both as
+        # a clean shutdown signal — no log spam, just teardown.
+        with contextlib.suppress(KeyboardInterrupt, asyncio.CancelledError):
+            await event.wait()
     finally:
-        await loop.stop()
-        await registry.stop()
+        if loop_started:
+            await loop.stop()
+        if registry_started:
+            await registry.stop()
         await bus.close()
 
     emit_ok(
@@ -237,7 +258,8 @@ def register(app: typer.Typer) -> None:
         strategy: str = typer.Option(
             "react",
             "--strategy",
-            help="Strategy plugin id to activate (default: react). Non-default values warn until ctx.config lands.",
+            click_type=click.Choice(_STRATEGY_CHOICES),
+            help="Strategy plugin id to activate. Only 'react' is accepted today.",
         ),
     ) -> None:
         """Boot the yaya kernel and wait for shutdown."""

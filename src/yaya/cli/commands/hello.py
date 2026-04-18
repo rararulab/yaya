@@ -9,7 +9,7 @@ LLM or any adapter plugin.
 
 Exit codes:
     * ``0`` — sentinel observed the round-tripped event.
-    * ``1`` — functional error (startup failure or 5-second timeout).
+    * ``1`` — functional error (startup failure or timeout).
 """
 
 from __future__ import annotations
@@ -26,15 +26,20 @@ from yaya.kernel import AgentLoop, Event, EventBus, PluginRegistry, new_event
 EXAMPLES = """
 Examples:
   yaya hello
+  yaya hello --timeout 10
   yaya --json hello
 """
 
 _SENTINEL_TIMEOUT_S = 5.0
-"""Deadline for the sentinel to observe the emitted event."""
+"""Default deadline for the sentinel to observe the emitted event."""
 
 
-async def _run_hello() -> bool:
+async def _run_hello(*, timeout_s: float = _SENTINEL_TIMEOUT_S) -> bool:
     """Boot the kernel, round-trip one event, tear down.
+
+    Args:
+        timeout_s: Seconds to wait for the sentinel before declaring
+            the bus unresponsive. Must be positive.
 
     Returns:
         ``True`` if the sentinel fired within the timeout; ``False`` on
@@ -42,11 +47,14 @@ async def _run_hello() -> bool:
 
     Raises:
         Any exception from ``start()`` — caller surfaces it as
-        ``startup_failed``.
+        ``startup_failed``. Teardown runs even when ``start()`` raises,
+        so no bus / loop / registry resources leak.
     """
     bus = EventBus()
     registry = PluginRegistry(bus)
     loop = AgentLoop(bus)
+    registry_started = False
+    loop_started = False
 
     got_event = asyncio.Event()
 
@@ -57,10 +65,12 @@ async def _run_hello() -> bool:
     # place by the time the synthetic event is published.
     sub = bus.subscribe("user.message.received", _sentinel, source="cli-hello")
 
-    await registry.start()
-    await loop.start()
-
     try:
+        await registry.start()
+        registry_started = True
+        await loop.start()
+        loop_started = True
+
         await bus.publish(
             new_event(
                 "user.message.received",
@@ -70,15 +80,17 @@ async def _run_hello() -> bool:
             )
         )
         try:
-            await asyncio.wait_for(got_event.wait(), timeout=_SENTINEL_TIMEOUT_S)
+            await asyncio.wait_for(got_event.wait(), timeout=timeout_s)
         except TimeoutError:
             return False
         else:
             return True
     finally:
         sub.unsubscribe()
-        await loop.stop()
-        await registry.stop()
+        if loop_started:
+            await loop.stop()
+        if registry_started:
+            await registry.stop()
         await bus.close()
 
 
@@ -86,11 +98,20 @@ def register(app: typer.Typer) -> None:
     """Register the ``hello`` subcommand onto ``app``."""
 
     @app.command(epilog=EXAMPLES)
-    def hello(ctx: typer.Context) -> None:
+    def hello(
+        ctx: typer.Context,
+        timeout: float = typer.Option(
+            _SENTINEL_TIMEOUT_S,
+            "--timeout",
+            # If CI-machine flakes surface on tight timeouts, raise the floor to 0.5.
+            min=0.1,
+            help="Seconds to wait for the sentinel event before declaring the bus unresponsive.",
+        ),
+    ) -> None:
         """Kernel smoke-test: boot, round-trip one event, shut down."""
         state: CLIState = ctx.obj
         try:
-            received = asyncio.run(_run_hello())
+            received = asyncio.run(_run_hello(timeout_s=timeout))
         except Exception as exc:
             emit_error(
                 state,

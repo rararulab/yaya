@@ -585,13 +585,16 @@ def _discovery_reran(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 7 — install source validation rejects shell metacharacters
+# Scenario 7 — install source validation rejects unsupported scheme
 # ---------------------------------------------------------------------------
 
 
-@given('a source string containing shell metacharacters like ";"')
+@given('a source string with an unsupported URL scheme like "git+ssh"')
 def _hazardous_source(ctx: BDDContext, tmp_path: Path) -> None:
-    ctx.extras["source"] = "foo; rm -rf /"
+    # Shell-metachar filtering is deliberately NOT in scope — safety
+    # comes from ``create_subprocess_exec`` (no shell). The validator's
+    # surviving job is rejecting unsupported source SHAPES.
+    ctx.extras["source"] = "git+ssh://example.com/foo.git"
     ctx.extras["tmp_path"] = tmp_path
 
 

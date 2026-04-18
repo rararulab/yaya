@@ -743,7 +743,7 @@ def _safe_subscriptions(plugin: Plugin) -> list[str]:
 
 
 def validate_install_source(source: str) -> None:
-    """Reject obviously-unsafe install sources before shelling to pip.
+    """Reject install sources that do not match an accepted shape.
 
     Accepted forms:
 
@@ -753,10 +753,17 @@ def validate_install_source(source: str) -> None:
     * ``file://`` URL.
     * ``https://`` URL.
 
-    Everything else — shell metachars, git URLs (not yet supported),
-    relative paths — is rejected with :class:`ValueError`.
+    Everything else — git URLs (not yet supported), relative paths,
+    plain ``http://`` — is rejected with :class:`ValueError`.
+
+    Shell-injection safety comes from :func:`_run_package_command`
+    using :func:`asyncio.create_subprocess_exec` (no shell), **not**
+    from this validator filtering characters. The only character
+    filter we keep is newline / carriage-return because embedded
+    newlines can still break argv logging and downstream tools that
+    parse line-oriented output.
     """
-    if not source or any(ch in source for ch in (";", "|", "&", "`", "\n", "\r")):
+    if not source or any(ch in source for ch in ("\n", "\r")):
         raise ValueError(f"install source {source!r} contains disallowed characters")
 
     # Windows drive-letter absolute path (``C:/...`` or ``C:\...``) detected
@@ -768,8 +775,11 @@ def validate_install_source(source: str) -> None:
 
     # Check filesystem paths BEFORE URL parsing: on Windows ``urlparse`` reads
     # ``C:\foo`` as scheme ``"c"``, which would otherwise be rejected below.
+    # We require ``is_absolute()`` only — relative paths that happen to
+    # exist on the caller's CWD must not sneak through, since the
+    # docstring promises absolute-only.
     path = Path(source)
-    if path.is_absolute() or path.exists():
+    if path.is_absolute():
         return
 
     parsed = urlparse(source)
@@ -789,6 +799,13 @@ async def _run_package_command(args: list[str]) -> None:
     Uses :func:`asyncio.create_subprocess_exec` — no shell — so shell
     metacharacters in arguments cannot escape into the shell. Raises
     :class:`RuntimeError` with stderr on non-zero exit.
+
+    When the caller coroutine is cancelled (or the process receives
+    ``SIGINT`` while ``communicate()`` is awaiting), we must terminate
+    the child before re-raising — :func:`asyncio.create_subprocess_exec`
+    does NOT auto-kill the child on cancel, and ``pip`` / ``uv`` can
+    happily continue downloading and mutating the user's environment
+    for minutes after we let go (lesson #30).
     """
     uv = shutil.which("uv")
     if uv is not None:
@@ -805,7 +822,21 @@ async def _run_package_command(args: list[str]) -> None:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    _stdout, stderr = await proc.communicate()
+    try:
+        _stdout, stderr = await proc.communicate()
+    # PEP 758 (py3.12+) tuple-except without parens; ruff format normalizes
+    # parenthesised form back to this under ``target-version = "py314"``
+    # (lesson #16). Both catch the same BaseException subclasses.
+    except asyncio.CancelledError, KeyboardInterrupt:
+        # Ask politely, then force — never return until the child is
+        # reaped so we do not leak a defunct-hunting zombie.
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+        raise
     if proc.returncode != 0:
         raise RuntimeError(
             f"command {argv!r} failed with exit {proc.returncode}: {stderr.decode(errors='replace').strip()}"

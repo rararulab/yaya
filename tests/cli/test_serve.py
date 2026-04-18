@@ -9,6 +9,7 @@ exercise :func:`yaya.cli.commands.serve.run_serve` directly with the
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from unittest.mock import AsyncMock, patch
 
@@ -230,29 +231,15 @@ async def test_run_serve_warns_when_no_adapter(
     assert "no web adapter" in captured.err
 
 
-@pytest.mark.asyncio
-async def test_run_serve_warns_on_non_default_strategy(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """--strategy <other> must warn until dispatch is wired."""
-    shutdown = asyncio.Event()
-    state = CLIState(json_output=False)
-    task = asyncio.create_task(
-        run_serve(
-            state,
-            port=0,
-            no_open=True,
-            strategy="plan-execute",
-            dev=False,
-            shutdown_event=shutdown,
-        )
-    )
-    await asyncio.sleep(0.2)
-    shutdown.set()
-    await asyncio.wait_for(task, timeout=5.0)
-    captured = capsys.readouterr()
-    assert "--strategy 'plan-execute'" in captured.err
-    assert "not yet dispatched" in captured.err
+def test_serve_strategy_typo_exits_two(runner: CliRunner, cli_app) -> None:
+    """``--strategy plan-execute`` is rejected by Click with exit 2.
+
+    Before the follow-up to PR #62, ``run_serve`` accepted any string
+    and warned at runtime; that was observably inert. The argparser
+    now exits 2 at argv time via ``click.Choice``.
+    """
+    result = runner.invoke(cli_app, ["serve", "--strategy", "plan-execute", "--no-open"])
+    assert result.exit_code == 2, result.stdout
 
 
 @pytest.mark.asyncio
@@ -278,3 +265,187 @@ async def test_run_serve_warns_on_dev_flag(
     captured = capsys.readouterr()
     assert "--dev is accepted" in captured.err
     assert "not yet implemented" in captured.err
+
+
+@pytest.mark.asyncio
+async def test_run_serve_teardown_runs_when_startup_signalled_early(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SIGINT-during-startup (sim. via a pre-set shutdown_event + a blocking
+    ``registry.start``) must still run teardown.
+
+    Regression for finding #1 / lesson #29: SIGINT arrives before
+    ``add_signal_handler`` would have converted it to ``event.set()``,
+    so the old ``except Exception`` path let ``KeyboardInterrupt``
+    escape past teardown. The fix moves every lifecycle step inside
+    one try/finally and uses ``started`` flags so partial shutdown is
+    safe. Here we prove the contract: if ``registry.start`` is
+    cancelled, ``bus.close`` still runs.
+    """
+    from yaya.cli.commands import serve as serve_mod
+
+    bus_closed: list[bool] = []
+    real_bus_cls = serve_mod.EventBus
+
+    class _TrackingBus(real_bus_cls):  # type: ignore[misc,valid-type]
+        async def close(self) -> None:
+            bus_closed.append(True)
+            await super().close()
+
+    monkeypatch.setattr(serve_mod, "EventBus", _TrackingBus)
+
+    # Force registry.start to block forever so we can cancel the task.
+    async def _blocking_start(self) -> None:  # type: ignore[no-untyped-def]
+        await asyncio.Event().wait()  # never fires
+
+    monkeypatch.setattr(serve_mod.PluginRegistry, "start", _blocking_start)
+
+    state = CLIState(json_output=True)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=True,
+            strategy="react",
+            dev=False,
+            shutdown_event=asyncio.Event(),
+        )
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+    assert bus_closed, "bus.close() must run even when startup is cancelled"
+
+
+@pytest.mark.asyncio
+async def test_run_serve_registers_signal_handlers_before_registry_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Signal handlers must be wired BEFORE awaiting ``registry.start``.
+
+    Regression for finding #1 / lesson #29. The prior
+    ``teardown_runs_when_startup_signalled_early`` test passed its own
+    ``shutdown_event`` (``owned_event=False``), so the ``add_signal_handler``
+    branch was never exercised — it failed to prove the ordering rule.
+    This test takes the ``owned_event=True`` path (no shutdown_event
+    argument), records the call timestamps of
+    ``loop.add_signal_handler`` and ``PluginRegistry.start``, and asserts
+    the former happens first.
+
+    Fast exit: ``registry.start`` is monkeypatched to raise ``SystemExit``
+    so ``run_serve`` unwinds immediately after signal handlers are
+    observed — we still assert ordering via timestamps captured before
+    the raise.
+    """
+    from yaya.cli.commands import serve as serve_mod
+
+    events: list[tuple[str, float]] = []
+
+    real_add = asyncio.get_event_loop_policy  # placeholder to satisfy lint
+    del real_add
+
+    # Wrap add_signal_handler on the running loop. We monkeypatch via the
+    # instance at call time by intercepting ``asyncio.get_running_loop``
+    # and returning a proxy whose ``add_signal_handler`` records + delegates.
+    real_get_running_loop = asyncio.get_running_loop
+
+    def _proxied_get_running_loop():  # type: ignore[no-untyped-def]
+        loop = real_get_running_loop()
+        original = loop.add_signal_handler
+
+        def _recording(sig, callback, *args):  # type: ignore[no-untyped-def]
+            events.append(("add_signal_handler", asyncio.get_running_loop().time()))
+            # Platforms without signal support (Windows ProactorEventLoop)
+            # raise NotImplementedError — the ordering is what we verify;
+            # actual signal delivery is out of scope for this test.
+            with contextlib.suppress(NotImplementedError, RuntimeError):
+                original(sig, callback, *args)
+
+        loop.add_signal_handler = _recording  # type: ignore[method-assign]
+        return loop
+
+    monkeypatch.setattr(serve_mod.asyncio, "get_running_loop", _proxied_get_running_loop)
+
+    async def _recording_start(self) -> None:  # type: ignore[no-untyped-def]
+        events.append(("registry.start", asyncio.get_running_loop().time()))
+        # Fail fast so run_serve returns 1 via its startup error branch —
+        # we have already captured the ordering we care about.
+        raise RuntimeError("fast-exit for ordering test")
+
+    monkeypatch.setattr(serve_mod.PluginRegistry, "start", _recording_start)
+
+    state = CLIState(json_output=True)
+    # owned_event=True → signal handlers must be installed.
+    code = await run_serve(
+        state,
+        port=0,
+        no_open=True,
+        strategy="react",
+        dev=False,
+    )
+    # startup_failed path returns 1.
+    assert code == 1
+
+    signal_calls = [i for i, (name, _) in enumerate(events) if name == "add_signal_handler"]
+    start_calls = [i for i, (name, _) in enumerate(events) if name == "registry.start"]
+    assert signal_calls, "add_signal_handler was not called on the owned-event path"
+    assert start_calls, "registry.start was not reached"
+    # Every signal-handler install must come strictly before registry.start.
+    assert max(signal_calls) < min(start_calls), f"signal handlers installed AFTER registry.start; order: {events}"
+
+
+@pytest.mark.asyncio
+async def test_run_serve_calls_webbrowser_in_executor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Finding #10 — ``webbrowser.open`` must go through the default executor.
+
+    We wrap the running loop's ``run_in_executor`` and assert our
+    recording wrapper sees ``webbrowser.open`` as the callable. If the
+    code regresses to a direct synchronous call, the wrapper never
+    fires.
+    """
+    from yaya.cli.commands import serve as serve_mod
+
+    monkeypatch.setattr(serve_mod, "_has_web_adapter", lambda _snapshot: True)
+
+    # Prevent a real browser launch. Use a named ``def`` (not a lambda)
+    # so the recording wrapper can identify the call by ``__name__``.
+    def fake_browser_open(_url: str) -> bool:
+        return True
+
+    monkeypatch.setattr(serve_mod.webbrowser, "open", fake_browser_open)
+
+    recorded: list[tuple[str, tuple[object, ...]]] = []
+    aio_loop = asyncio.get_running_loop()
+    original_run_in_executor = aio_loop.run_in_executor
+
+    def _recording(executor, func, *args):  # type: ignore[no-untyped-def]
+        recorded.append((getattr(func, "__name__", repr(func)), args))
+        return original_run_in_executor(executor, func, *args)
+
+    monkeypatch.setattr(aio_loop, "run_in_executor", _recording)
+
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=True)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=False,
+            strategy="react",
+            dev=False,
+            shutdown_event=shutdown,
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    await asyncio.wait_for(task, timeout=5.0)
+    names = [name for name, _args in recorded]
+    assert "fake_browser_open" in names, (
+        f"expected webbrowser.open to be dispatched via run_in_executor; recorded={names!r}"
+    )
+    # Sanity: the URL flowed through unchanged.
+    args = next(a for n, a in recorded if n == "fake_browser_open")
+    assert args and str(args[0]).startswith("http://127.0.0.1:")

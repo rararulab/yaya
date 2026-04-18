@@ -26,16 +26,18 @@ _stdout = Console()
 _stderr = Console(stderr=True)
 
 
-def emit_ok(state: CLIState, *, text: str, action: str, **data: Any) -> None:
+def emit_ok(state: CLIState, *, action: str, text: str | None = None, **data: Any) -> None:
     """Emit a success result.
 
     Agent mode: ``{"ok": true, "action": action, ...data}`` on stdout.
-    Human mode: ``text`` (rich markup) on stdout.
+    Human mode: ``text`` (rich markup) on stdout; when ``text`` is
+    ``None`` or empty, human mode prints nothing — useful for commands
+    (``plugin list``) that render their own human output separately.
     """
     if state.json_output:
         payload: dict[str, Any] = {"ok": True, "action": action, **data}
         _stdout.print_json(json.dumps(payload))
-    else:
+    elif text:
         _stdout.print(text)
 
 

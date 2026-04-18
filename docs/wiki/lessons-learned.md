@@ -660,6 +660,70 @@ authors) — same family of "request lost without trace" hazards.
 
 ---
 
+## 30. SIGINT can arrive *before* `loop.add_signal_handler` is installed
+
+**Symptom** — `yaya serve` was wired to install the SIGINT/SIGTERM
+asyncio signal handler **after** `await registry.start()` and
+`await loop.start()`. A user hitting Ctrl+C during the boot window
+(plugin discovery + entry-point load) would see Python's default
+`KeyboardInterrupt` propagate out of `start()`. Because the
+surrounding handler was `except Exception`, the interrupt — a
+`BaseException`, not `Exception` — escaped past every teardown
+branch. Result: a half-started kernel, an open EventBus, and any
+adapter task that did manage to spawn left dangling.
+
+**Root cause** — Two assumptions stacked: (a) "the signal handler
+guards the whole lifecycle" (it doesn't — it only guards what
+runs *after* `add_signal_handler`), and (b) "`except Exception`
+catches Ctrl+C" (it doesn't — `KeyboardInterrupt` inherits from
+`BaseException`). Combined, the failure mode is invisible during
+testing because tests drive shutdown via the `shutdown_event` hook
+and never go through SIGINT.
+
+**Rule** — For any process that spawns long-lived async resources:
+install the shutdown trigger **before** awaiting the first startup
+coroutine, AND wrap every started component in `try/finally` with
+explicit `started`-flag bookkeeping so teardown is tolerant of
+partially-started state. Never rely on a single `except Exception`
+clause to catch interrupts.
+
+**Reference** — PR #85 (follow-up to PR #62 review finding #1).
+Related to lesson #3 (`except BaseException` swallows
+`CancelledError`) — both belong to the family "broad / narrow
+exception handlers chosen on autopilot mishandle async control
+flow".
+
+---
+
+## 31. `asyncio.create_subprocess_exec` does NOT auto-kill the child on cancel
+
+**Symptom** — `yaya plugin install <src>` shells out to `pip` /
+`uv` via `asyncio.create_subprocess_exec`. Ctrl+C while
+`communicate()` is awaiting cancels the awaiting coroutine but
+does **not** terminate the spawned child. `pip` continues for
+minutes — fully resolving wheels, downloading them, mutating the
+user's `site-packages` — long after the CLI has returned.
+
+**Root cause** — `asyncio.subprocess.Process` is a thin
+asyncio-friendly wrapper around the OS process; the OS process
+does not share fate with the awaiting Python coroutine. Cancelling
+the coroutine only stops *Python's* read of the pipes. The child
+keeps running until something explicitly sends it a signal.
+
+**Rule** — Every `await proc.communicate()` (or
+`await proc.wait()`) sits inside
+`except (asyncio.CancelledError, KeyboardInterrupt): proc.terminate()`,
+followed by `await asyncio.wait_for(proc.wait(), timeout)` and a
+`proc.kill()` fallback, then re-raise. Anything less leaks a
+detached subprocess that can mutate the user's environment after
+control returns.
+
+**Reference** — PR #85 (follow-up to PR #62 review finding #3).
+Cf. lesson #30 — both are "the obvious shutdown path doesn't
+actually clean up" hazards.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

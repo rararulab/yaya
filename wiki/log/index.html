@@ -453,7 +453,7 @@
 <nav>
     <ul>
         <li><a href="#wiki-log">Wiki Log</a></li>
-        <li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li>
+        <li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li>
     </ul>
 </nav>
 </aside>
@@ -492,6 +492,20 @@ party mode, and the BMB/TEA/BMGD/CIS sibling modules — out of
 scope for yaya. Retrospective ceremony merged into the existing
 Karpathy wiki lint operation; no duplicate cadence.
 See: sources/bmad-method.md, ../dev/workflow.md</p>
+<h2 id="2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)<a class="headerlink" href="#2026-04-18-ingest-seed-plugins-issue-14" title="Permanent link">&para;</a></h2>
+<p>Landed the four non-adapter seed plugins — one per category — to
+prove the plugin protocol end-to-end against the kernel registry
+that shipped in PR #49. Each plugin is a bundled subpackage under
+<code>src/yaya/plugins/&lt;name&gt;/</code> loaded through the same
+<code>yaya.plugins.v1</code> entry-point ABI as third-party packages. <code>openai</code>
+is the only LLM SDK accepted per AGENT.md §4; <code>tool_bash</code> uses
+<code>asyncio.create_subprocess_exec</code> exclusively (never <code>shell=True</code>);
+<code>memory_sqlite</code> runs stdlib <code>sqlite3</code> through <code>asyncio.to_thread</code>;
+<code>strategy_react</code> implements the observe-think-act decision. Every
+response event echoes <code>request_id</code> per lesson #15. Each plugin
+ships a BDD <code>.spec</code> (0 WARN from <code>agent-spec lint</code>) + unit tests
+under <code>tests/plugins/&lt;name&gt;/</code>.
+See: ../../specs/plugin-strategy_react.spec, ../../specs/plugin-memory_sqlite.spec, ../../specs/plugin-llm_openai.spec, ../../specs/plugin-tool_bash.spec, ../../src/yaya/plugins/</p>
 </section>
 
             </main>

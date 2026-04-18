@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#agent-lessons-learned">Agent Lessons Learned</a></li>
-        <li><a href="#1-asynciolock-is-not-reentrant-never-serialize-per-key-fifo-with-a-shared-lock">1. asyncio.Lock is not reentrant — never serialize per-key FIFO with a shared lock</a></li><li><a href="#2-heuristic-external-vs-reentrant-must-detect-any-worker-context-not-just-the-targets">2. Heuristic "external-vs-reentrant" must detect any worker context, not just the target's</a></li><li><a href="#3-except-baseexception-swallows-asynciocancellederror">3. except BaseException swallows asyncio.CancelledError</a></li><li><a href="#4-typeddict-totalfalse-is-the-wrong-default-for-payloads-whose-fields-split-requiredoptional">4. TypedDict total=False is the wrong default for payloads whose fields split required/optional</a></li><li><a href="#5-from-__future__-import-annotations-breaks-notrequired-partitioning">5. from __future__ import annotations breaks NotRequired partitioning</a></li><li><a href="#6-unbounded-per-key-dicts-leak-in-long-running-async-processes">6. Unbounded per-key dicts leak in long-running async processes</a></li><li><a href="#7-default-dataclass-__eq__-breaks-identity-based-listremove">7. Default dataclass __eq__ breaks identity-based list.remove</a></li><li><a href="#8-subagent-findings-for-the-next-issue-are-usually-bugs-in-this-pr">8. Subagent "findings for the next issue" are usually bugs in THIS PR</a></li><li><a href="#9-no-speculative-state-for-future-extensions">9. No speculative state "for future extensions"</a></li><li><a href="#10-silent-no-op-primitives-are-a-ux-bug">10. Silent no-op primitives are a UX bug</a></li><li><a href="#11-empirical-probes-beat-static-reasoning">11. Empirical probes beat static reasoning</a></li><li><a href="#12-code-review-rounds-re-enter-until-genuinely-clean">12. Code-review rounds re-enter until genuinely clean</a></li><li><a href="#13-document-non-obvious-design-decisions-in-the-specs-decisions">13. Document non-obvious design decisions in the spec's ## Decisions</a></li><li><a href="#14-pre-commit-hook-drift-just-check-all-is-currently-broken">14. Pre-commit hook drift: just check-all is currently broken</a></li><li><a href="#15-silent-no-request_id-drops-hang-plugin-authors">15. Silent "no request_id" drops hang plugin authors</a></li><li><a href="#16-reviewers-verify-the-flagged-pattern-is-actually-wrong">16. Reviewers: verify the flagged pattern is actually wrong</a></li><li><a href="#17-consecutive-vs-cumulative-in-failure-policies">17. "Consecutive" vs "cumulative" in failure policies</a></li><li><a href="#18-authoritative-source-checks-at-enforcement-points-not-cached-state">18. Authoritative-source checks at enforcement points, not cached state</a></li><li><a href="#19-author-specs-in-the-tools-format-not-the-protocol-docs-pseudo-format">19. Author specs in the tool's format, not the protocol doc's pseudo-format</a></li><li><a href="#how-to-use-this-doc">How to use this doc</a></li>
+        <li><a href="#1-asynciolock-is-not-reentrant-never-serialize-per-key-fifo-with-a-shared-lock">1. asyncio.Lock is not reentrant — never serialize per-key FIFO with a shared lock</a></li><li><a href="#2-heuristic-external-vs-reentrant-must-detect-any-worker-context-not-just-the-targets">2. Heuristic "external-vs-reentrant" must detect any worker context, not just the target's</a></li><li><a href="#3-except-baseexception-swallows-asynciocancellederror">3. except BaseException swallows asyncio.CancelledError</a></li><li><a href="#4-typeddict-totalfalse-is-the-wrong-default-for-payloads-whose-fields-split-requiredoptional">4. TypedDict total=False is the wrong default for payloads whose fields split required/optional</a></li><li><a href="#5-from-__future__-import-annotations-breaks-notrequired-partitioning">5. from __future__ import annotations breaks NotRequired partitioning</a></li><li><a href="#6-unbounded-per-key-dicts-leak-in-long-running-async-processes">6. Unbounded per-key dicts leak in long-running async processes</a></li><li><a href="#7-default-dataclass-__eq__-breaks-identity-based-listremove">7. Default dataclass __eq__ breaks identity-based list.remove</a></li><li><a href="#8-subagent-findings-for-the-next-issue-are-usually-bugs-in-this-pr">8. Subagent "findings for the next issue" are usually bugs in THIS PR</a></li><li><a href="#9-no-speculative-state-for-future-extensions">9. No speculative state "for future extensions"</a></li><li><a href="#10-silent-no-op-primitives-are-a-ux-bug">10. Silent no-op primitives are a UX bug</a></li><li><a href="#11-empirical-probes-beat-static-reasoning">11. Empirical probes beat static reasoning</a></li><li><a href="#12-code-review-rounds-re-enter-until-genuinely-clean">12. Code-review rounds re-enter until genuinely clean</a></li><li><a href="#13-document-non-obvious-design-decisions-in-the-specs-decisions">13. Document non-obvious design decisions in the spec's ## Decisions</a></li><li><a href="#14-pre-commit-hook-drift-just-check-all-is-currently-broken">14. Pre-commit hook drift: just check-all is currently broken</a></li><li><a href="#15-silent-no-request_id-drops-hang-plugin-authors">15. Silent "no request_id" drops hang plugin authors</a></li><li><a href="#16-reviewers-verify-the-flagged-pattern-is-actually-wrong">16. Reviewers: verify the flagged pattern is actually wrong</a></li><li><a href="#17-consecutive-vs-cumulative-in-failure-policies">17. "Consecutive" vs "cumulative" in failure policies</a></li><li><a href="#18-authoritative-source-checks-at-enforcement-points-not-cached-state">18. Authoritative-source checks at enforcement points, not cached state</a></li><li><a href="#19-author-specs-in-the-tools-format-not-the-protocol-docs-pseudo-format">19. Author specs in the tool's format, not the protocol doc's pseudo-format</a></li><li><a href="#20-sqlite3-check_same_threadfalse-is-not-a-safety-flag">20. sqlite3 check_same_thread=False is not a safety flag</a></li><li><a href="#21-blanket-file-level-pyright-pragmas-silence-more-than-they-should">21. Blanket file-level pyright pragmas silence more than they should</a></li><li><a href="#how-to-use-this-doc">How to use this doc</a></li>
     </ul>
 </nav>
 </aside>
@@ -747,6 +747,52 @@ protocol docs against real tool output, not the other way round.</p>
 <p><strong>Reference</strong> — Issue #52, PR that ports the .spec.md files.
 Generalises lesson #16 (reviewers verify pattern semantics) to
 authoring: authors verify format against tool output.</p>
+<hr />
+<h2 id="20-sqlite3-check_same_threadfalse-is-not-a-safety-flag">20. <code>sqlite3 check_same_thread=False</code> is not a safety flag<a class="headerlink" href="#20-sqlite3-check_same_threadfalse-is-not-a-safety-flag" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — PR #59's memory_sqlite plugin set
+<code>check_same_thread=False</code> to fix a Windows-only test failure
+(<code>asyncio.to_thread</code> occasionally hopped worker threads). Concurrent
+writes from multiple sessions silently corrupted data: 200 writes
+across 200 sessions landed 117 rows with "bad parameter or other API
+misuse" and "cannot start a transaction within a transaction" errors
+on the rest.</p>
+<p><strong>Root cause</strong> — Python's sqlite3 <code>check_same_thread=True</code> is a
+sanity check, not a concurrency primitive. Turning it off tells the
+library to stop enforcing single-owner thread; the user is then
+responsible for serializing access via an external mutex or a single-
+worker executor. The fix silenced the warning without adding the
+protection it was warning about.</p>
+<p><strong>Rule</strong> — If you set <code>check_same_thread=False</code>, pair it with one
+of: (a) a dedicated <code>ThreadPoolExecutor(max_workers=1)</code> that owns
+the connection, (b) an <code>asyncio.Lock</code> around every DB op, or (c)
+reopen the connection per operation. (a) is preferred for
+throughput; the SQL still serializes at the SQLite level but you
+avoid data-race UB in the Python bindings.</p>
+<p><strong>Reference</strong> — PR #59 review round 1. Cf. lesson #18 (authoritative
+enforcement, not cached state): silencing the enforcement check must
+be matched by an explicit protection primitive.</p>
+<hr />
+<h2 id="21-blanket-file-level-pyright-pragmas-silence-more-than-they-should">21. Blanket file-level pyright pragmas silence more than they should<a class="headerlink" href="#21-blanket-file-level-pyright-pragmas-silence-more-than-they-should" title="Permanent link">&para;</a></h2>
+<p><strong>Symptom</strong> — PR #59 shipped four plugin files with file-level
+<code># pyright: reportUnknown*=false</code>. Two of the four had ZERO unknown-
+type warnings without the pragma (pure cargo); two had single-line
+warnings fixable with a cast; only one (llm_openai) had a genuine
+SDK-surface reason. The blanket pragma means every new line added
+to those files bypasses strict checking, invisibly.</p>
+<p><strong>Root cause</strong> — Silencing at the broadest scope that makes the
+warning go away is easy; narrowing to exactly the offending line is
+tedious. Authors reach for file-level pragmas when per-line
+<code># pyright: ignore[reportSpecificRule]</code> would have done.</p>
+<p><strong>Rule</strong> — Pyright (and mypy) pragmas MUST be scoped to the tightest
+unit that makes the warning go away, in this order: per-line
+<code># pyright: ignore[reportRuleName]</code> first, then local block, then
+function, then file — only if every line in the file genuinely hits
+the rule. Reviewers verify the pragma's scope by removing it and
+re-running the checker; if the count of warnings dropped is smaller
+than the lines silenced, narrow the scope.</p>
+<p><strong>Reference</strong> — PR #59 review round 1. Applies to any diagnostic
+suppression: mypy <code># type: ignore[...]</code>, ruff <code># noqa:</code>, pyright
+<code># pyright: ignore[...]</code>. Tighter is always better.</p>
 <hr />
 <h2 id="how-to-use-this-doc">How to use this doc<a class="headerlink" href="#how-to-use-this-doc" title="Permanent link">&para;</a></h2>
 <ul>

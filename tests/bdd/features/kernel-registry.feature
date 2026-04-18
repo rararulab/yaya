@@ -49,8 +49,8 @@ Feature: Kernel plugin registry — discovery, lifecycle, and failure isolation
     Then asyncio.create_subprocess_exec is invoked with "uv pip install yaya-tool-bash"
     And entry-point discovery re-runs so the freshly installed plugin comes online
 
-  Scenario: Error path — install source validation rejects shell metacharacters
-    Given a source string containing shell metacharacters like ";"
+  Scenario: Error path — install source validation rejects unsupported scheme
+    Given a source string with an unsupported URL scheme like "git+ssh"
     When registry.install(source) is called
     Then ValueError is raised by source validation before any subprocess is spawned
 

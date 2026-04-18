@@ -26,6 +26,21 @@ def test_emit_ok_text(capsys) -> None:
     assert "hi" in out.out
 
 
+def test_emit_ok_text_empty_prints_nothing_in_human_mode(capsys) -> None:
+    """Finding #11 — empty/None ``text`` under human mode is silent.
+
+    ``plugin list`` renders its own rich table; calling ``emit_ok``
+    only for the agent-mode JSON shape must not leak a blank line on
+    stdout for human users.
+    """
+    emit_ok(CLIState(json_output=False), action="plugin.list")
+    out = capsys.readouterr()
+    assert out.out == ""
+    emit_ok(CLIState(json_output=False), text="", action="plugin.list")
+    out = capsys.readouterr()
+    assert out.out == ""
+
+
 def test_emit_error_json_shape(capsys) -> None:
     emit_error(
         CLIState(json_output=True),

@@ -229,3 +229,28 @@ raises, registry install-before-`kernel.ready` /
 uninstall-before-`kernel.shutdown` ordering, cross-session
 end-to-end round-trip (lesson #2 regression).
 See: ../../src/yaya/kernel/approval.py, ../../src/yaya/kernel/tool.py, ../dev/plugin-protocol.md, lessons-learned.md
+
+## [2026-04-18] ingest | PR #62 follow-up — kernel-CLI lifecycle hardening (issue #84)
+Address all 11 review findings from PR #62 (merged as 837e502). P1
+fixes plug three lifecycle holes: (a) `serve` now installs the
+SIGINT/SIGTERM handler **before** `registry.start()` so a Ctrl+C
+during boot still hits teardown — `KeyboardInterrupt` is a
+`BaseException`, not `Exception` (lesson #30); (b) `hello.py` and
+`plugin.py` move bus / registry construction inside the `try` block
+with `started` flags so a startup failure no longer leaks worker
+tasks; (c) `_run_package_command` wraps `communicate()` in
+`except (CancelledError, KeyboardInterrupt): proc.terminate()` —
+`asyncio.create_subprocess_exec` does not auto-kill the spawned
+child on cancel, so the previous code let `pip` keep mutating the
+user's environment for minutes after Ctrl+C (lesson #31). P2 / P3
+fixes: `--strategy` is now `click.Choice(["react"])` so typos exit
+2; `validate_install_source` drops the metachar blacklist (security
+theater under `create_subprocess_exec`) and tightens the path
+branch to `is_absolute()` only; `webbrowser.open` runs on the
+default executor so macOS doesn't stall the loop; `hello` gains a
+`--timeout` flag; `emit_ok` text is now optional and silent under
+human mode for commands that render their own output. _pick_free_port
+TOCTOU is acknowledged and deferred — port resolution moves to the
+adapter plugin (#16) where a single owner can hold the bound socket
+end-to-end.
+See: ../../src/yaya/cli/commands/serve.py, ../../src/yaya/cli/commands/hello.py, ../../src/yaya/cli/commands/plugin.py, ../../src/yaya/cli/output.py, ../../src/yaya/kernel/registry.py, lessons-learned.md

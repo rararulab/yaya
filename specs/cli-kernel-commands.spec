@@ -37,11 +37,14 @@ built-in subcommand would require a `GOAL.md` amendment.
   down. JSON mode emits `{"ok": true, "action": "plugin.list",
   "plugins": [...]}`; text mode renders a rich table.
 - `yaya plugin install <source>` reuses the registry's
-  `validate_install_source` to reject shell metacharacters before
-  any subprocess runs; under `--json` the command refuses to prompt
-  and requires `--yes`, otherwise it emits `{"ok": false, "error":
-  "confirmation_required", ...}`. `--dry-run` validates + confirms
-  without calling pip.
+  `validate_install_source` to reject sources that do not match an
+  accepted shape (absolute path, PyPI name/spec, `file://` or
+  `https://` URL) before any subprocess runs. Shell-injection safety
+  comes from `_run_package_command` using `create_subprocess_exec`
+  (no shell), not from character filtering. Under `--json` the
+  command refuses to prompt and requires `--yes`, otherwise it emits
+  `{"ok": false, "error": "confirmation_required", ...}`. `--dry-run`
+  validates + confirms without calling pip.
 - `yaya plugin remove <name>` delegates to `registry.remove`, which
   raises `ValueError` for bundled plugins; the CLI renders that as
   `ok=false` with a suggestion pointing at `yaya update`. `--yes` /
@@ -110,13 +113,13 @@ Scenario: Error path — yaya plugin remove of a bundled plugin emits ok=false w
   When `yaya --json plugin remove strategy-react --yes` is invoked
   Then the command exits 1 and stdout carries `{"ok": false, "error": "...bundled...", "suggestion": "...bundled..."}`
 
-Scenario: Error path — yaya plugin install rejects shell metacharacters
+Scenario: Error path — yaya plugin install rejects unsupported scheme
   Test:
     Package: yaya
     Filter: tests/cli/test_plugin.py::test_plugin_install_shell_metachars_rejected
   Level: unit
-  Given a source string containing shell metacharacters like `;`
-  When `yaya --json plugin install "foo;rm -rf /" --yes` is invoked
+  Given a source string with an unsupported URL scheme like `git+ssh`
+  When `yaya --json plugin install "git+ssh://example.com/foo.git" --yes` is invoked
   Then `validate_install_source` raises ValueError before any subprocess is spawned
   And the CLI surfaces ok=false with a suggestion
 

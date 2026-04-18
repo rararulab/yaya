@@ -66,10 +66,6 @@ def test_hello_json_emits_single_object_without_toast(
 
 def test_hello_timeout_surfaces_unresponsive(runner: CliRunner, cli_app, monkeypatch: pytest.MonkeyPatch) -> None:
     """When the bus silently drops the synthetic event, hello exits 1."""
-    from yaya.cli.commands import hello as hello_mod
-
-    # Tight deadline so the test completes quickly even if publish stalls.
-    monkeypatch.setattr(hello_mod, "_SENTINEL_TIMEOUT_S", 0.05)
 
     # Replace publish with a no-op so the sentinel never fires.
     async def _noop_publish(self, event):
@@ -77,9 +73,34 @@ def test_hello_timeout_surfaces_unresponsive(runner: CliRunner, cli_app, monkeyp
 
     monkeypatch.setattr("yaya.kernel.bus.EventBus.publish", _noop_publish)
 
-    result = runner.invoke(cli_app, ["--json", "hello"])
+    # Tight deadline via the new ``--timeout`` flag so the test stays fast.
+    result = runner.invoke(cli_app, ["--json", "hello", "--timeout", "0.2"])
     assert result.exit_code == 1
     payload = json.loads(result.stdout)
     assert payload["ok"] is False
     assert payload["error"] == "event_bus_unresponsive"
     assert payload["suggestion"]
+
+
+def test_hello_timeout_flag_overrides_default(runner: CliRunner, cli_app, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Finding #9 — ``--timeout`` feeds through to ``_run_hello``."""
+    from yaya.cli.commands import hello as hello_mod
+
+    captured: dict[str, float] = {}
+    real_run_hello = hello_mod._run_hello
+
+    async def _recording(*, timeout_s: float) -> bool:
+        captured["timeout_s"] = timeout_s
+        return await real_run_hello(timeout_s=timeout_s)
+
+    monkeypatch.setattr(hello_mod, "_run_hello", _recording)
+
+    result = runner.invoke(cli_app, ["--json", "hello", "--timeout", "2.5"])
+    assert result.exit_code == 0, result.stdout
+    assert captured["timeout_s"] == 2.5
+
+
+def test_hello_timeout_rejects_below_min(runner: CliRunner, cli_app) -> None:
+    """Finding #9 — ``--timeout`` below 0.1s is an argv error (exit 2)."""
+    result = runner.invoke(cli_app, ["hello", "--timeout", "0.0"])
+    assert result.exit_code == 2

@@ -2,12 +2,19 @@
 
 What this does
 --------------
-Scans two surfaces and exits non-zero if it finds any hit:
+Scans three surfaces and exits non-zero if it finds any hit:
 
 1. Declared dependencies in ``pyproject.toml`` — ``[project] dependencies``,
    every ``[dependency-groups]`` table, and ``[project.optional-dependencies]``.
 2. Source ``import`` statements under ``src/`` and ``tests/`` (AST-based,
    not regex — won't false-positive on strings or comments).
+3. Low-level HTTP clients (``httpx`` / ``requests`` / ``aiohttp``) inside
+   any ``src/yaya/plugins/llm_*/`` subpackage. LLM-provider plugins MUST
+   go through the official ``openai`` or ``anthropic`` SDK — raw HTTP
+   to an LLM endpoint is rejected at review. The SDKs themselves depend
+   on ``httpx`` internally; that is fine because the plugin code does
+   not directly import it. See ``docs/dev/plugin-protocol.md``
+   "LLM providers (v1 contract)" and issue #26.
 
 Why this exists
 ---------------
@@ -138,6 +145,24 @@ BANNED_IMPORT_ROOTS: frozenset[str] = frozenset({
 
 # Reference text shown on failure so authors know where to look.
 DOC_REFERENCE = "See docs/dev/no-agent-frameworks.md and AGENT.md §4."
+
+# LLM-plugin HTTP ban — v1 llm-provider contract (issue #26). These
+# top-level import names are rejected inside any
+# ``src/yaya/plugins/llm_*/`` subpackage. The ``openai`` and
+# ``anthropic`` SDKs use ``httpx`` internally; that is fine because
+# the plugin does not directly import it.
+LLM_PLUGIN_BANNED_IMPORT_ROOTS: frozenset[str] = frozenset({
+    "httpx",
+    "requests",
+    "aiohttp",
+})
+
+# Documentation pointer for the v1 llm-provider contract ban.
+LLM_DOC_REFERENCE = (
+    "LLM-provider plugins MUST use the openai or anthropic SDK; raw HTTP "
+    "clients are banned. See docs/dev/plugin-protocol.md "
+    '"LLM providers (v1 contract)" and issue #26.'
+)
 
 
 def normalize_distribution_name(name: str) -> str:
@@ -313,12 +338,79 @@ def scan_imports(roots: list[Path]) -> list[Violation]:
     return violations
 
 
+def check_llm_plugin_imports(src_root: Path) -> list[Violation]:
+    """Return every banned-HTTP-client import inside ``llm_*`` plugins.
+
+    Walks ``src_root/yaya/plugins/llm_*/**/*.py`` and flags any
+    top-level ``import httpx`` / ``from httpx import …`` (same for
+    ``requests`` and ``aiohttp``). The check is scoped deliberately —
+    ``httpx`` lives in the kernel's own deps via ``openai``'s transitive
+    graph, and unrelated plugins may use it for non-LLM work (HTTP
+    tools, web adapters). Only *LLM* plugins are held to SDK-only use.
+
+    Enforces the v1 llm-provider contract (issue #26).
+    """
+    violations: list[Violation] = []
+    plugins_dir = src_root / "yaya" / "plugins"
+    if not plugins_dir.is_dir():
+        return violations
+
+    for plugin_dir in sorted(plugins_dir.iterdir()):
+        if not plugin_dir.is_dir():
+            continue
+        if not plugin_dir.name.startswith("llm_"):
+            continue
+        for path in sorted(plugin_dir.rglob("*.py")):
+            violations.extend(_scan_llm_plugin_file(path))
+    return violations
+
+
+def _scan_llm_plugin_file(path: Path) -> list[Violation]:
+    """AST-walk one ``llm_*`` plugin file; report banned HTTP imports."""
+    try:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+    except OSError, SyntaxError:
+        return []
+
+    out: list[Violation] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".", 1)[0]
+                if top in LLM_PLUGIN_BANNED_IMPORT_ROOTS:
+                    out.append(
+                        Violation(
+                            surface="llm-plugin-import",
+                            package=top,
+                            location=f"{path}:{node.lineno}",
+                            detail=f"import {alias.name}",
+                        )
+                    )
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if not module:
+                continue
+            top = module.split(".", 1)[0]
+            if top in LLM_PLUGIN_BANNED_IMPORT_ROOTS:
+                out.append(
+                    Violation(
+                        surface="llm-plugin-import",
+                        package=top,
+                        location=f"{path}:{node.lineno}",
+                        detail=f"from {module} import ...",
+                    )
+                )
+    return out
+
+
 def run(repo_root: Path) -> ScanResult:
-    """Run both scans rooted at ``repo_root`` and return a combined result."""
+    """Run all scans rooted at ``repo_root`` and return a combined result."""
     result = ScanResult()
     pyproject_hits = scan_pyproject(repo_root / "pyproject.toml")
     import_hits = scan_imports([repo_root / "src", repo_root / "tests"])
-    result.violations = pyproject_hits + import_hits
+    llm_plugin_hits = check_llm_plugin_imports(repo_root / "src")
+    result.violations = pyproject_hits + import_hits + llm_plugin_hits
     result.ok = not result.violations
     return result
 
@@ -340,6 +432,14 @@ def _print_human(result: ScanResult) -> None:
         for hit in import_hits:
             print(f"  FAIL: {hit.render()}")
 
+    print("Scanning src/yaya/plugins/llm_* for raw HTTP clients...")
+    llm_hits = [v for v in result.violations if v.surface == "llm-plugin-import"]
+    if not llm_hits:
+        print("  PASS: llm-provider plugins use SDK only.")
+    else:
+        for hit in llm_hits:
+            print(f"  FAIL: {hit.render()}")
+
     if result.ok:
         print("Result: PASS")
         print(f"Permitted LLM SDKs: {', '.join(sorted(PERMITTED_LLM_SDKS))}")
@@ -348,6 +448,8 @@ def _print_human(result: ScanResult) -> None:
         plural = "violation" if n == 1 else "violations"
         print(f"Result: FAIL — {n} {plural}")
         print(DOC_REFERENCE)
+        if llm_hits:
+            print(LLM_DOC_REFERENCE)
 
 
 def _print_json(result: ScanResult) -> None:

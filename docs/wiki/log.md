@@ -5,6 +5,32 @@ passes. Never rewrite history; append only. Entry prefix is
 `## [YYYY-MM-DD] <kind> | <title>` so `grep "^## \[" log.md`
 parses.
 
+## [2026-04-18] ingest | llm-provider contract v1 (issue #26)
+Landed the production-grade `llm-provider` contract in
+`src/yaya/kernel/llm.py` — mirrors kimi-cli's `kosong.chat_provider`
+discipline. Ships the `LLMProvider` Protocol (streaming `generate` +
+`StreamedMessage` + `StreamPart` union), the `TokenUsage` model with
+Anthropic cache accounting (`input_other` + `input_cache_read` +
+`input_cache_creation` → derived `input`; `total = input + output`),
+the closed `ChatProviderError` hierarchy (connection / timeout /
+status with `status_code` / empty), three lazy-import SDK-error
+converters (`openai_to_chat_provider_error`,
+`anthropic_to_chat_provider_error`, `convert_httpx_error`), and the
+frozen `RetryableChatProvider` hook shape. Event catalog gains
+`llm.call.delta`; `LlmCallResponsePayload` carries serialised
+`usage`; `LlmCallErrorPayload` gains optional `kind` +
+`status_code`. SDK-only rule enforced by extending
+`scripts/check_banned_frameworks.py` with
+`check_llm_plugin_imports` — rejects direct `httpx` / `requests` /
+`aiohttp` imports inside `src/yaya/plugins/llm_*/`. Bundled
+`llm_openai` + `llm_echo` stay on the legacy subscribe path
+(migration is a follow-up, same discipline as `tool_bash` on the
+tool-contract PR). Sidestepped the mypy/pyright asymmetry on
+`@computed_field`+`@property` by using a `model_serializer(mode="wrap")`
+instead — delivers the same JSON shape without the type-ignore tax.
+See: ../../src/yaya/kernel/llm.py, ../../specs/llm-provider-contract.spec,
+../../docs/dev/plugin-protocol.md, lessons-learned.md#21
+
 ## [2026-04-18] ingest | mypy strict tightening (issue #40)
 Baseline `uv run mypy` was already clean against `strict = true` +
 every individual flag pinned (the heavy lifting landed in earlier

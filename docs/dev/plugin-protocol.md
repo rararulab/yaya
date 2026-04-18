@@ -60,8 +60,9 @@ class Event(TypedDict):
 | kind | direction | payload |
 |---|---|---|
 | `llm.call.request` | kernel → provider | `{ provider: str, model: str, messages: list[Message], tools?: list[ToolSchema], params: dict }` |
+| `llm.call.delta` | provider → kernel | `{ content?: str, tool_call_partial?: dict, request_id?: str }` |
 | `llm.call.response` | provider → kernel | `{ text?: str, tool_calls?: list[ToolCall], usage: Usage, request_id?: str }` |
-| `llm.call.error` | provider → kernel | `{ error: str, retry_after_s?: float, request_id?: str }` |
+| `llm.call.error` | provider → kernel | `{ error: str, kind?: "connection"\|"timeout"\|"status"\|"empty"\|"other", status_code?: int, retry_after_s?: float, request_id?: str }` |
 
 #### Tool execution (kernel ↔ tool)
 
@@ -273,6 +274,112 @@ same tool name, the registry logs a WARNING; duplicate
 emitted only by the v1 dispatcher (never by plugins). Adapters
 typically render it inline with the originating assistant turn rather
 than as a tool-pane update, because the target tool never ran.
+
+### LLM providers (v1 contract)
+
+Since 0.2, llm-provider plugins implement the streaming
+`LLMProvider` Protocol in `yaya.kernel.llm`. Providers yield an
+async iterator of content / tool-call parts and a terminal
+`TokenUsage`; the kernel re-emits each stream chunk as an
+`llm.call.delta` and the final state as `llm.call.response`.
+
+**SDK-only rule (normative).** LLM-provider plugins MUST use the
+official `openai` or `anthropic` Python SDK. Raw `httpx`, community
+wrappers, LangChain-style frameworks, and any other LLM client
+library are **rejected at review**. The two approved SDKs cover the
+market we care about:
+
+- `openai` (`AsyncOpenAI`) — OpenAI, Azure OpenAI, and every
+  OpenAI-compatible endpoint (DeepSeek, Moonshot, ollama, lm-studio,
+  LiteLLM gateway) via `OPENAI_BASE_URL` + `OPENAI_API_KEY`.
+- `anthropic` (`AsyncAnthropic`) — Claude; native tool use, prompt
+  caching, and streaming.
+
+Anything else (Gemini, Bedrock, Vertex) is deferred. When we add
+support, we still wrap the vendor's official SDK — never a raw HTTP
+client. The rule is mechanically enforced by
+`scripts/check_banned_frameworks.py` (the `check_llm_plugin_imports`
+rule scans every `src/yaya/plugins/llm_*/**/*.py` for direct imports
+of `httpx` / `requests` / `aiohttp` and fails CI on a hit). The
+SDKs themselves use `httpx` internally; that is fine because the
+plugin does not import it.
+
+```python
+from typing import Any, ClassVar
+from yaya.kernel import Category, KernelContext
+from yaya.kernel.llm import (
+    APIConnectionError,
+    ContentPart,
+    LLMProvider,
+    StreamedMessage,
+    TokenUsage,
+    openai_to_chat_provider_error,
+)
+
+class OpenAIProvider:
+    name: str = "openai"
+    model_name: str = "gpt-4o-mini"
+    thinking_effort: str = "off"
+
+    async def generate(
+        self,
+        *,
+        system_prompt: str,
+        tools: list[dict[str, Any]],
+        history: list[dict[str, Any]],
+    ) -> StreamedMessage:
+        try:
+            return await self._stream_with_sdk(system_prompt, tools, history)
+        except Exception as exc:
+            raise openai_to_chat_provider_error(exc) from exc
+```
+
+**Token usage** — `TokenUsage` carries four raw counters
+(`input_other`, `input_cache_read`, `input_cache_creation`, `output`)
+and two derived values (`input`, `total`). The split exists because
+Anthropic bills prompt-cache hits and cache writes separately; for
+providers without cache accounting the extras stay zero and `input`
+collapses to `input_other`. `model_dump()` includes both the raw and
+derived values so the bus payload carries everything a cost tracker
+needs.
+
+**Delta stream** — `StreamedMessage.__aiter__()` yields
+`ContentPart | ToolCallPart` objects. The kernel re-publishes each
+as `llm.call.delta` with either `content` (text chunk) or
+`tool_call_partial` (provider-specific partial tool-call dict). After
+iteration the kernel reads `StreamedMessage.usage` and publishes one
+terminal `llm.call.response` with `text`, `tool_calls`, and `usage`
+populated.
+
+**Typed errors** — providers raise `ChatProviderError` subclasses at
+the plugin boundary; SDK-specific exceptions are translated via the
+converters shipped in `yaya.kernel.llm`:
+
+- `openai_to_chat_provider_error(exc)` — maps `openai.APIConnectionError`,
+  `openai.APITimeoutError`, and `openai.APIStatusError` to the
+  matching yaya subclass.
+- `anthropic_to_chat_provider_error(exc)` — same mapping for the
+  `anthropic` SDK. Lazy-imports so a missing install doesn't break
+  kernel boot.
+- `convert_httpx_error(exc)` — catches raw `httpx` errors that leak
+  through the SDK envelope during streaming (a kimi-cli precedent).
+
+Unknown exception types degrade to a generic `ChatProviderError`
+with `str(exc)`. `llm.call.error` payloads carry a `kind` field
+(`"connection" | "timeout" | "status" | "empty" | "other"`) plus
+optional `status_code` for status errors and `request_id` for
+correlation.
+
+**Retry hook (shape-only)** — providers that want loop-driven
+retries implement `RetryableChatProvider.on_retryable_error(exc,
+attempt) -> bool`. The Protocol is frozen in 0.2; the retry runtime
+lands in a follow-up PR.
+
+**Backward compatibility** — bundled `llm_openai` and `llm_echo`
+predate v1 and remain on the legacy `on_event`-subscribes-to-
+`llm.call.request` path. Migration to the v1 contract is a follow-up
+PR for each provider — same discipline as `tool_bash` staying on the
+legacy path in the Tool-contract PR.
 
 ### Category-specific extras
 

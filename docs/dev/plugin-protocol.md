@@ -136,6 +136,13 @@ namespace for plugin-private payloads (e.g., a `stats` skill plugin
 emitting `x.stats.token.counted`). Do not use `x.*` as a workaround
 for missing public events — propose a public event kind instead.
 
+**Private session ids.** Plugins may use session ids prefixed with
+`_bridge:<plugin-name>` for internal routing (publishing to themselves
+without touching a user-facing session). This reserves `_bridge:` as a
+plugin-private namespace; user / adapter sessions MUST NOT start with
+`_bridge:`. Example: `mcp_bridge` routes lifecycle events on
+`_bridge:mcp-bridge`.
+
 Currently in use by bundled plugins:
 
 | Extension kind | Owner | Payload | Purpose |

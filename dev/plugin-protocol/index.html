@@ -581,6 +581,11 @@ multiple packages.</p>
 <td><code>{ provider: str, model: str, messages: list[Message], tools?: list[ToolSchema], params: dict }</code></td>
 </tr>
 <tr>
+<td><code>llm.call.delta</code></td>
+<td>provider → kernel</td>
+<td><code>{ content?: str, tool_call_partial?: dict, request_id?: str }</code></td>
+</tr>
+<tr>
 <td><code>llm.call.response</code></td>
 <td>provider → kernel</td>
 <td><code>{ text?: str, tool_calls?: list[ToolCall], usage: Usage, request_id?: str }</code></td>
@@ -588,7 +593,7 @@ multiple packages.</p>
 <tr>
 <td><code>llm.call.error</code></td>
 <td>provider → kernel</td>
-<td><code>{ error: str, retry_after_s?: float, request_id?: str }</code></td>
+<td><code>{ error: str, kind?: "connection"\|"timeout"\|"status"\|"empty"\|"other", status_code?: int, retry_after_s?: float, request_id?: str }</code></td>
 </tr>
 </tbody>
 </table>
@@ -871,6 +876,102 @@ same tool name, the registry logs a WARNING; duplicate
 emitted only by the v1 dispatcher (never by plugins). Adapters
 typically render it inline with the originating assistant turn rather
 than as a tool-pane update, because the target tool never ran.</p>
+<h3 id="llm-providers-v1-contract">LLM providers (v1 contract)<a class="headerlink" href="#llm-providers-v1-contract" title="Permanent link">&para;</a></h3>
+<p>Since 0.2, llm-provider plugins implement the streaming
+<code>LLMProvider</code> Protocol in <code>yaya.kernel.llm</code>. Providers yield an
+async iterator of content / tool-call parts and a terminal
+<code>TokenUsage</code>; the kernel re-emits each stream chunk as an
+<code>llm.call.delta</code> and the final state as <code>llm.call.response</code>.</p>
+<p><strong>SDK-only rule (normative).</strong> LLM-provider plugins MUST use the
+official <code>openai</code> or <code>anthropic</code> Python SDK. Raw <code>httpx</code>, community
+wrappers, LangChain-style frameworks, and any other LLM client
+library are <strong>rejected at review</strong>. The two approved SDKs cover the
+market we care about:</p>
+<ul>
+<li><code>openai</code> (<code>AsyncOpenAI</code>) — OpenAI, Azure OpenAI, and every
+  OpenAI-compatible endpoint (DeepSeek, Moonshot, ollama, lm-studio,
+  LiteLLM gateway) via <code>OPENAI_BASE_URL</code> + <code>OPENAI_API_KEY</code>.</li>
+<li><code>anthropic</code> (<code>AsyncAnthropic</code>) — Claude; native tool use, prompt
+  caching, and streaming.</li>
+</ul>
+<p>Anything else (Gemini, Bedrock, Vertex) is deferred. When we add
+support, we still wrap the vendor's official SDK — never a raw HTTP
+client. The rule is mechanically enforced by
+<code>scripts/check_banned_frameworks.py</code> (the <code>check_llm_plugin_imports</code>
+rule scans every <code>src/yaya/plugins/llm_*/**/*.py</code> for direct imports
+of <code>httpx</code> / <code>requests</code> / <code>aiohttp</code> and fails CI on a hit). The
+SDKs themselves use <code>httpx</code> internally; that is fine because the
+plugin does not import it.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ClassVar</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">yaya.kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">Category</span><span class="p">,</span> <span class="n">KernelContext</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">yaya.kernel.llm</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">APIConnectionError</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">ContentPart</span><span class="p">,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">LLMProvider</span><span class="p">,</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">StreamedMessage</span><span class="p">,</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">TokenUsage</span><span class="p">,</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">openai_to_chat_provider_error</span><span class="p">,</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="k">class</span><span class="w"> </span><span class="nc">OpenAIProvider</span><span class="p">:</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;openai&quot;</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;gpt-4o-mini&quot;</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>    <span class="n">thinking_effort</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;off&quot;</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>        <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>        <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>        <span class="n">system_prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>        <span class="n">tools</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>        <span class="n">history</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">StreamedMessage</span><span class="p">:</span>
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>        <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>            <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stream_with_sdk</span><span class="p">(</span><span class="n">system_prompt</span><span class="p">,</span> <span class="n">tools</span><span class="p">,</span> <span class="n">history</span><span class="p">)</span>
+<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>            <span class="k">raise</span> <span class="n">openai_to_chat_provider_error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+</code></pre></div>
+<p><strong>Token usage</strong> — <code>TokenUsage</code> carries four raw counters
+(<code>input_other</code>, <code>input_cache_read</code>, <code>input_cache_creation</code>, <code>output</code>)
+and two derived values (<code>input</code>, <code>total</code>). The split exists because
+Anthropic bills prompt-cache hits and cache writes separately; for
+providers without cache accounting the extras stay zero and <code>input</code>
+collapses to <code>input_other</code>. <code>model_dump()</code> includes both the raw and
+derived values so the bus payload carries everything a cost tracker
+needs.</p>
+<p><strong>Delta stream</strong> — <code>StreamedMessage.__aiter__()</code> yields
+<code>ContentPart | ToolCallPart</code> objects. The kernel re-publishes each
+as <code>llm.call.delta</code> with either <code>content</code> (text chunk) or
+<code>tool_call_partial</code> (provider-specific partial tool-call dict). After
+iteration the kernel reads <code>StreamedMessage.usage</code> and publishes one
+terminal <code>llm.call.response</code> with <code>text</code>, <code>tool_calls</code>, and <code>usage</code>
+populated.</p>
+<p><strong>Typed errors</strong> — providers raise <code>ChatProviderError</code> subclasses at
+the plugin boundary; SDK-specific exceptions are translated via the
+converters shipped in <code>yaya.kernel.llm</code>:</p>
+<ul>
+<li><code>openai_to_chat_provider_error(exc)</code> — maps <code>openai.APIConnectionError</code>,
+  <code>openai.APITimeoutError</code>, and <code>openai.APIStatusError</code> to the
+  matching yaya subclass.</li>
+<li><code>anthropic_to_chat_provider_error(exc)</code> — same mapping for the
+  <code>anthropic</code> SDK. Lazy-imports so a missing install doesn't break
+  kernel boot.</li>
+<li><code>convert_httpx_error(exc)</code> — catches raw <code>httpx</code> errors that leak
+  through the SDK envelope during streaming (a kimi-cli precedent).</li>
+</ul>
+<p>Unknown exception types degrade to a generic <code>ChatProviderError</code>
+with <code>str(exc)</code>. <code>llm.call.error</code> payloads carry a <code>kind</code> field
+(<code>"connection" | "timeout" | "status" | "empty" | "other"</code>) plus
+optional <code>status_code</code> for status errors and <code>request_id</code> for
+correlation.</p>
+<p><strong>Retry hook (shape-only)</strong> — providers that want loop-driven
+retries implement <code>RetryableChatProvider.on_retryable_error(exc,
+attempt) -&gt; bool</code>. The Protocol is frozen in 0.2; the retry runtime
+lands in a follow-up PR.</p>
+<p><strong>Backward compatibility</strong> — bundled <code>llm_openai</code> and <code>llm_echo</code>
+predate v1 and remain on the legacy <code>on_event</code>-subscribes-to-
+<code>llm.call.request</code> path. Migration to the v1 contract is a follow-up
+PR for each provider — same discipline as <code>tool_bash</code> staying on the
+legacy path in the Tool-contract PR.</p>
 <h3 id="category-specific-extras">Category-specific extras<a class="headerlink" href="#category-specific-extras" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>tool</code></strong> declares <code>tool_name: str</code> and <code>json_schema: dict</code> for
@@ -891,13 +992,13 @@ than as a tool-pane update, because the target tool never ran.</p>
 </ul>
 <h2 id="agent-loop-kernel-owned">Agent loop (kernel-owned)<a class="headerlink" href="#agent-loop-kernel-owned" title="Permanent link">&para;</a></h2>
 <p>The loop shape is fixed. Each turn runs this sequence:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>user.message.received
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  → strategy.decide.request  →  strategy.decide.response
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    → memory.query           →  memory.result (if requested)
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    → llm.call.request       →  llm.call.response
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>      → tool.call.request    →  tool.call.result   (repeat per tool)
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    → assistant.message.done
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  → memory.write (if requested by strategy)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>user.message.received
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  → strategy.decide.request  →  strategy.decide.response
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    → memory.query           →  memory.result (if requested)
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    → llm.call.request       →  llm.call.response
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>      → tool.call.request    →  tool.call.result   (repeat per tool)
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    → assistant.message.done
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  → memory.write (if requested by strategy)
 </code></pre></div>
 <p>Strategies control: which tools to offer, when to call memory, when to
 stop. Strategies <strong>do not</strong> change the ordering of the sequence —

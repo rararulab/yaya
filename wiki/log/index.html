@@ -453,7 +453,7 @@
 <nav>
     <ul>
         <li><a href="#wiki-log">Wiki Log</a></li>
-        <li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-structured-logging-error-taxonomy-issue-30">[2026-04-18] ingest | structured logging + error taxonomy (issue #30)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li>
+        <li><a href="#2026-04-18-ingest-llm-provider-contract-v1-issue-26">[2026-04-18] ingest | llm-provider contract v1 (issue #26)</a></li><li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-structured-logging-error-taxonomy-issue-30">[2026-04-18] ingest | structured logging + error taxonomy (issue #30)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li>
     </ul>
 </nav>
 </aside>
@@ -464,6 +464,31 @@
 passes. Never rewrite history; append only. Entry prefix is
 <code>## [YYYY-MM-DD] &lt;kind&gt; | &lt;title&gt;</code> so <code>grep "^## \[" log.md</code>
 parses.</p>
+<h2 id="2026-04-18-ingest-llm-provider-contract-v1-issue-26">[2026-04-18] ingest | llm-provider contract v1 (issue #26)<a class="headerlink" href="#2026-04-18-ingest-llm-provider-contract-v1-issue-26" title="Permanent link">&para;</a></h2>
+<p>Landed the production-grade <code>llm-provider</code> contract in
+<code>src/yaya/kernel/llm.py</code> — mirrors kimi-cli's <code>kosong.chat_provider</code>
+discipline. Ships the <code>LLMProvider</code> Protocol (streaming <code>generate</code> +
+<code>StreamedMessage</code> + <code>StreamPart</code> union), the <code>TokenUsage</code> model with
+Anthropic cache accounting (<code>input_other</code> + <code>input_cache_read</code> +
+<code>input_cache_creation</code> → derived <code>input</code>; <code>total = input + output</code>),
+the closed <code>ChatProviderError</code> hierarchy (connection / timeout /
+status with <code>status_code</code> / empty), three lazy-import SDK-error
+converters (<code>openai_to_chat_provider_error</code>,
+<code>anthropic_to_chat_provider_error</code>, <code>convert_httpx_error</code>), and the
+frozen <code>RetryableChatProvider</code> hook shape. Event catalog gains
+<code>llm.call.delta</code>; <code>LlmCallResponsePayload</code> carries serialised
+<code>usage</code>; <code>LlmCallErrorPayload</code> gains optional <code>kind</code> +
+<code>status_code</code>. SDK-only rule enforced by extending
+<code>scripts/check_banned_frameworks.py</code> with
+<code>check_llm_plugin_imports</code> — rejects direct <code>httpx</code> / <code>requests</code> /
+<code>aiohttp</code> imports inside <code>src/yaya/plugins/llm_*/</code>. Bundled
+<code>llm_openai</code> + <code>llm_echo</code> stay on the legacy subscribe path
+(migration is a follow-up, same discipline as <code>tool_bash</code> on the
+tool-contract PR). Sidestepped the mypy/pyright asymmetry on
+<code>@computed_field</code>+<code>@property</code> by using a <code>model_serializer(mode="wrap")</code>
+instead — delivers the same JSON shape without the type-ignore tax.
+See: ../../src/yaya/kernel/llm.py, ../../specs/llm-provider-contract.spec,
+../../docs/dev/plugin-protocol.md, lessons-learned.md#21</p>
 <h2 id="2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)<a class="headerlink" href="#2026-04-18-ingest-mypy-strict-tightening-issue-40" title="Permanent link">&para;</a></h2>
 <p>Baseline <code>uv run mypy</code> was already clean against <code>strict = true</code> +
 every individual flag pinned (the heavy lifting landed in earlier

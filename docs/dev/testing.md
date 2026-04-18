@@ -18,7 +18,8 @@
   the implementation (TDD).
 - **Feature PRs**: each observable behavior is covered by a BDD scenario
   in `specs/<slug>.spec` whose `Test:` selector names the test
-  function. `agent-spec guard` rejects unbound scenarios. See
+  function. `scripts/check_specs.sh` runs `agent-spec lifecycle`, and
+  pytest-bdd rejects unbound `.feature` scenarios. See
   [agent-spec.md](agent-spec.md).
 - **Test layout mirrors `src/`.** A file at `src/yaya/core/foo.py` has its
   tests at `tests/core/test_foo.py`.

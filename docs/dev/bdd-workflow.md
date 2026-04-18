@@ -381,6 +381,6 @@ Before opening a PR:
   property, snapshot, e2e) that BDD slots into.
 - [`docs/dev/workflow.md`](workflow.md) — issue → worktree → PR state
   machine; BDD conversion happens inside a worktree for one issue.
-- [`specs/kernel-bus-and-abi.spec`](../../specs/kernel-bus-and-abi.spec)
-  and [`tests/bdd/test_kernel_bus.py`](../../tests/bdd/test_kernel_bus.py)
+- [`specs/kernel-bus-and-abi.spec`](https://github.com/rararulab/yaya/blob/main/specs/kernel-bus-and-abi.spec)
+  and [`tests/bdd/test_kernel_bus.py`](https://github.com/rararulab/yaya/blob/main/tests/bdd/test_kernel_bus.py)
   — reference conversion to copy the structure from.

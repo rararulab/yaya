@@ -47,7 +47,7 @@ def _resolve(cmd: str) -> str | None:
 
 
 SPEC_TRAILER_RE = re.compile(r"^\s*Spec:\s*(specs/[-\w.]+\.spec)\s*$", re.MULTILINE)
-BRANCH_SLUG_RE = re.compile(r"^(?:issue|feat|fix|chore|refactor)[-/](\d+)?[-/]?(.*)$")
+BRANCH_SLUG_RE = re.compile(r"^(?:(?:codex|claude)-)?(?:issue|feat|fix|chore|refactor)[-/](\d+)?[-/]?(.*)$")
 
 
 def _current_branch() -> str:
@@ -84,6 +84,7 @@ def _branch_slug(branch: str) -> str:
     """Extract the descriptive slug from a conventional branch name.
 
     - ``issue-42-kernel-bus`` → ``kernel-bus``
+    - ``codex/issue-42-kernel-bus`` → ``kernel-bus``
     - ``feat/plugin-web`` → ``plugin-web``
     - ``chore/bump-deps`` → ``bump-deps``
     - ``main`` → ``""``

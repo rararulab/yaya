@@ -75,8 +75,10 @@ Use module-level `pytestmark = pytest.mark.unit` to tag a whole file.
   without updating the step definition causes pytest to fail with
   `StepDefinitionNotFoundError`. `scripts/check_feature_sync.py` verifies
   `.feature` and `.spec` stay aligned; it runs in `just check` and CI.
-  See [agent-spec.md](agent-spec.md) for how `.spec` authoring and BDD
-  execution relate.
+  Step-by-step conversion procedure lives in
+  [bdd-workflow.md](bdd-workflow.md) — new agents authoring or
+  migrating a spec read that first. See [agent-spec.md](agent-spec.md)
+  for how `.spec` authoring and BDD execution relate.
 
 ## Isolation fixtures
 

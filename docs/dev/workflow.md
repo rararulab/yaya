@@ -101,6 +101,17 @@ See [multi-agent.md](multi-agent.md).
 For features > ~400 LOC or crossing layers, follow
 `rararulab/.github/docs/stacked-prs.md`.
 
+## BDD is part of shipping a spec
+
+Any PR that adds a new `specs/<slug>.spec` MUST, in the same PR, ship
+the matching `tests/bdd/features/<slug>.feature` and step definitions
+in `tests/bdd/test_<module>.py`. The sync check
+(`scripts/check_feature_sync.py`) and pytest-bdd's
+`StepDefinitionNotFoundError` gate this mechanically.
+
+Follow [`docs/dev/bdd-workflow.md`](bdd-workflow.md) step-by-step. Do
+not improvise. New agents start there.
+
 ## Phase gates (yaya's flavour of the BMAD 4 phases)
 
 Every non-trivial change passes through four phases **in order**. You

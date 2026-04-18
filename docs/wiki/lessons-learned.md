@@ -579,6 +579,49 @@ components.
 
 ---
 
+## 28. Verify squash-merge ingested the latest push before cleanup
+
+**Symptom** — PR #65's round-2 fix commit `fb2f9bd` ("populate version
+from ep.dist.version; lesson #26") was pushed to the branch,
+verified green in CI, then `gh pr merge --squash --admin` was
+called. The squash commit `2d83483` that landed on `main` did NOT
+contain that change — it regressed to the round-1 blank-version
+form. `git branch --contains fb2f9bd` returns empty; the commit is
+orphaned. The lesson #26 fix reached production only two days later
+via PR #68 after the regression was spotted during PR #67's live
+smoke.
+
+**Root cause** — `gh pr merge --admin` resolved the squash against a
+stale head-of-branch because the merge API call raced the final
+`git push`. The symptom showed up at merge time as
+`failed to run git: fatal: 'main' is already used by worktree at
+.../yaya` — which I treated as cosmetic. It wasn't: GitHub had
+already taken the merge-base reading from the earlier SHA and
+silently dropped the in-flight commit.
+
+**Rule** — Before `gh pr merge --admin`, **verify the head matches
+what you expect** with `gh pr view <N> --json headRefOid`. After
+merge, **verify the merge commit contains the intended change**
+with `git log origin/main -1 -- <changed file>` or
+`git diff origin/main~1 origin/main -- <file>`. Any "already used
+by worktree" warning from `gh pr merge` is NOT benign — it hints at
+a non-atomic merge path. Never dismiss it.
+
+For the subagent workflow: a subagent's "CI green; ready to merge"
+report is not a substitute for verifying the merge ACTUALLY
+ingested the expected SHA. After every merge, grep the merged
+source for one specific string from the latest fix to confirm it
+landed.
+
+**Reference** — PR #68 (restore), orphaned commit `fb2f9bd`, merged
+PR #65 as `2d83483`. Related to lesson #22 (long-lived branches
+accumulate ghost deletions in PR diffs) — both are classes of
+"merge-time diff ≠ what you thought" hazards. Cf. lesson #11
+(empirical probes): verify AT the moment of merge, not when code
+was reviewed.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

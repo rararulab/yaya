@@ -453,7 +453,7 @@
 <nav>
     <ul>
         <li><a href="#wiki-log">Wiki Log</a></li>
-        <li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li>
+        <li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li>
     </ul>
 </nav>
 </aside>
@@ -492,6 +492,24 @@ party mode, and the BMB/TEA/BMGD/CIS sibling modules — out of
 scope for yaya. Retrospective ceremony merged into the existing
 Karpathy wiki lint operation; no duplicate cadence.
 See: sources/bmad-method.md, ../dev/workflow.md</p>
+<h2 id="2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)<a class="headerlink" href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15" title="Permanent link">&para;</a></h2>
+<p>Landed the three remaining kernel-built-in CLI commands —
+<code>yaya serve</code>, the rewritten <code>yaya hello</code>, and the <code>yaya plugin
+{list, install, remove}</code> group — completing the 1.0 command surface
+from <code>docs/dev/cli.md</code>. <code>serve</code> boots EventBus + PluginRegistry +
+AgentLoop in-process, binds 127.0.0.1 only (no <code>--host</code> flag per
+GOAL.md non-goals), picks a free port on <code>--port 0</code>, and opens the
+browser only when a <code>web</code>-prefixed adapter plugin is loaded —
+otherwise it warns via stderr and keeps the kernel up so <code>yaya
+hello</code> still round-trips the bus. <code>plugin install</code> rejects shell
+metacharacters before any subprocess via the registry's existing
+<code>_validate_install_source</code>, refuses to prompt under <code>--json</code> (must
+pass <code>--yes</code>), and honours <code>--dry-run</code>. <code>plugin remove</code> surfaces
+the bundled-plugin <code>ValueError</code> as <code>ok=false</code> with a suggestion
+pointing at <code>yaya update</code>. Signal handling uses
+<code>asyncio.add_signal_handler</code> so Ctrl+C cleanly stops loop → registry
+→ bus in that order.
+See: ../../specs/cli-kernel-commands.spec, ../../src/yaya/cli/commands/serve.py, ../../src/yaya/cli/commands/hello.py, ../../src/yaya/cli/commands/plugin.py</p>
 <h2 id="2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)<a class="headerlink" href="#2026-04-18-ingest-seed-plugins-issue-14" title="Permanent link">&para;</a></h2>
 <p>Landed the four non-adapter seed plugins — one per category — to
 prove the plugin protocol end-to-end against the kernel registry

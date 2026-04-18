@@ -453,7 +453,7 @@
 <nav>
     <ul>
         <li><a href="#wiki-log">Wiki Log</a></li>
-        <li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li>
+        <li><a href="#2026-04-18-ingest-mypy-strict-tightening-issue-40">[2026-04-18] ingest | mypy strict tightening (issue #40)</a></li><li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li>
     </ul>
 </nav>
 </aside>
@@ -571,6 +571,23 @@ as <code>llm_openai</code>. Auto-selection lives in <code>strategy_react</code>:
 TODO(#23) — provider-selection policy migrates to <code>ctx.config</code> once
 the config-loading PR lands. Stdlib-only implementation; no LLM SDK.
 See: ../../specs/plugin-llm_echo.spec, ../../src/yaya/plugins/llm_echo/, ../../src/yaya/plugins/strategy_react/plugin.py</p>
+<h2 id="2026-04-18-ingest-banned-framework-scanner-issue-33">[2026-04-18] ingest | banned-framework scanner (issue #33)<a class="headerlink" href="#2026-04-18-ingest-banned-framework-scanner-issue-33" title="Permanent link">&para;</a></h2>
+<p>Operationalized AGENT.md §4 — the "no third-party agent frameworks"
+rule was previously honor-system. Landed <code>scripts/check_banned_frameworks.py</code>,
+a stdlib-only Python scanner that checks two surfaces: declared
+dependencies in <code>pyproject.toml</code> (<code>[project] dependencies</code>,
+<code>[dependency-groups]</code>, <code>[project.optional-dependencies]</code>) and AST-walked
+imports under <code>src/</code> + <code>tests/</code>. Names are normalized per PyPA before
+comparison so case + separator variants collide. Wired into pre-commit
+(fires on <code>pyproject.toml</code> or <code>**/*.py</code> changes) and the <code>Lint &amp; type
+check</code> CI job. AST scan deliberately avoids regex so docstring / comment
+mentions of a banned name don't false-positive (lesson 27 — Dependency
+Rule classification is per-export, not per-library; this script is the
+mechanical layer of the same idea applied to top-level distributions).
+Known limitation: dynamic <code>importlib.import_module(...)</code> calls are not
+caught (policy enforcement, not hermetic sandbox); transitive <code>uv.lock</code>
+deps are deferred.
+See: ../../scripts/check_banned_frameworks.py, ../dev/no-agent-frameworks.md</p>
 <h2 id="2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)<a class="headerlink" href="#2026-04-18-ingest-pi-web-ui-landing-issue-66" title="Permanent link">&para;</a></h2>
 <p>Replaced the 305-line vanilla-JS placeholder under
 <code>src/yaya/plugins/web/static/</code> with a Vite-built integration of

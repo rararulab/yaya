@@ -565,6 +565,47 @@ issue before writing the import.</p>
   are NEVER imported at runtime; <code>src/yaya/</code> must not reference
   anything under <code>vendor/</code>.</li>
 </ul>
+<h3 id="mechanical-enforcement">Mechanical enforcement<a class="headerlink" href="#mechanical-enforcement" title="Permanent link">&para;</a></h3>
+<p><code>scripts/check_banned_frameworks.py</code> is the grep-enforced layer for
+this rule. It runs in two places:</p>
+<ul>
+<li><strong>Pre-commit hook</strong> — fires on changes to <code>pyproject.toml</code> or any
+  <code>src/**.py</code> / <code>tests/**.py</code> file.</li>
+<li><strong>CI</strong> — runs as a step in the <code>Lint &amp; type check</code> job in
+  <code>.github/workflows/main.yml</code>.</li>
+</ul>
+<p>The script is stdlib-only (no dep on any framework to check
+frameworks) and scans two surfaces:</p>
+<ol>
+<li>Declared dependencies in <code>pyproject.toml</code> — <code>[project]
+   dependencies</code>, every <code>[dependency-groups]</code> table, and every
+   <code>[project.optional-dependencies]</code> extra. Names are normalized per
+   the <a href="https://packaging.python.org/en/latest/specifications/name-normalization/">PyPA name normalization spec</a>
+   before comparison, so <code>Lang_Chain</code>, <code>LangChain</code>, and <code>langchain</code>
+   all collide.</li>
+<li>AST-walked <code>import</code> / <code>from … import …</code> statements under <code>src/</code>
+   and <code>tests/</code>. AST is used (not regex) so string mentions of a
+   banned name in a docstring or comment are NOT false positives.</li>
+</ol>
+<p>The ban list is hardcoded in the script and must stay in sync with
+AGENT.md §4 — a PR that edits one MUST edit the other.</p>
+<h4 id="known-limitations">Known limitations<a class="headerlink" href="#known-limitations" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Dynamic imports</strong> via <code>importlib.import_module("langchain")</code> are
+  not caught — AST cannot see strings. The ban is policy enforcement,
+  not a hermetic sandbox. If a known offender shows up, add a runtime
+  guard.</li>
+<li><strong>Transitive dependencies</strong> (a permitted package that itself pulls
+  in a banned one through <code>uv.lock</code>) are not scanned today. The
+  declared-dep gate catches the common case; transitive coverage is
+  tracked for a follow-up.</li>
+</ul>
+<h4 id="carve-outs">Carve-outs<a class="headerlink" href="#carve-outs" title="Permanent link">&para;</a></h4>
+<p>None today. If a legitimately-needed package collides with a banned
+name (e.g. an internal tool whose distribution name happens to start
+with <code>smol-</code>), document the carveout here AND skip-list it
+explicitly in the script's <code>BANNED_PACKAGES</code> set with a comment
+linking to the justifying issue.</p>
 </section>
 
             </main>

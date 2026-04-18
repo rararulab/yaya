@@ -22,6 +22,18 @@ CHANGE_SCOPE="${CHANGE_SCOPE:-worktree}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARSER="$SCRIPT_DIR/_parse_spec_result.py"
+DETECTOR="$SCRIPT_DIR/_detect_owning_spec.py"
+
+# Which spec (if any) does this PR own? Boundary violations on the
+# owning spec hard-fail CI; everywhere else they stay soft-report.
+# See scripts/_detect_owning_spec.py for the resolution chain.
+OWNING_SPEC="$(python3 "$DETECTOR" 2>/dev/null || true)"
+if [ -n "$OWNING_SPEC" ]; then
+  echo "🎯 owning spec detected: $OWNING_SPEC"
+else
+  echo "ℹ️  no owning spec detected — boundary stays soft-report for all specs"
+fi
+echo
 
 if ! command -v agent-spec >/dev/null 2>&1; then
   echo "⚠️  agent-spec not installed; skipping spec enforcement."
@@ -76,7 +88,7 @@ for spec in "${specs[@]}"; do
       --format json 2>/dev/null || true
   )"
 
-  if line="$(printf '%s' "$output" | python3 "$PARSER" --spec "$spec" --min-score "$MIN_SCORE")"; then
+  if line="$(printf '%s' "$output" | python3 "$PARSER" --spec "$spec" --min-score "$MIN_SCORE" --owning-spec "$OWNING_SPEC")"; then
     echo "✅ $line"
     summary+=("✅ $line")
   else

@@ -38,6 +38,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--spec", required=True, help="spec path (for log output)")
     parser.add_argument("--min-score", type=float, default=0.6)
+    parser.add_argument(
+        "--owning-spec",
+        default="",
+        help="If set and equal to --spec, boundary violations hard-fail; "
+        "otherwise they are soft-reported. See scripts/_detect_owning_spec.py.",
+    )
     args = parser.parse_args()
 
     raw = sys.stdin.read()
@@ -70,7 +76,12 @@ def main() -> int:
         names = ",".join(str(r.get("scenario_name")) for r in scenario_fails)
         hard_reasons.append(f"scenario_fail({names})")
     if boundary_fails:
-        soft_reasons.append(f"boundary_fail={len(boundary_fails)}")
+        if args.owning_spec and args.owning_spec == args.spec:
+            # This PR owns this spec — boundary violations are real.
+            hard_reasons.append(f"boundary_fail={len(boundary_fails)}")
+        else:
+            # Cross-cutting PR; this spec does not own the change.
+            soft_reasons.append(f"boundary_fail={len(boundary_fails)}")
 
     status = "HARD_FAIL" if hard_reasons else "OK"
     reason_parts = []

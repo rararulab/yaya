@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from syrupy.assertion import SnapshotAssertion
 from typer.testing import CliRunner
 
@@ -19,11 +20,16 @@ from typer.testing import CliRunner
 # and Windows codepage. The mapping is intentionally lossy: we only care
 # that the *structure* of the help panel is stable, not the exact glyph.
 _BOX_TO_ASCII = str.maketrans({
-    # Single light box
+    # Single light box (rounded corners, used by rich on unix)
     "\u256d": "+",
     "\u256e": "+",
     "\u256f": "+",
     "\u2570": "+",
+    # Single light box (square corners, used by rich on Windows)
+    "\u250c": "+",
+    "\u2510": "+",
+    "\u2514": "+",
+    "\u2518": "+",
     "\u2500": "-",
     "\u2502": "|",
     "\u251c": "+",
@@ -208,10 +214,31 @@ def _flush_panel(lines: list[str]) -> list[str]:
     return [f"| {row}" for row in rows]
 
 
+@pytest.fixture
+def _pinned_rich(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin typer's rich console so help output is width-invariant.
+
+    `typer.rich_utils.MAX_WIDTH` defaults to `None`, which lets rich
+    call `shutil.get_terminal_size()`. Under `CliRunner` there is no
+    tty, so on Windows rich falls back to an unlimited width and
+    collapses everything onto a single line; on unix it honours the
+    runner's `COLUMNS` env (typically 80). Forcing a concrete width
+    here is the only way to make the three OSes produce the same
+    line layout, which is the precondition for a stable snapshot.
+    """
+    import typer.rich_utils as ru
+
+    monkeypatch.setattr(ru, "MAX_WIDTH", 100, raising=False)
+    monkeypatch.setattr(ru, "FORCE_TERMINAL", True, raising=False)
+    monkeypatch.setenv("COLUMNS", "100")
+    monkeypatch.setenv("NO_COLOR", "1")
+
+
 def test_root_help_snapshot(
     runner: CliRunner,
     cli_app,
     snapshot: SnapshotAssertion,
+    _pinned_rich: None,
 ) -> None:
     """Top-level `yaya --help` renders a stable panel layout."""
     result = runner.invoke(cli_app, ["--help"])
@@ -223,6 +250,7 @@ def test_update_help_snapshot(
     runner: CliRunner,
     cli_app,
     snapshot: SnapshotAssertion,
+    _pinned_rich: None,
 ) -> None:
     """`yaya update --help` renders a stable panel layout."""
     result = runner.invoke(cli_app, ["update", "--help"])

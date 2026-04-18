@@ -81,7 +81,7 @@ def _root(
         typer.echo(ctx.get_help())
         raise typer.Exit
 
-    if ctx.invoked_subcommand not in {"update", "version", "hello", "serve", "plugin"}:
+    if ctx.invoked_subcommand not in {"update", "version", "hello", "serve", "plugin", "config"}:
         from yaya.cli.commands.update import maybe_show_update_toast
 
         maybe_show_update_toast(state)
@@ -89,8 +89,9 @@ def _root(
 
 # Register subcommands. Imported here (not at top) so the app is fully
 # constructed before modules touch it.
-from yaya.cli.commands import hello, plugin, serve, update, version  # noqa: E402
+from yaya.cli.commands import config, hello, plugin, serve, update, version  # noqa: E402
 
+config.register(app)
 hello.register(app)
 plugin.register(app)
 serve.register(app)

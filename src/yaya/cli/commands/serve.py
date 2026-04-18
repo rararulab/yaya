@@ -30,7 +30,7 @@ import typer
 
 from yaya.cli import CLIState
 from yaya.cli.output import emit_error, emit_ok, warn
-from yaya.kernel import AgentLoop, EventBus, PluginRegistry
+from yaya.kernel import AgentLoop, EventBus, KernelConfig, PluginRegistry, load_config
 
 EXAMPLES = """
 Examples:
@@ -73,6 +73,7 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
     strategy: str,
     dev: bool,
     shutdown_event: asyncio.Event | None = None,
+    kernel_config: KernelConfig | None = None,
 ) -> int:
     """Boot the kernel and wait until a signal (or ``shutdown_event``) fires.
 
@@ -92,10 +93,20 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
         Process exit code (``0`` on clean shutdown, non-zero on startup
         failure).
     """
-    bound_port = _pick_free_port() if port == 0 else port
+    cfg = kernel_config or load_config()
+
+    # Merge order: explicit --port (non-zero) wins; otherwise fall back
+    # to kernel_config.port (env / TOML); only when both are zero do
+    # we ask the OS for a free port.
+    if port != 0:
+        bound_port = port
+    elif cfg.port != 0:
+        bound_port = cfg.port
+    else:
+        bound_port = _pick_free_port()
 
     bus = EventBus()
-    registry = PluginRegistry(bus)
+    registry = PluginRegistry(bus, kernel_config=cfg)
     loop = AgentLoop(bus)
 
     try:
@@ -117,8 +128,9 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
     if strategy != "react":
         warn(
             f"[yellow]--strategy {strategy!r} is accepted but not yet dispatched;[/] "
-            "strategy selection will activate once ctx.config plumbing lands "
-            "(tracked separately). Falling back to the default strategy plugin."
+            "config plumbing landed in #23 (ctx.config is now populated from env + "
+            "config.toml), but strategy dispatch on top of it ships separately. "
+            "Falling back to the default strategy plugin."
         )
     if dev:
         warn(

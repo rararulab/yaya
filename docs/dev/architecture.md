@@ -91,6 +91,31 @@ Scenarios bind to test functions via `Test:` selectors. Run
 `agent-spec lifecycle` before commit; CI runs `agent-spec guard` on
 staged changes. See [agent-spec.md](agent-spec.md).
 
+## Configuration
+
+Settings resolve through a single ordered loader in
+`src/yaya/kernel/config.py`. The merge order is fixed and
+most-specific wins:
+
+1. Command-line flags — handled per command in `cli/commands/`.
+2. Environment variables — `YAYA_*` for the kernel and plugin
+   namespaces. `__` is the nesting delimiter, so
+   `YAYA_LLM_OPENAI__MODEL=gpt-4o` lands at
+   `KernelConfig.plugin_config("llm_openai")["model"]`.
+3. User TOML at `$XDG_CONFIG_HOME/yaya/config.toml` (default
+   `~/.config/yaya/config.toml`). Absent is fine — no auto-create.
+4. Built-in defaults declared on `KernelConfig`.
+
+`PluginRegistry` constructs each `KernelContext` with the resolved
+sub-tree for that plugin (`config=kernel_config.plugin_config(name)`).
+Plugins read their own settings via `ctx.config["..."]` and MUST
+tolerate an empty mapping — first-run users have no config file and no
+env vars set.
+
+`yaya config show [--json]` is the read-only diagnostic surface. Keys
+matching `r".*(token|key|secret|password|passphrase).*"` (case-insensitive)
+render as `"***"` so dumping the config in a bug report is safe.
+
 ## Code style
 
 Python follows the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)

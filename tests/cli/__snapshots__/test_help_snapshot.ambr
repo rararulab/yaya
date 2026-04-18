@@ -19,6 +19,7 @@
   | serve Boot the yaya kernel and wait for shutdown.
   | update Check for and apply updates from GitHub releases.
   | version Print the installed version.
+  | config Inspect resolved yaya configuration.
   | plugin Manage installed plugins.
   +---+
   

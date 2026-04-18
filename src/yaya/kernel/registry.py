@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from yaya.kernel.config import KernelConfig, load_config
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.plugin import Category, KernelContext, Plugin
 
@@ -171,6 +172,7 @@ class PluginRegistry:
         state_dir: Path | None = None,
         failure_threshold: int = _DEFAULT_FAILURE_THRESHOLD,
         entry_point_group: str = _ENTRY_POINT_GROUP,
+        kernel_config: KernelConfig | None = None,
     ) -> None:
         """Bind the registry to ``bus``.
 
@@ -187,11 +189,16 @@ class PluginRegistry:
             entry_point_group: Override for tests that need to inject a
                 separate entry-point group. Production code should use
                 the default.
+            kernel_config: Resolved :class:`KernelConfig`. Defaults to
+                ``load_config()`` so production callers (``yaya serve``)
+                pick up env + TOML automatically; tests can inject a
+                hand-built instance to pin per-plugin sub-trees.
         """
         self._bus = bus
         self._state_dir = state_dir or _default_state_dir()
         self._failure_threshold = failure_threshold
         self._entry_point_group = entry_point_group
+        self._kernel_config = kernel_config or load_config()
 
         # Name → record. Bounded by the install set (not user input), so
         # there is no leak risk even across many discovery cycles.
@@ -552,7 +559,7 @@ class PluginRegistry:
         return KernelContext(
             bus=self._bus,
             logger=logging.getLogger(f"yaya.plugin.{plugin.name}"),
-            config={},
+            config=self._kernel_config.plugin_config(plugin.name),
             state_dir=plugin_state,
             plugin_name=plugin.name,
         )

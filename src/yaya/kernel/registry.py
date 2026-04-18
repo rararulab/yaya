@@ -336,7 +336,7 @@ class PluginRegistry:
             RuntimeError: If the subprocess returned non-zero. The stderr
                 from pip is included in the message.
         """
-        _validate_install_source(source)
+        validate_install_source(source)
         args = ["pip", "install"]
         if editable:
             args.append("-e")
@@ -719,7 +719,7 @@ def _safe_subscriptions(plugin: Plugin) -> list[str]:
     return list(subs)
 
 
-def _validate_install_source(source: str) -> None:
+def validate_install_source(source: str) -> None:
     """Reject obviously-unsafe install sources before shelling to pip.
 
     Accepted forms:
@@ -820,4 +820,4 @@ def _make_handler(
     return _handler
 
 
-__all__ = ["PluginRegistry", "PluginStatus"]
+__all__ = ["PluginRegistry", "PluginStatus", "validate_install_source"]

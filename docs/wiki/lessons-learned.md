@@ -472,6 +472,36 @@ suppression: mypy `# type: ignore[...]`, ruff `# noqa:`, pyright
 
 ---
 
+## 23. CLI flags that "will work later" must be observably inert
+
+**Symptom** — PR #62's `yaya serve --strategy plan-execute` and
+`--dev` accepted the flag and silently ignored it. The backing
+plumbing (ctx.config dispatch for strategies; vite dev proxy for
+the web adapter) hadn't landed. A user saw no error, assumed
+their flag took effect, and wondered why the ReAct strategy still
+ran.
+
+**Root cause** — Exposing a flag in Typer/Argparse costs 4 lines
+of code; wiring it to actual behavior is often blocked on a
+downstream subsystem. The easy path is "accept + forget";
+maintainers return to find the flag was a lie for a full release.
+
+**Rule** — If a CLI flag is exposed but its backing behavior is
+NOT fully plumbed:
+1. Log a WARNING on startup naming the flag and the unfinished
+   plumbing ("--strategy 'plan-execute' is not yet dispatched;
+   tracked in #XYZ").
+2. Reference the tracking issue in the flag's help text.
+3. Add a test that asserts the warning fires.
+
+Hiding an incomplete feature behind a silent flag violates lesson
+#10 (silent no-ops). Removing the flag entirely until it works is
+also acceptable — but then the spec must not advertise it either.
+
+**Reference** — PR #62 review round 1.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

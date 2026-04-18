@@ -35,25 +35,26 @@ def test_version_json_shape(yaya_bin: str) -> None:
     assert payload["version"]
 
 
-def test_hello_default_contains_world(yaya_bin: str) -> None:
+def test_hello_kernel_smoke(yaya_bin: str) -> None:
+    """``yaya hello`` round-trips one event through the kernel."""
     result = run(yaya_bin, "hello")
     assert result.returncode == 0, result.stderr
-    assert "world" in result.stdout
+    assert "kernel ok" in result.stdout
 
 
-def test_hello_named_json_shape(yaya_bin: str) -> None:
-    payload = json_stdout(run(yaya_bin, "--json", "hello", "-n", "ci"))
+def test_hello_json_shape(yaya_bin: str) -> None:
+    payload = json_stdout(run(yaya_bin, "--json", "hello"))
     assert payload["ok"] is True
     assert payload["action"] == "hello"
-    assert payload["name"] == "ci"
-    assert payload["greeting"] == "Hello, ci!"
+    assert payload["received"] is True
+    assert isinstance(payload.get("version"), str)
 
 
 def test_help_lists_every_known_subcommand(yaya_bin: str) -> None:
     result = run(yaya_bin, "--help")
     assert result.returncode == 0, result.stderr
     # Every subcommand currently registered in src/yaya/cli/__init__.py
-    for cmd in ("hello", "version", "update"):
+    for cmd in ("hello", "version", "update", "serve", "plugin"):
         assert cmd in result.stdout, f"{cmd} missing from --help"
 
 

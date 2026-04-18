@@ -144,6 +144,19 @@ Extension events (`x.<plugin>.<kind>`) are forwarded transparently so
 plugin-private UI surfaces can receive their private events without
 kernel involvement.
 
+## Known 0.1 quirk: port handshake
+
+`yaya serve --port <P>` tells the kernel to use port `<P>`, but the
+web adapter plugin picks its own port from `YAYA_WEB_PORT` (default:
+auto). If you want them aligned, set the env var:
+
+```bash
+YAYA_WEB_PORT=7456 yaya serve --port 7456 --no-open
+```
+
+A follow-up issue will have `serve` pass its port to the adapter via
+config. Until then, check `/api/health` to confirm the actual port.
+
 ## What NOT To Do
 
 - Do NOT special-case the web plugin in kernel code. It must register

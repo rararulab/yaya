@@ -21,6 +21,8 @@ dependencies = [
     "loguru>=0.7.2",
     "httpx>=0.28.1",
     "openai>=1.52.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
 ]
 
 [project.entry-points."yaya.plugins.v1"]
@@ -28,6 +30,7 @@ strategy_react = "yaya.plugins.strategy_react:plugin"
 memory_sqlite = "yaya.plugins.memory_sqlite:plugin"
 llm_openai = "yaya.plugins.llm_openai:plugin"
 tool_bash = "yaya.plugins.tool_bash:plugin"
+web = "yaya.plugins.web:plugin"
 
 [project.urls]
 Repository = "https://github.com/rararulab/yaya"

@@ -20,10 +20,16 @@ check:
     uv run pyright
     @echo "🧾 Linting specs with agent-spec"
     @bash scripts/check_specs.sh
+    @echo "🎭 Checking .feature / .spec sync"
+    @uv run python scripts/check_feature_sync.py
 
 # Lint only the BDD specs (skipped if agent-spec is not installed)
 check-specs:
     @bash scripts/check_specs.sh
+
+# Verify .feature files stay in sync with their matching .spec scenarios
+check-features:
+    @uv run python scripts/check_feature_sync.py
 
 # Run all pre-commit hooks + lock file consistency (CI parity)
 check-all: check

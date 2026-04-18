@@ -68,6 +68,15 @@ Use module-level `pytestmark = pytest.mark.unit` to tag a whole file.
   and snapshots drift. Refresh deliberately, not reflexively.
 - **CLI tests**: `runner.invoke(cli_app, [...])` + assert exit code, JSON
   shape, stderr vs stdout routing. See [cli.md](cli.md).
+- **BDD tests (pytest-bdd)**: Gherkin scenarios in
+  `tests/bdd/features/*.feature` bound to step definitions in
+  `tests/bdd/test_*.py`. Each scenario in `specs/<slug>.spec` Completion
+  Criteria has a matching `.feature` scenario; changing the scenario text
+  without updating the step definition causes pytest to fail with
+  `StepDefinitionNotFoundError`. `scripts/check_feature_sync.py` verifies
+  `.feature` and `.spec` stay aligned; it runs in `just check` and CI.
+  See [agent-spec.md](agent-spec.md) for how `.spec` authoring and BDD
+  execution relate.
 
 ## Isolation fixtures
 

@@ -43,6 +43,7 @@ dev = [
     "pytest-httpx>=0.35",
     "pytest-timeout>=2.3.0",
     "pytest-randomly>=3.15.0",
+    "pytest-bdd>=8.0",
     "hypothesis>=6.115.0",
     "syrupy>=4.7.0",
 ]

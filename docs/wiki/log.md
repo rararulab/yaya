@@ -35,3 +35,18 @@ party mode, and the BMB/TEA/BMGD/CIS sibling modules — out of
 scope for yaya. Retrospective ceremony merged into the existing
 Karpathy wiki lint operation; no duplicate cadence.
 See: sources/bmad-method.md, ../dev/workflow.md
+
+## [2026-04-18] ingest | seed plugins (issue #14)
+Landed the four non-adapter seed plugins — one per category — to
+prove the plugin protocol end-to-end against the kernel registry
+that shipped in PR #49. Each plugin is a bundled subpackage under
+`src/yaya/plugins/<name>/` loaded through the same
+`yaya.plugins.v1` entry-point ABI as third-party packages. `openai`
+is the only LLM SDK accepted per AGENT.md §4; `tool_bash` uses
+`asyncio.create_subprocess_exec` exclusively (never `shell=True`);
+`memory_sqlite` runs stdlib `sqlite3` through `asyncio.to_thread`;
+`strategy_react` implements the observe-think-act decision. Every
+response event echoes `request_id` per lesson #15. Each plugin
+ships a BDD `.spec` (0 WARN from `agent-spec lint`) + unit tests
+under `tests/plugins/<name>/`.
+See: ../../specs/plugin-strategy_react.spec, ../../specs/plugin-memory_sqlite.spec, ../../specs/plugin-llm_openai.spec, ../../specs/plugin-tool_bash.spec, ../../src/yaya/plugins/

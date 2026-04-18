@@ -1,0 +1,158 @@
+"""ReAct strategy plugin implementation.
+
+The strategy inspects the :class:`yaya.kernel.events.AgentLoopState`
+snapshot the loop hands it and picks the next step. It carries no
+per-session state of its own — the loop's ``state.messages`` +
+``state.last_tool_result`` is the authoritative context, so repeated
+turns remain deterministic.
+"""
+
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from yaya.kernel.events import Event
+from yaya.kernel.plugin import Category, KernelContext
+
+# TODO(#14-followup): read these from ``ctx.config`` once the registry
+# plumbs per-plugin config (the registry currently hands every plugin
+# an empty Mapping; see ``src/yaya/kernel/registry.py::_make_context``).
+_DEFAULT_PROVIDER = "openai"
+_DEFAULT_MODEL = "gpt-4o-mini"
+
+_NAME = "strategy-react"
+_VERSION = "0.1.0"
+
+
+class ReActStrategy:
+    """Bundled ReAct strategy plugin.
+
+    Implements :class:`yaya.kernel.plugin.Plugin` via duck typing — the
+    protocol is ``@runtime_checkable`` so the registry's ``isinstance``
+    guard accepts any object with the required attributes and methods.
+
+    Thread model: single asyncio event loop. The plugin keeps no
+    mutable state across events; every decision is computed from the
+    incoming ``state`` snapshot.
+    """
+
+    name: str = _NAME
+    version: str = _VERSION
+    category: Category = Category.STRATEGY
+    requires: ClassVar[list[str]] = []
+
+    def subscriptions(self) -> list[str]:
+        """Only ``strategy.decide.request`` — the sole request kind for this category."""
+        return ["strategy.decide.request"]
+
+    async def on_load(self, ctx: KernelContext) -> None:
+        """Log the effective configuration on boot.
+
+        Defaults are hard-coded here (see TODO above); swap to
+        ``ctx.config`` once registry P3 lands.
+        """
+        provider, model = self._provider_and_model(ctx)
+        ctx.logger.debug(
+            "strategy-react loaded (provider=%s model=%s)",
+            provider,
+            model,
+        )
+
+    async def on_event(self, ev: Event, ctx: KernelContext) -> None:
+        """Decide the next step for the turn described by ``ev.payload.state``.
+
+        The loop always publishes ``strategy.decide.request`` with a
+        ``state`` key (see ``yaya.kernel.loop.AgentLoop._decide``); a
+        request missing that key is a protocol violation and raises so
+        the registry's failure accounting surfaces a ``plugin.error``.
+        """
+        if ev.kind != "strategy.decide.request":
+            return
+        raw_state = ev.payload.get("state")
+        if not isinstance(raw_state, dict):
+            # Protocol violation: the loop always publishes with a 'state' key.
+            raise ValueError("strategy.decide.request missing 'state' payload")  # noqa: TRY004
+
+        provider, model = self._provider_and_model(ctx)
+        decision = _decide(raw_state, provider=provider, model=model)
+        decision["request_id"] = ev.id
+        await ctx.emit(
+            "strategy.decide.response",
+            decision,
+            session_id=ev.session_id,
+        )
+
+    async def on_unload(self, ctx: KernelContext) -> None:
+        """No-op — the strategy holds no resources."""
+
+    # -- helpers --------------------------------------------------------------
+
+    @staticmethod
+    def _provider_and_model(ctx: KernelContext) -> tuple[str, str]:
+        """Return the effective ``(provider, model)`` pair.
+
+        Reads ``ctx.config`` first (for when registry P3 plumbs config),
+        falling back to the seed defaults so current bundled boots keep
+        working without a config file.
+        """
+        cfg = ctx.config
+        provider_raw = cfg.get("provider") if cfg else None
+        model_raw = cfg.get("model") if cfg else None
+        provider = provider_raw if isinstance(provider_raw, str) and provider_raw else _DEFAULT_PROVIDER
+        model = model_raw if isinstance(model_raw, str) and model_raw else _DEFAULT_MODEL
+        return provider, model
+
+
+def _decide(state: dict[str, Any], *, provider: str, model: str) -> dict[str, Any]:
+    """Compute the next step from a loop state snapshot.
+
+    Pure function so it is trivially unit-testable without a bus.
+
+    Args:
+        state: The ``AgentLoopState`` dict from ``strategy.decide.request``.
+        provider: Configured LLM provider id (e.g. ``"openai"``).
+        model: Configured model string.
+
+    Returns:
+        A decision payload (less ``request_id``, which the caller adds)
+        per ``docs/dev/plugin-protocol.md``. ``next`` is one of
+        ``"llm" | "tool" | "done"``. Memory steps are not emitted by
+        this seed strategy — the loop supports them, but ReAct 0.1 does
+        not use them.
+    """
+    messages_raw = state.get("messages") or []
+    messages: list[dict[str, Any]] = [dict(m) for m in messages_raw if isinstance(m, dict)]
+
+    last_tool_result = state.get("last_tool_result")
+
+    # Find the most recent assistant message (if any).
+    last_assistant: dict[str, Any] | None = None
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant":
+            last_assistant = msg
+            break
+
+    # A tool just ran → feed its result back into the LLM for another pass.
+    if last_tool_result is not None and last_assistant is None:
+        # Shouldn't happen (we always have an assistant turn before a
+        # tool call), but defensively ask the LLM to interpret it.
+        return {"next": "llm", "provider": provider, "model": model}
+
+    # Assistant present + pending tool_calls → run the first one.
+    if last_assistant is not None:
+        tool_calls = last_assistant.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            first = tool_calls[0]
+            if isinstance(first, dict):
+                return {"next": "tool", "tool_call": dict(first)}
+        # Assistant finished and has nothing to run → done.
+        if last_tool_result is None:
+            return {"next": "done"}
+        # Assistant just consumed a tool result → loop again via LLM.
+        return {"next": "llm", "provider": provider, "model": model}
+
+    # No assistant message yet → ask the LLM.
+    return {"next": "llm", "provider": provider, "model": model}
+
+
+__all__ = ["ReActStrategy"]

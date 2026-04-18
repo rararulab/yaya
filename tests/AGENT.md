@@ -6,7 +6,7 @@
 Pytest suite. Mirrors `src/yaya/` one-to-one. Tests are the specification.
 
 ## External Reality
-- `just test` (pytest + coverage) is ground truth. Coverage floor: 80% (`fail_under`).
+- `just test` (pytest + coverage) is ground truth. Coverage floor: 88% (`fail_under`).
 - `addopts` enforces `--strict-markers` + `--strict-config` + 30s timeout.
 - `pytest-randomly` shuffles test order — order-dependence fails CI immediately.
 - Tests run hermetically: autouse fixtures redirect `STATE_DIR` and disable the update toast.

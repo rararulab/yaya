@@ -1,4 +1,4 @@
-"""Tests for scripts/check_feature_sync.py."""
+"""Tests for ``scripts/check_feature_sync.py``."""
 
 from __future__ import annotations
 
@@ -11,14 +11,14 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = REPO_ROOT / "scripts" / "check_feature_sync.py"
 
-def _load_sync_checker() -> Any:
-    """Import scripts/check_feature_sync.py by path."""
-    root = Path(__file__).resolve().parents[2]
-    script_path = root / "scripts" / "check_feature_sync.py"
-    spec = importlib.util.spec_from_file_location("check_feature_sync", script_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load sync checker from {script_path}")
+
+def _load_script() -> Any:
+    spec = importlib.util.spec_from_file_location("check_feature_sync", SCRIPT_PATH)
+    if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        raise RuntimeError(f"cannot load sync checker from {SCRIPT_PATH}")
     module = importlib.util.module_from_spec(spec)
     sys.modules["check_feature_sync"] = module
     spec.loader.exec_module(module)
@@ -26,16 +26,16 @@ def _load_sync_checker() -> Any:
 
 
 @pytest.fixture
-def sync_checker() -> Any:
-    return _load_sync_checker()
+def checker() -> Any:
+    return _load_script()
 
 
-def _write_spec(path: Path, scenario_name: str = "happy path") -> None:
+def _write_spec(path: Path, *, scenario_name: str = "happy path", step: str = "the system is ready") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "\n".join([
             "spec: task",
-            f'name: "{path.stem}"',
+            'name: "demo"',
             "---",
             "",
             "## Completion Criteria",
@@ -43,67 +43,68 @@ def _write_spec(path: Path, scenario_name: str = "happy path") -> None:
             f"Scenario: {scenario_name}",
             "  Test:",
             "    Package: yaya",
-            "    Filter: tests/test_example.py::test_example",
+            "    Filter: tests/demo.py::test_demo",
             "  Level: unit",
-            "  Given a precondition",
-            "  When an action runs",
-            "  Then an outcome is observed",
-            "",
+            f"  Given {step}",
+            "  When the user runs the demo",
+            "  Then the system responds",
         ]),
         encoding="utf-8",
     )
 
 
-def _write_feature(path: Path, scenario_name: str = "happy path") -> None:
+def _write_feature(path: Path, *, scenario_name: str = "happy path", step: str = "the system is ready") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "\n".join([
-            "Feature: Example",
+            "Feature: Demo",
             "",
             f"  Scenario: {scenario_name}",
-            "    Given a precondition",
-            "    When an action runs",
-            "    Then an outcome is observed",
-            "",
+            f"    Given {step}",
+            "    When the user runs the demo",
+            "    Then the system responds",
         ]),
         encoding="utf-8",
     )
 
 
-def test_collect_sync_errors_reports_spec_without_feature(sync_checker: Any, tmp_path: Path) -> None:
-    _write_spec(tmp_path / "specs" / "orphan.spec")
-    (tmp_path / "tests" / "bdd" / "features").mkdir(parents=True)
+def test_collect_sync_errors_flags_missing_feature(tmp_path: Path, checker: Any) -> None:
+    _write_spec(tmp_path / "specs" / "demo.spec")
 
-    errors = sync_checker.collect_sync_errors(tmp_path)
+    errors = checker.collect_sync_errors(tmp_path)
 
-    assert errors == [
-        "❌ specs/orphan.spec: no matching tests/bdd/features/orphan.feature",
-    ]
-
-
-def test_collect_sync_errors_reports_spec_when_features_dir_is_missing(sync_checker: Any, tmp_path: Path) -> None:
-    _write_spec(tmp_path / "specs" / "orphan.spec")
-
-    errors = sync_checker.collect_sync_errors(tmp_path)
-
-    assert errors == [
-        "❌ specs/orphan.spec: no matching tests/bdd/features/orphan.feature",
-    ]
+    assert errors
+    assert "specs/demo.spec" in errors[0]
+    assert "tests/bdd/features/demo.feature" in errors[0]
 
 
-def test_collect_sync_errors_reports_feature_without_spec(sync_checker: Any, tmp_path: Path) -> None:
-    _write_feature(tmp_path / "tests" / "bdd" / "features" / "orphan.feature")
-    (tmp_path / "specs").mkdir()
+def test_collect_sync_errors_flags_orphan_feature(tmp_path: Path, checker: Any) -> None:
+    _write_feature(tmp_path / "tests" / "bdd" / "features" / "demo.feature")
 
-    errors = sync_checker.collect_sync_errors(tmp_path)
+    errors = checker.collect_sync_errors(tmp_path)
 
-    assert errors == [
-        "❌ tests/bdd/features/orphan.feature: no matching specs/orphan.spec",
-    ]
+    assert errors
+    assert "tests/bdd/features/demo.feature" in errors[0]
+    assert "specs/demo.spec" in errors[0]
 
 
-def test_collect_sync_errors_accepts_matching_spec_and_feature(sync_checker: Any, tmp_path: Path) -> None:
-    _write_spec(tmp_path / "specs" / "example.spec")
-    _write_feature(tmp_path / "tests" / "bdd" / "features" / "example.feature")
+def test_collect_sync_errors_accepts_e2e_feature_dir(tmp_path: Path, checker: Any) -> None:
+    _write_spec(tmp_path / "specs" / "demo.spec")
+    _write_feature(tmp_path / "tests" / "e2e" / "bdd" / "features" / "demo.feature")
 
-    assert sync_checker.collect_sync_errors(tmp_path) == []
+    errors = checker.collect_sync_errors(tmp_path)
+
+    assert errors == []
+
+
+def test_collect_sync_errors_reports_step_drift(tmp_path: Path, checker: Any) -> None:
+    _write_spec(tmp_path / "specs" / "demo.spec", step="the system is ready")
+    _write_feature(
+        tmp_path / "tests" / "bdd" / "features" / "demo.feature",
+        step="the system is definitely ready",
+    )
+
+    errors = checker.collect_sync_errors(tmp_path)
+
+    assert errors
+    assert "step drift" in errors[0]

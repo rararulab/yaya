@@ -395,6 +395,7 @@ def _strategy_payload(ctx: BDDContext, payload: dict[str, Any]) -> None:
 @given("a strategy.decide.request whose state has no prior assistant message")
 def _strategy_no_assistant(ctx: BDDContext) -> None:
     _strategy_payload(ctx, {"state": {"messages": [{"role": "user", "content": "hi"}]}})
+    ctx.extras["strategy_openai_api_key"] = "sk-test"
 
 
 @given("a strategy.decide.request whose last assistant message carries a non-empty tool_calls list")
@@ -428,6 +429,7 @@ def _strategy_after_tool(ctx: BDDContext) -> None:
             }
         },
     )
+    ctx.extras["strategy_openai_api_key"] = "sk-test"
 
 
 @given("a strategy.decide.request whose last assistant message has no tool_calls and no pending tool result")
@@ -451,7 +453,17 @@ def _strategy_missing_state(ctx: BDDContext) -> None:
 
 
 @when("the ReAct plugin handles the event")
-def _strategy_handles(ctx: BDDContext, tmp_path: Path, loop: asyncio.AbstractEventLoop) -> None:
+def _strategy_handles(
+    ctx: BDDContext,
+    tmp_path: Path,
+    loop: asyncio.AbstractEventLoop,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api_key = ctx.extras.get("strategy_openai_api_key")
+    if isinstance(api_key, str):
+        monkeypatch.setenv("OPENAI_API_KEY", api_key)
+    else:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     bus = EventBus()
     kernel_ctx = _kernel_ctx(bus, tmp_path, react_plugin.name)
     captured: list[Event] = []

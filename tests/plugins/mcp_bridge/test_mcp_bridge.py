@@ -433,3 +433,644 @@ async def test_client_close_terminates_then_kills() -> None:
     await client.close()
     assert client._proc is not None
     assert client._proc.returncode is not None
+
+
+# ---------------------------------------------------------------------------
+# Additional client-level coverage.
+# ---------------------------------------------------------------------------
+
+
+async def test_client_close_cancels_reader_tasks_and_fails_pending() -> None:
+    """close() cancels reader/stderr tasks and fails outstanding futures."""
+    from yaya.plugins.mcp_bridge.client import (
+        MCPClient,
+        MCPServerCrashedError,
+        _PendingRequest,
+    )
+
+    # A long-running child so close() must terminate it + cancel tasks.
+    code = "import sys, time\nsys.stdout.write('ready\\n'); sys.stdout.flush()\ntime.sleep(60)\n"
+    client = MCPClient(sys.executable, ["-c", code], term_grace_s=1.0)
+    client._proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        code,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    assert client._proc.stdout is not None
+    await client._proc.stdout.readline()
+
+    # Spin the real reader + stderr loops so close() must cancel them.
+    client._reader_task = asyncio.create_task(client._read_loop(), name="reader")
+    client._stderr_task = asyncio.create_task(client._stderr_loop(), name="stderr")
+
+    # Inject a pending future so close() takes the "fail pending" branch.
+    loop = asyncio.get_running_loop()
+    pending_future: asyncio.Future[dict[str, Any]] = loop.create_future()
+    client._pending[42] = _PendingRequest(future=pending_future, method="tools/call")
+
+    await client.close()
+    # Second close() is a no-op (idempotent short-circuit at the top).
+    await client.close()
+    assert client._reader_task is None
+    assert client._stderr_task is None
+    assert client._pending == {}
+    assert pending_future.done()
+    with pytest.raises(MCPServerCrashedError):
+        pending_future.result()
+
+
+async def test_client_request_after_close_raises() -> None:
+    """``_request`` on a closed client surfaces ``MCPServerCrashedError``."""
+    from yaya.plugins.mcp_bridge.client import MCPClient, MCPServerCrashedError
+
+    client = MCPClient("nope", [])
+    client._closed = True
+    with pytest.raises(MCPServerCrashedError):
+        await client._request("tools/list", {})
+    with pytest.raises(MCPServerCrashedError):
+        await client._notify("notifications/initialized", {})
+
+
+async def test_read_loop_skips_garbage_and_resolves_pending() -> None:
+    """Malformed lines are skipped; subsequent valid response completes its pending future."""
+    from yaya.plugins.mcp_bridge.client import MCPClient, _PendingRequest
+
+    # Echoes garbage, then a valid JSON-RPC response, then exits.
+    code = (
+        "import sys\n"
+        "sys.stdout.write('not json\\n')\n"
+        "sys.stdout.write('\\n')\n"  # empty line branch
+        "sys.stdout.write('[\"not a dict\"]\\n')\n"  # non-dict branch
+        'sys.stdout.write(\'{"jsonrpc":"2.0","id":"not-int","result":{}}\\n\')\n'
+        'sys.stdout.write(\'{"jsonrpc":"2.0","id":1,"result":{"ok":true}}\\n\')\n'
+        "sys.stdout.flush()\n"
+    )
+    client = MCPClient(sys.executable, ["-c", code], term_grace_s=1.0)
+    client._proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        code,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future[dict[str, Any]] = loop.create_future()
+    client._pending[1] = _PendingRequest(future=fut, method="tools/call")
+
+    reader = asyncio.create_task(client._read_loop())
+    try:
+        result = await asyncio.wait_for(fut, timeout=2.0)
+        assert result == {"ok": True}
+    finally:
+        # Let the reader observe EOF (child already exited) and finish.
+        await asyncio.wait_for(reader, timeout=2.0)
+        await client.close()
+
+
+async def test_read_loop_on_eof_fails_pending_futures() -> None:
+    """When the child closes stdout, pending futures resolve with ``MCPServerCrashedError``."""
+    from yaya.plugins.mcp_bridge.client import (
+        MCPClient,
+        MCPServerCrashedError,
+        _PendingRequest,
+    )
+
+    # Child exits immediately → EOF right away.
+    code = "import sys; sys.stdout.flush()\n"
+    client = MCPClient(sys.executable, ["-c", code], term_grace_s=1.0)
+    client._proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        code,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future[dict[str, Any]] = loop.create_future()
+    client._pending[7] = _PendingRequest(future=fut, method="tools/call")
+
+    reader = asyncio.create_task(client._read_loop())
+    try:
+        with pytest.raises(MCPServerCrashedError):
+            await asyncio.wait_for(fut, timeout=2.0)
+    finally:
+        await asyncio.wait_for(reader, timeout=2.0)
+        await client.close()
+
+
+async def test_dispatch_message_translates_error_payload_to_protocol_error() -> None:
+    """JSON-RPC ``error`` payloads surface as :class:`MCPProtocolError`."""
+    from yaya.plugins.mcp_bridge.client import (
+        MCPClient,
+        MCPProtocolError,
+        _PendingRequest,
+    )
+
+    client = MCPClient("nope", [])
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future[dict[str, Any]] = loop.create_future()
+    client._pending[1] = _PendingRequest(future=fut, method="initialize")
+    client._dispatch_message({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {"code": -32600, "message": "bad request"},
+    })
+    with pytest.raises(MCPProtocolError, match="bad request"):
+        fut.result()
+
+    # Non-dict ``error`` payload also stringifies cleanly.
+    fut2: asyncio.Future[dict[str, Any]] = loop.create_future()
+    client._pending[2] = _PendingRequest(future=fut2, method="tools/call")
+    client._dispatch_message({"jsonrpc": "2.0", "id": 2, "error": "boom-string"})
+    with pytest.raises(MCPProtocolError, match="boom-string"):
+        fut2.result()
+
+    # Response with non-object ``result`` surfaces as protocol error too.
+    fut3: asyncio.Future[dict[str, Any]] = loop.create_future()
+    client._pending[3] = _PendingRequest(future=fut3, method="tools/list")
+    client._dispatch_message({"jsonrpc": "2.0", "id": 3, "result": "not-an-object"})
+    with pytest.raises(MCPProtocolError, match="result missing"):
+        fut3.result()
+
+    # Notification (no id) and unknown id are both quietly ignored.
+    client._dispatch_message({"jsonrpc": "2.0", "method": "notifications/foo"})
+    client._dispatch_message({"jsonrpc": "2.0", "id": 999, "result": {}})
+
+
+async def test_call_tool_timeout_raises_and_cleans_pending() -> None:
+    """A ``timeout_s`` breach surfaces as :class:`MCPTimeoutError` and clears _pending."""
+    from yaya.plugins.mcp_bridge.client import MCPClient, MCPTimeoutError
+
+    # Slow fake server: only replies to initialize; "slow" sleeps.
+    client = MCPClient(sys.executable, [str(_FAKE_SERVER)], term_grace_s=1.0)
+    try:
+        await client.start()
+        with pytest.raises(MCPTimeoutError):
+            await client.call_tool("slow", {"seconds": 5}, timeout_s=0.05)
+        # Pending entry for the timed-out call was cleaned by the ``finally`` in _request.
+        assert client._pending == {}
+    finally:
+        await client.close()
+
+
+async def test_start_initialize_error_raises_protocol_error() -> None:
+    """A server that returns an error on ``initialize`` surfaces MCPProtocolError."""
+    from yaya.plugins.mcp_bridge.client import MCPClient, MCPProtocolError
+
+    # Tiny inline server: always reply with an error payload.
+    code = (
+        "import json, sys\n"
+        "for line in sys.stdin:\n"
+        "    try:\n"
+        "        msg = json.loads(line)\n"
+        "    except Exception:\n"
+        "        continue\n"
+        "    if msg.get('method') in ('notifications/initialized',):\n"
+        "        continue\n"
+        "    sys.stdout.write(json.dumps({'jsonrpc':'2.0','id':msg.get('id'),"
+        "'error':{'code':-1,'message':'nope'}}) + '\\n')\n"
+        "    sys.stdout.flush()\n"
+    )
+    client = MCPClient(sys.executable, ["-c", code], term_grace_s=1.0)
+    try:
+        with pytest.raises(MCPProtocolError):
+            await client.start()
+    finally:
+        await client.close()
+
+
+async def test_list_tools_rejects_non_list_payload() -> None:
+    """``tools/list`` returning a non-list surfaces as :class:`MCPProtocolError`."""
+    from yaya.plugins.mcp_bridge.client import MCPClient, MCPProtocolError
+
+    code = (
+        "import json, sys\n"
+        "for line in sys.stdin:\n"
+        "    try:\n"
+        "        msg = json.loads(line)\n"
+        "    except Exception:\n"
+        "        continue\n"
+        "    mid = msg.get('id')\n"
+        "    method = msg.get('method')\n"
+        "    if method == 'initialize':\n"
+        "        sys.stdout.write(json.dumps({'jsonrpc':'2.0','id':mid,'result':{"
+        "'protocolVersion':'2024-11-05','capabilities':{},'serverInfo':"
+        "{'name':'x','version':'0'}}}) + '\\n')\n"
+        "        sys.stdout.flush()\n"
+        "    elif method == 'notifications/initialized':\n"
+        "        pass\n"
+        "    elif method == 'tools/list':\n"
+        "        sys.stdout.write(json.dumps({'jsonrpc':'2.0','id':mid,"
+        "'result':{'tools':'not-a-list'}}) + '\\n')\n"
+        "        sys.stdout.flush()\n"
+    )
+    client = MCPClient(sys.executable, ["-c", code], term_grace_s=1.0)
+    try:
+        with pytest.raises(MCPProtocolError):
+            await client.start()
+    finally:
+        await client.close()
+
+
+async def test_list_tools_skips_malformed_entries() -> None:
+    """Non-dict / nameless tool entries are silently skipped."""
+    from yaya.plugins.mcp_bridge.client import MCPClient
+
+    code = (
+        "import json, sys\n"
+        "for line in sys.stdin:\n"
+        "    try:\n"
+        "        msg = json.loads(line)\n"
+        "    except Exception:\n"
+        "        continue\n"
+        "    mid = msg.get('id')\n"
+        "    method = msg.get('method')\n"
+        "    if method == 'initialize':\n"
+        "        sys.stdout.write(json.dumps({'jsonrpc':'2.0','id':mid,'result':{"
+        "'protocolVersion':'2024-11-05','capabilities':{},'serverInfo':"
+        "{'name':'x','version':'0'}}}) + '\\n')\n"
+        "        sys.stdout.flush()\n"
+        "    elif method == 'notifications/initialized':\n"
+        "        pass\n"
+        "    elif method == 'tools/list':\n"
+        "        tools = ['not-a-dict', {'name': ''}, {'name': 123}, "
+        "{'name':'good','description':None,'inputSchema':'not-a-dict'}]\n"
+        "        sys.stdout.write(json.dumps({'jsonrpc':'2.0','id':mid,"
+        "'result':{'tools':tools}}) + '\\n')\n"
+        "        sys.stdout.flush()\n"
+    )
+    client = MCPClient(sys.executable, ["-c", code], term_grace_s=1.0)
+    try:
+        tools = await client.start()
+        assert [t.name for t in tools] == ["good"]
+        assert tools[0].input_schema == {}
+    finally:
+        await client.close()
+
+
+# ---------------------------------------------------------------------------
+# config.py validation coverage.
+# ---------------------------------------------------------------------------
+
+
+def test_config_rejects_non_table_entry() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": "not-a-table"}})
+    assert good == []
+    assert errors and "expected a table" in errors[0][1]
+
+
+def test_config_rejects_missing_command() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": {"command": 0}}})
+    assert good == []
+    assert any("command" in msg for _, msg in errors)
+
+
+def test_config_rejects_non_list_args() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": {"command": "x", "args": "not-a-list"}}})
+    assert good == []
+    assert any("'args'" in msg for _, msg in errors)
+
+
+def test_config_rejects_non_string_arg_element() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": {"command": "x", "args": [1]}}})
+    assert good == []
+    assert any("args[0]" in msg for _, msg in errors)
+
+
+def test_config_rejects_non_dict_env() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": {"command": "x", "env": "nope"}}})
+    assert good == []
+    assert any("'env'" in msg for _, msg in errors)
+
+
+def test_config_rejects_non_string_env_values() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": {"command": "x", "env": {"K": 1}}}})
+    assert good == []
+    assert any("string" in msg for _, msg in errors)
+
+
+def test_config_rejects_non_bool_enabled() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": {"command": "x", "enabled": "yes"}}})
+    assert good == []
+    assert any("'enabled'" in msg for _, msg in errors)
+
+
+def test_config_rejects_non_bool_approval() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": {"command": "x", "requires_approval": "sure"}}})
+    assert good == []
+    assert any("requires_approval" in msg for _, msg in errors)
+
+
+def test_config_rejects_non_positive_timeout() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": {"command": "x", "call_timeout_s": 0}}})
+    assert good == []
+    assert any("call_timeout_s" in msg for _, msg in errors)
+
+
+def test_config_rejects_bool_as_timeout() -> None:
+    """``isinstance(True, int)`` is True in Python — must not leak into timeouts."""
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"bad": {"command": "x", "call_timeout_s": True}}})
+    assert good == []
+    assert any("call_timeout_s" in msg for _, msg in errors)
+
+
+def test_config_non_dict_input_returns_empty() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    assert parse_mcp_config("nope") == ([], [])
+    assert parse_mcp_config({"servers": None}) == ([], [])
+
+
+def test_config_servers_not_table_is_reported() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": [1, 2, 3]})
+    assert good == []
+    assert any("servers" in msg for _, msg in errors)
+
+
+def test_config_rejects_empty_server_name() -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    good, errors = parse_mcp_config({"servers": {"": {"command": "x"}}})
+    assert good == []
+    assert any("non-empty string" in msg for _, msg in errors)
+
+
+def test_config_env_expansion_applies(monkeypatch: pytest.MonkeyPatch) -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    monkeypatch.setenv("YAYA_TEST_TOKEN", "s3cret")
+    good, errors = parse_mcp_config({
+        "servers": {
+            "x": {
+                "command": "/bin/${YAYA_TEST_TOKEN}",
+                "args": ["--key=$YAYA_TEST_TOKEN"],
+                "env": {"K": "v-$YAYA_TEST_TOKEN"},
+            }
+        }
+    })
+    assert errors == []
+    assert len(good) == 1
+    cfg = good[0]
+    assert cfg.command == "/bin/s3cret"
+    assert cfg.args == ["--key=s3cret"]
+    assert cfg.env == {"K": "v-s3cret"}
+
+
+def test_config_env_expansion_leaves_undefined_literal(monkeypatch: pytest.MonkeyPatch) -> None:
+    from yaya.plugins.mcp_bridge.config import parse_mcp_config
+
+    monkeypatch.delenv("YAYA_NOT_A_REAL_VAR_xyzzy", raising=False)
+    good, errors = parse_mcp_config({"servers": {"x": {"command": "bin", "args": ["$YAYA_NOT_A_REAL_VAR_xyzzy"]}}})
+    assert errors == []
+    # expandvars leaves unresolved references verbatim.
+    assert good[0].args == ["$YAYA_NOT_A_REAL_VAR_xyzzy"]
+
+
+# ---------------------------------------------------------------------------
+# tool_factory.py schema translation + error-path coverage.
+# ---------------------------------------------------------------------------
+
+
+async def test_tool_factory_falls_back_when_schema_not_object(tmp_path: Path) -> None:
+    """Non-object input schemas collapse to a single ``args: dict`` passthrough."""
+    descriptor = MCPToolDescriptor(name="x", description="", input_schema={"type": "string"})
+    client = _FakeClient(descriptors=[descriptor])
+    tool_cls = build_mcp_tool_class(
+        "local",
+        descriptor,
+        client,  # type: ignore[arg-type]
+        requires_approval=False,
+        call_timeout_s=1.0,
+    )
+    # Pydantic should accept an arbitrary args dict.
+    instance = tool_cls.model_validate({"args": {"anything": "goes"}})
+    assert instance is not None
+
+
+async def test_tool_factory_falls_back_when_properties_missing(tmp_path: Path) -> None:
+    """Object schema with no ``properties`` also falls back to passthrough."""
+    descriptor = MCPToolDescriptor(name="x", description="", input_schema={"type": "object"})
+    tool_cls = build_mcp_tool_class(
+        "local",
+        descriptor,
+        _FakeClient(),  # type: ignore[arg-type]
+        requires_approval=False,
+        call_timeout_s=1.0,
+    )
+    instance = tool_cls.model_validate({})
+    assert instance is not None
+
+
+async def test_tool_factory_honours_optional_with_description(tmp_path: Path) -> None:
+    """Optional properties carry description and accept absence."""
+    descriptor = MCPToolDescriptor(
+        name="x",
+        description="",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "a": {"type": "integer", "description": "an int"},
+                "b": {"type": "number"},  # no description branch
+                "c": {"type": "totally-unknown"},  # falls back to Any
+                "d": "not-a-dict",  # non-dict prop schema branch
+            },
+            "required": ["a", 99],  # non-string required entries are ignored
+        },
+    )
+    tool_cls = build_mcp_tool_class(
+        "local",
+        descriptor,
+        _FakeClient(),  # type: ignore[arg-type]
+        requires_approval=False,
+        call_timeout_s=1.0,
+    )
+    # Only "a" is required.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        tool_cls.model_validate({})
+    instance = tool_cls.model_validate({"a": 1})
+    assert instance is not None
+
+
+async def test_tool_run_translates_crashed_and_unexpected_errors(tmp_path: Path) -> None:
+    """Crashed / unexpected exceptions surface as the right ``ToolError`` kind."""
+    from yaya.kernel.tool import ToolError
+    from yaya.plugins.mcp_bridge.client import MCPServerCrashedError
+
+    descriptor = MCPToolDescriptor(
+        name="echo",
+        description="",
+        input_schema={"type": "object", "properties": {"msg": {"type": "string"}}, "required": ["msg"]},
+    )
+
+    async def _crash(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        raise MCPServerCrashedError(137)
+
+    client = _FakeClient(descriptors=[descriptor], call_handler=_crash)
+    tool_cls = build_mcp_tool_class(
+        "local",
+        descriptor,
+        client,  # type: ignore[arg-type]
+        requires_approval=False,
+        call_timeout_s=1.0,
+    )
+    instance = tool_cls.model_validate({"msg": "hi"})
+    bus = EventBus()
+    ctx = _make_ctx(tmp_path, bus)
+    try:
+        result = await instance.run(ctx)
+        assert isinstance(result, ToolError)
+        assert result.kind == "crashed"
+
+        async def _boom(name: str, args: dict[str, Any]) -> dict[str, Any]:
+            raise RuntimeError("unexpected")
+
+        client2 = _FakeClient(descriptors=[descriptor], call_handler=_boom)
+        tool_cls2 = build_mcp_tool_class(
+            "local",
+            descriptor,
+            client2,  # type: ignore[arg-type]
+            requires_approval=False,
+            call_timeout_s=1.0,
+        )
+        instance2 = tool_cls2.model_validate({"msg": "hi"})
+        result2 = await instance2.run(ctx)
+        assert isinstance(result2, ToolError)
+        assert result2.kind == "crashed"
+    finally:
+        await bus.close()
+
+
+async def test_tool_run_translates_mcp_error_response(tmp_path: Path) -> None:
+    """``isError: true`` responses surface as ``ToolError(kind="internal")``."""
+    from yaya.kernel.tool import ToolError
+
+    descriptor = MCPToolDescriptor(
+        name="echo",
+        description="",
+        input_schema={"type": "object", "properties": {"msg": {"type": "string"}}, "required": ["msg"]},
+    )
+
+    async def _error_reply(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        return {"content": [{"type": "text", "text": "nope"}], "isError": True}
+
+    client = _FakeClient(descriptors=[descriptor], call_handler=_error_reply)
+    tool_cls = build_mcp_tool_class(
+        "local",
+        descriptor,
+        client,  # type: ignore[arg-type]
+        requires_approval=False,
+        call_timeout_s=1.0,
+    )
+    instance = tool_cls.model_validate({"msg": "hi"})
+    bus = EventBus()
+    ctx = _make_ctx(tmp_path, bus)
+    try:
+        result = await instance.run(ctx)
+        assert isinstance(result, ToolError)
+        assert result.kind == "internal"
+    finally:
+        await bus.close()
+
+
+async def test_tool_run_translates_protocol_error(tmp_path: Path) -> None:
+    """MCPProtocolError → ``ToolError(kind="internal")`` with protocol-error brief."""
+    from yaya.kernel.tool import ToolError
+    from yaya.plugins.mcp_bridge.client import MCPProtocolError
+
+    descriptor = MCPToolDescriptor(
+        name="echo",
+        description="",
+        input_schema={"type": "object", "properties": {"msg": {"type": "string"}}, "required": ["msg"]},
+    )
+
+    async def _raise_protocol(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        raise MCPProtocolError("malformed")
+
+    client = _FakeClient(descriptors=[descriptor], call_handler=_raise_protocol)
+    tool_cls = build_mcp_tool_class(
+        "local",
+        descriptor,
+        client,  # type: ignore[arg-type]
+        requires_approval=False,
+        call_timeout_s=1.0,
+    )
+    instance = tool_cls.model_validate({"msg": "hi"})
+    bus = EventBus()
+    ctx = _make_ctx(tmp_path, bus)
+    try:
+        result = await instance.run(ctx)
+        assert isinstance(result, ToolError)
+        assert result.kind == "internal"
+        assert "protocol" in result.brief
+    finally:
+        await bus.close()
+
+
+async def test_tool_run_without_text_block_uses_tool_name_as_brief(tmp_path: Path) -> None:
+    """When the content has no text block, brief falls back to the tool name."""
+    from yaya.kernel.tool import ToolOk
+
+    descriptor = MCPToolDescriptor(
+        name="echo",
+        description="",
+        input_schema={"type": "object", "properties": {"msg": {"type": "string"}}, "required": ["msg"]},
+    )
+
+    async def _no_text(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        return {"content": [{"type": "image", "data": "..."}], "isError": False}
+
+    client = _FakeClient(descriptors=[descriptor], call_handler=_no_text)
+    tool_cls = build_mcp_tool_class(
+        "local",
+        descriptor,
+        client,  # type: ignore[arg-type]
+        requires_approval=False,
+        call_timeout_s=1.0,
+    )
+    instance = tool_cls.model_validate({"msg": "hi"})
+    bus = EventBus()
+    ctx = _make_ctx(tmp_path, bus)
+    try:
+        result = await instance.run(ctx)
+        assert isinstance(result, ToolOk)
+        assert result.brief == "echo"
+    finally:
+        await bus.close()
+
+
+def test_tool_factory_sanitize_replaces_each_punctuation_char() -> None:
+    """Each non-alnum char becomes ``_`` (no collapsing — stays one-for-one)."""
+    assert mcp_tool_qualified_name("!!!", "???") == "mcp________"
+    from yaya.plugins.mcp_bridge.tool_factory import _sanitize
+
+    # Empty string hits the final fallback to "_".
+    assert _sanitize("") == "_"

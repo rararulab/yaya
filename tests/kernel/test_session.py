@@ -322,6 +322,141 @@ async def test_file_tape_store_append_is_constant_time(tmp_path: Path) -> None:
         await store.close()
 
 
+# ---------------------------------------------------------------------------
+# tape_context selection — exercise every branch of select_messages.
+# ---------------------------------------------------------------------------
+
+
+async def test_context_projects_tool_call_and_result(tmp_path: Path) -> None:
+    """``tool_call`` → one assistant message; ``tool_result`` → one per result, correlated."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "ctx-1")
+        await session.append_message("user", "run it")
+        await session.append_tool_call({
+            "id": "call-a",
+            "type": "function",
+            "function": {"name": "echo", "arguments": "{}"},
+        })
+        await session.append_tool_result("call-a", {"output": "hi"})
+        messages = await session.context()
+        # Find the assistant tool-call message + tool result message.
+        roles = [m["role"] for m in messages]
+        assert "assistant" in roles
+        tool_msgs = [m for m in messages if m["role"] == "tool"]
+        assert len(tool_msgs) == 1
+        assert tool_msgs[0]["tool_call_id"] == "call-a"
+        assert tool_msgs[0]["name"] == "echo"
+    finally:
+        await store.close()
+
+
+async def test_context_skips_anchors_and_non_included_events(tmp_path: Path) -> None:
+    """``anchor`` entries are skipped; ``event`` entries need ``include_in_context``."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "ctx-skip")
+        await session.append_message("user", "hi")
+        # Observational event — default meta, must NOT appear.
+        await session.append_event("bus.mirror", {"foo": "bar"})
+        messages = await session.context()
+        assert all("[event:" not in m.get("content", "") for m in messages)
+        # anchors are present on the tape but absent from the projection.
+        entries = await session.entries()
+        assert any(e.kind == "anchor" for e in entries)
+        assert all(m["role"] != "anchor" for m in messages)  # sanity: no "anchor" role.
+    finally:
+        await store.close()
+
+
+async def test_context_includes_event_when_flagged(tmp_path: Path) -> None:
+    """``event`` with ``include_in_context=True`` becomes a system message."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "ctx-ev")
+        await session.append_event(
+            "hint.injected",
+            {"note": "please be terse"},
+            include_in_context=True,
+        )
+        messages = await session.context()
+        system_msgs = [m for m in messages if m["role"] == "system"]
+        assert any("[event:hint.injected]" in m["content"] for m in system_msgs)
+    finally:
+        await store.close()
+
+
+async def test_context_tool_result_without_calls_still_renders(tmp_path: Path) -> None:
+    """Orphan ``tool_result`` entries render a plain ``role=tool`` message."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "ctx-orphan")
+        # Append a tool_result with no preceding tool_call.
+        await session.append_tool_result("call-x", {"value": 1})
+        messages = await session.context()
+        tool_msgs = [m for m in messages if m["role"] == "tool"]
+        assert tool_msgs, messages
+        # No pending call: no tool_call_id / name were attached.
+        assert "tool_call_id" not in tool_msgs[0]
+        assert "name" not in tool_msgs[0]
+    finally:
+        await store.close()
+
+
+async def test_context_tool_result_ignores_non_list_results(tmp_path: Path) -> None:
+    """A malformed ``tool_result.results`` value is skipped without errors."""
+    from republic import TapeEntry
+
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "ctx-mal")
+        # Inject a malformed tool_result entry directly through the manager.
+        await session.manager.append_entry(
+            session.tape_name,
+            TapeEntry.tool_result(results="not-a-list"),  # type: ignore[arg-type]
+        )
+        messages = await session.context()
+        assert all(m["role"] != "tool" for m in messages)
+    finally:
+        await store.close()
+
+
+async def test_context_render_result_handles_raw_string(tmp_path: Path) -> None:
+    """A raw string inside ``results`` exercises the str branch of _render_result."""
+    from republic import TapeEntry
+
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "ctx-render-str")
+        # Raw-string result entries — select_messages treats them as
+        # opaque values and skips call correlation (no .get()).
+        await session.manager.append_entry(
+            session.tape_name,
+            TapeEntry.tool_result(["plain-string", {"ok": True}]),
+        )
+        messages = await session.context()
+        tool_msgs = [m for m in messages if m["role"] == "tool"]
+        assert tool_msgs[0]["content"] == "plain-string"
+        assert '"ok"' in tool_msgs[1]["content"]
+    finally:
+        await store.close()
+
+
+async def test_after_last_anchor_no_anchor_returns_empty(tmp_path: Path) -> None:
+    """``after_last_anchor`` on a tape with only the seed anchor returns post-seed entries."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "anchor-1")
+        await session.append_message("user", "after-seed")
+        post = await after_last_anchor(session.manager, session.tape_name)
+        # The session/start seed anchor is still the last anchor, so "after" is just the message.
+        kinds = [e.kind for e in post]
+        assert "message" in kinds
+        assert "anchor" not in kinds
+    finally:
+        await store.close()
+
+
 async def test_file_tape_store_next_id_cache_invalidated_on_reset(tmp_path: Path) -> None:
     """``reset()`` must drop the cached next-id so the next append restarts at 1.
 

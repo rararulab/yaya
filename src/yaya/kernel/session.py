@@ -35,6 +35,7 @@ import hashlib
 import inspect
 import json
 import os
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -252,6 +253,12 @@ class _FileTapeStore:
         """Ensure ``directory`` exists and remember it for later appends."""
         self._directory = directory
         self._directory.mkdir(parents=True, exist_ok=True)
+        # Per-tape next-id cache. Populated lazily on first ``append`` by
+        # counting lines in the jsonl file; invalidated on ``reset``. Keeps
+        # ``append`` O(1) after the first write instead of O(n) per call
+        # (and O(n²) for n appends, which is what the uncached implementation
+        # degenerated to).
+        self._next_id: dict[str, int] = {}
 
     def _path(self, tape: str) -> Path:
         return self._directory / f"{tape}.jsonl"
@@ -265,6 +272,8 @@ class _FileTapeStore:
         path = self._path(tape)
         if path.exists():
             path.unlink()
+        # Drop the cached next-id so a fresh tape starts at 1 again.
+        self._next_id.pop(tape, None)
 
     def fetch_all(self, query: Any) -> Iterable[TapeEntry]:
         """Return all entries on ``query.tape`` matching the query filters."""
@@ -274,11 +283,43 @@ class _FileTapeStore:
 
     def append(self, tape: str, entry: TapeEntry) -> None:
         """Append ``entry`` to the tape's jsonl file."""
-        # Stamp a monotonic id: len(existing) + 1 so ids stay unique per tape.
-        next_id = len(self._load(tape)) + 1
+        next_id = self._next_id.get(tape)
+        if next_id is None:
+            # Cold path: count existing entries once, then cache.
+            next_id = len(self._load(tape)) + 1
         stored = TapeEntry(next_id, entry.kind, dict(entry.payload), dict(entry.meta), entry.date)
         with self._path(tape).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(asdict(stored), ensure_ascii=False) + "\n")
+        self._next_id[tape] = next_id + 1
+
+    def tail(self, tape: str, n: int) -> list[TapeEntry]:
+        """Return the last ``n`` entries on ``tape`` using bounded memory.
+
+        Streams the jsonl file line-by-line into a
+        :class:`collections.deque` with ``maxlen=n`` so memory usage is
+        bounded by ``n`` regardless of tape size. Time is O(file-lines)
+        which is acceptable for the CLI ``--tail`` path; a seek-backwards
+        implementation is premature optimisation.
+        """
+        if n <= 0:
+            return []
+        path = self._path(tape)
+        if not path.exists():
+            return []
+        window: deque[TapeEntry] = deque(maxlen=n)
+        with path.open("r", encoding="utf-8") as handle:
+            for raw in handle:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                parsed = _entry_from_dict(payload)
+                if parsed is not None:
+                    window.append(parsed)
+        return list(window)
 
     def _load(self, tape: str) -> list[TapeEntry]:
         path = self._path(tape)
@@ -506,6 +547,48 @@ class Session:
         """Return every entry currently on the tape."""
         raw: Iterable[TapeEntry] = await self._manager.query_tape(self._tape_name).all()
         return list(raw)
+
+    async def tail(self, n: int) -> list[TapeEntry]:
+        """Return the last ``n`` entries using the cheapest path available.
+
+        For file-backed tapes this streams the jsonl file into a bounded
+        :class:`collections.deque` — memory is O(n) regardless of tape
+        size. In-memory stores (memory, fork overlay) already hold
+        every entry in RAM; we slice ``entries()`` directly there
+        because the extra machinery buys nothing.
+
+        Args:
+            n: Maximum number of trailing entries to return. ``n <= 0``
+                returns an empty list.
+
+        Returns:
+            Up to ``n`` entries, preserving tape order.
+        """
+        if n <= 0:
+            return []
+        file_store = self._file_store()
+        if file_store is not None:
+            return file_store.tail(self._tape_name, n)
+        raw: Iterable[TapeEntry] = await self._manager.query_tape(self._tape_name).all()
+        entries = list(raw)
+        return entries[-n:]
+
+    def _file_store(self) -> _FileTapeStore | None:
+        """Return the underlying :class:`_FileTapeStore` when present.
+
+        The store is reached through the manager's private ``_tape_store``
+        attribute (republic exposes no public accessor) and, when that
+        attribute is an :class:`AsyncTapeStoreAdapter`, through the
+        adapter's wrapped sync store. Returns ``None`` for memory and
+        fork-overlay paths — those do not benefit from streaming tail.
+        """
+        store: Any = self._manager._tape_store  # pyright: ignore[reportPrivateUsage]
+        if isinstance(store, _FileTapeStore):
+            return store
+        wrapped = getattr(store, "_store", None)
+        if isinstance(wrapped, _FileTapeStore):
+            return wrapped
+        return None
 
     async def context(
         self,

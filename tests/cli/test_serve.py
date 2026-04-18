@@ -449,3 +449,44 @@ async def test_run_serve_calls_webbrowser_in_executor(
     # Sanity: the URL flowed through unchanged.
     args = next(a for n, a in recorded if n == "fake_browser_open")
     assert args and str(args[0]).startswith("http://127.0.0.1:")
+
+
+@pytest.mark.asyncio
+async def test_serve_resume_stashes_on_config(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--resume <id>`` lands on ``cfg.session.default_id`` (lesson #23).
+
+    A silent no-op on an accepted flag is banned; this test pins the
+    stash-on-config behaviour + the ``serve.resume.staged`` emission so a
+    future refactor cannot quietly regress to ``del resume``.
+    """
+    from yaya.kernel import KernelConfig
+
+    cfg = KernelConfig()
+    assert cfg.session.default_id is None
+
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=True)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=True,
+            strategy="react",
+            dev=False,
+            shutdown_event=shutdown,
+            kernel_config=cfg,
+            resume="mysession",
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    code = await asyncio.wait_for(task, timeout=5.0)
+    assert code == 0
+    assert cfg.session.default_id == "mysession"
+
+    captured = capsys.readouterr()
+    joined = captured.out
+    assert '"action": "serve.resume.staged"' in joined
+    assert '"session_id": "mysession"' in joined

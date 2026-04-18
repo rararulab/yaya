@@ -205,10 +205,12 @@ async def _show_session(session_id: str, *, tail: int) -> list[dict[str, Any]]:
     store = _make_store()
     try:
         session = await store.open(_workspace(), session_id)
-        entries = await session.entries()
+        # ``Session.tail`` streams the jsonl file through a bounded deque
+        # on the file store, so ``--tail 5`` on a 10 MB tape is O(n)-tail-memory
+        # instead of buffering every entry via ``entries()``.
+        sliced = await session.tail(tail) if tail > 0 else await session.entries()
     finally:
         await store.close()
-    sliced = entries[-tail:] if tail > 0 else entries
     return [
         {
             "id": e.id,
@@ -261,7 +263,9 @@ def _write_resume_marker(session_id: str) -> None:
     path = default_session_dir().parent / "resume.target"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(session_id, encoding="utf-8")
-    os.chmod(path, 0o600)
+    if os.name == "posix":
+        # POSIX only; Windows treats chmod as a no-op beyond the read-only bit.
+        os.chmod(path, 0o600)
 
 
 def _info_dict(info: SessionInfo) -> dict[str, Any]:

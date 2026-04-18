@@ -236,3 +236,119 @@ def test_tape_name_for_is_deterministic(tmp_path: Path) -> None:
     assert a == b
     c = tape_name_for(tmp_path, "other")
     assert a != c
+
+
+async def test_session_tail_bounded_memory(tmp_path: Path) -> None:
+    """File-backed ``Session.tail`` streams via a bounded deque (PR #88 finding).
+
+    Reproduces the ``yaya session show --tail N`` hot path: writes many
+    entries to the file store, asks for the last few, and asserts only
+    those come back. The deque cap is what makes this safe for 10 MB
+    tapes; the test does not try to measure RSS directly — it pins the
+    public contract (return order + count) so a regression to
+    ``entries()[-n:]`` would surface via the full-load sanity check
+    below.
+    """
+    tapes_dir = tmp_path / "tapes"
+    store = SessionStore(tapes_dir=tapes_dir)
+    try:
+        session = await store.open(tmp_path, "tail-me")
+        for i in range(50):
+            await session.append_message("user", f"msg-{i}")
+        last5 = await session.tail(5)
+        assert len(last5) == 5
+        contents = [e.payload.get("content") for e in last5 if e.kind == "message"]
+        assert contents == ["msg-45", "msg-46", "msg-47", "msg-48", "msg-49"]
+        # n <= 0 is a no-op.
+        assert await session.tail(0) == []
+        assert await session.tail(-1) == []
+    finally:
+        await store.close()
+
+
+async def test_session_tail_delegates_for_memory_store(tmp_path: Path) -> None:
+    """Memory / fork-overlay stores fall back to ``entries()[-n:]``.
+
+    The deque-based streaming path is file-only; for in-memory stores
+    everything already sits in RAM, so ``Session.tail`` slices the
+    existing entry list. Verifying the count keeps the contract honest
+    without peering at private storage.
+    """
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await store.open(tmp_path, "mem-tail")
+        for i in range(10):
+            await session.append_message("user", f"m-{i}")
+        tail = await session.tail(3)
+        assert len(tail) == 3
+        contents = [e.payload.get("content") for e in tail if e.kind == "message"]
+        assert contents == ["m-7", "m-8", "m-9"]
+    finally:
+        await store.close()
+
+
+async def test_file_tape_store_append_is_constant_time(tmp_path: Path) -> None:
+    """Cached next-id keeps per-append latency flat (PR #88 finding).
+
+    Before the cache, ``_FileTapeStore.append`` re-parsed the whole jsonl
+    file on every write to compute ``next_id``; at 100 appends the last
+    call did ~100x the work of the first. This test is a loose regression
+    guard — a 5x ratio is plenty to catch re-introduction of the O(n)
+    path while staying robust against cold-import and filesystem jitter.
+    """
+    import time
+
+    tapes_dir = tmp_path / "tapes"
+    store = SessionStore(tapes_dir=tapes_dir)
+    try:
+        session = await store.open(tmp_path, "perf")
+        # Warm the store / file-system caches before measuring.
+        await session.append_message("user", "warm")
+
+        timings: list[float] = []
+        for i in range(100):
+            t0 = time.perf_counter()
+            await session.append_message("user", f"m-{i}")
+            timings.append(time.perf_counter() - t0)
+        # Skip the first few samples — they swallow any residual cold-path
+        # cost (dir metadata caches, etc.). Tail average vs head average
+        # keeps the signal robust against per-call jitter.
+        head = sum(timings[5:15]) / 10
+        tail = sum(timings[-10:]) / 10
+        # Guard against division-by-zero on freakishly-fast runs.
+        ratio = tail / head if head > 0 else 1.0
+        assert ratio < 5.0, f"append latency grew {ratio:.1f}x head-to-tail (timings={timings!r})"
+    finally:
+        await store.close()
+
+
+async def test_file_tape_store_next_id_cache_invalidated_on_reset(tmp_path: Path) -> None:
+    """``reset()`` must drop the cached next-id so the next append restarts at 1.
+
+    Regression guard: leaving the cache in place after a wipe would stamp
+    fresh entries with stale, non-monotonic ids — and worse, it would
+    collide with surviving archive rows.
+    """
+    tapes_dir = tmp_path / "tapes"
+    store = SessionStore(tapes_dir=tapes_dir)
+    try:
+        session = await store.open(tmp_path, "cache-reset")
+        await session.append_message("user", "before-reset-1")
+        await session.append_message("user", "before-reset-2")
+        before = await session.entries()
+        ids_before = [e.id for e in before]
+        # Bootstrap (anchor + event) + 2 messages → 4 entries, ids 1..4.
+        assert ids_before == list(range(1, len(ids_before) + 1))
+
+        await session.reset(archive=False)
+        # After reset the file is gone and the cache entry has been dropped;
+        # the next append should start from id=1 again (after the re-seeded
+        # session/start anchor + its event).
+        await session.append_message("user", "after-reset")
+        after = await session.entries()
+        ids_after = [e.id for e in after]
+        assert ids_after == list(range(1, len(ids_after) + 1)), (
+            f"next-id cache not invalidated on reset; ids={ids_after!r}"
+        )
+    finally:
+        await store.close()

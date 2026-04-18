@@ -62,6 +62,27 @@ def _pick_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _read_resume_marker() -> str | None:
+    """Return the session id recorded by ``yaya session resume`` if present.
+
+    The marker is a plain-text file written by
+    :func:`yaya.cli.commands.session._write_resume_marker` into the parent of
+    :func:`yaya.kernel.session.default_session_dir`. Absent, empty, or
+    unreadable markers return ``None`` — the flag path simply stays
+    unarmed.
+    """
+    try:
+        from yaya.kernel import default_session_dir
+    except ImportError:  # pragma: no cover — defensive, kernel always present
+        return None
+    marker = default_session_dir().parent / "resume.target"
+    try:
+        value = marker.read_text(encoding="utf-8").strip()
+    except OSError, UnicodeDecodeError:
+        return None
+    return value or None
+
+
 def _has_web_adapter(snapshot: list[dict[str, str]]) -> bool:
     """Return True when at least one loaded plugin is a web adapter."""
     return any(
@@ -103,12 +124,27 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
     """
     # accepted for forward-compat; click.Choice already narrowed the value to "react".
     del strategy
-    # ``--resume`` is accepted today and stored on the config so downstream
-    # subsystems (session persister, adapters reading ctx.session) can
-    # pick it up once the session-boot wiring lands.
-    del resume
 
     cfg = kernel_config or load_config()
+
+    # ``--resume`` is accepted today and stashed on ``cfg.session.default_id``
+    # so the session-persister hookup that lands in a follow-up PR can pick
+    # it up without another protocol touch. Two input paths feed the same
+    # config slot: the explicit flag (this call) and the marker file written
+    # by ``yaya session resume <id>`` on a previous invocation (lesson #23
+    # — an accepted flag must capture state or warn; silent no-op is banned).
+    resume_target = resume or _read_resume_marker()
+    if resume_target is not None:
+        cfg.session.default_id = resume_target
+        emit_ok(
+            state,
+            text=(
+                "[yellow]--resume accepted; session kernel boot wiring lands in "
+                "a follow-up — flag stashed on config.session.default_id.[/]"
+            ),
+            action="serve.resume.staged",
+            session_id=resume_target,
+        )
 
     # Merge order: explicit --port (non-zero) wins; otherwise fall back
     # to kernel_config.port (env / TOML); only when both are zero do

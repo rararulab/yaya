@@ -46,6 +46,10 @@ PublicEventKind = Literal[
     "tool.call.start",
     "tool.call.result",
     "tool.error",
+    # Approval runtime (kernel ↔ adapter).
+    "approval.request",
+    "approval.response",
+    "approval.cancelled",
     # Memory (kernel ↔ memory).
     "memory.query",
     "memory.write",
@@ -327,6 +331,71 @@ class ToolErrorPayload(TypedDict):
     request_id: NotRequired[str]
 
 
+# --- Approval --------------------------------------------------------------
+
+
+class ApprovalRequestPayload(TypedDict):
+    """``approval.request`` — kernel asks the adapter to prompt the user.
+
+    Emitted by the approval runtime (see :mod:`yaya.kernel.approval`)
+    on the ``"kernel"`` session — NOT on the originating tool call's
+    session. The originating session id is carried inside ``params``
+    only when the tool model includes it; adapters should use ``id``
+    to correlate the response, not the envelope's ``session_id``.
+
+    Fields:
+        id: uuid4 hex chosen by the runtime. Echoed on the matching
+            :class:`ApprovalResponsePayload`.
+        tool_name: :attr:`~yaya.kernel.tool.Tool.name` of the requester.
+        params: Full tool parameter dict, suitable for adapter-side
+            rendering. Contents are adapter-trusted — the adapter MUST
+            sanitise before rendering.
+        brief: ≤80-char one-liner summarising the intended action.
+    """
+
+    id: str
+    tool_name: str
+    params: dict[str, Any]
+    brief: str
+
+
+class ApprovalResponsePayload(TypedDict):
+    """``approval.response`` — adapter forwards the user's answer.
+
+    Adapters MUST publish this on the ``"kernel"`` session so the
+    runtime's subscriber — not the originating session worker —
+    resolves the pending future (lesson #2: the originating worker is
+    blocked on ``await pending_future`` from inside the tool dispatch).
+
+    Fields:
+        id: Mirrors :attr:`ApprovalRequestPayload.id`.
+        response: ``"approve"`` / ``"approve_for_session"`` / ``"reject"``.
+        feedback: Optional free-text from the user; surfaced on
+            :class:`~yaya.kernel.approval.ToolRejectedError` so the
+            agent loop can relay it to the LLM.
+    """
+
+    id: str
+    response: Literal["approve", "approve_for_session", "reject"]
+    feedback: NotRequired[str]
+
+
+class ApprovalCancelledPayload(TypedDict):
+    """``approval.cancelled`` — the runtime aborted a prompt.
+
+    Adapters render this as "prompt withdrawn" so stale prompts stop
+    accepting clicks. ``reason="timeout"`` covers the 60s deadline;
+    ``reason="shutdown"`` covers the kernel stop path.
+
+    Fields:
+        id: Mirrors the originating :attr:`ApprovalRequestPayload.id`.
+        reason: ``"timeout"`` or ``"shutdown"``.
+    """
+
+    id: str
+    reason: Literal["timeout", "shutdown"]
+
+
 # --- Memory ----------------------------------------------------------------
 
 
@@ -532,6 +601,9 @@ def new_event(
 __all__ = [
     "PUBLIC_EVENT_KINDS",
     "AgentLoopState",
+    "ApprovalCancelledPayload",
+    "ApprovalRequestPayload",
+    "ApprovalResponsePayload",
     "AssistantMessageDeltaPayload",
     "AssistantMessageDonePayload",
     "Attachment",

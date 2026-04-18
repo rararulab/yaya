@@ -8,6 +8,17 @@ authoritative contract.
 
 from __future__ import annotations
 
+from yaya.kernel.approval import (
+    DEFAULT_APPROVAL_TIMEOUT_S,
+    Approval,
+    ApprovalCancelledError,
+    ApprovalResult,
+    ApprovalRuntime,
+    ToolRejectedError,
+    get_approval_runtime,
+    install_approval_runtime,
+    uninstall_approval_runtime,
+)
 from yaya.kernel.bus import DEFAULT_HANDLER_TIMEOUT_S, EventBus, EventHandler, Subscription
 from yaya.kernel.config import CONFIG_PATH, KernelConfig, default_config_path, load_config
 from yaya.kernel.errors import (
@@ -65,6 +76,7 @@ from yaya.kernel.tool import (
 
 __all__ = [
     "CONFIG_PATH",
+    "DEFAULT_APPROVAL_TIMEOUT_S",
     "DEFAULT_HANDLER_TIMEOUT_S",
     "PUBLIC_EVENT_KINDS",
     "APIConnectionError",
@@ -72,6 +84,10 @@ __all__ = [
     "APIStatusError",
     "APITimeoutError",
     "AgentLoop",
+    "Approval",
+    "ApprovalCancelledError",
+    "ApprovalResult",
+    "ApprovalRuntime",
     "Category",
     "ChatProviderError",
     "ConfigError",
@@ -104,6 +120,7 @@ __all__ = [
     "ToolCallPart",
     "ToolError",
     "ToolOk",
+    "ToolRejectedError",
     "ToolReturnValue",
     "YayaError",
     "YayaTimeoutError",
@@ -112,8 +129,10 @@ __all__ = [
     "convert_httpx_error",
     "default_config_path",
     "dispatch",
+    "get_approval_runtime",
     "get_plugin_logger",
     "get_tool",
+    "install_approval_runtime",
     "install_dispatcher",
     "load_config",
     "mark_legacy_tool",
@@ -121,5 +140,6 @@ __all__ = [
     "openai_to_chat_provider_error",
     "register_tool",
     "registered_tools",
+    "uninstall_approval_runtime",
     "validate_install_source",
 ]

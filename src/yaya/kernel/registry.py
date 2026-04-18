@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from yaya.kernel.approval import install_approval_runtime, uninstall_approval_runtime
 from yaya.kernel.config import KernelConfig, load_config
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.logging import get_plugin_logger
@@ -244,6 +245,14 @@ class PluginRegistry:
 
         await self._discover_and_load()
 
+        # The approval runtime sits between the dispatcher and adapters.
+        # Install it AFTER plugins (so adapters are already subscribed
+        # to ``approval.request`` and cannot miss the first prompt) but
+        # BEFORE ``kernel.ready`` (so the first ``tool.call.request`` that
+        # reaches a ``requires_approval=True`` tool finds the runtime
+        # already subscribed).
+        await install_approval_runtime(self._bus)
+
         if not self._load_order:
             _logger.info(
                 "kernel boot: no plugins discovered in entry-point group %r; "
@@ -287,6 +296,12 @@ class PluginRegistry:
             if record is None or record.status is not PluginStatus.LOADED:
                 continue
             await self._unload_record(record, emit_removed=False)
+
+        # Mirror the start-path install. Runs BEFORE ``kernel.shutdown``
+        # so pending approval futures observe
+        # :class:`ApprovalCancelledError(reason="shutdown")` instead of
+        # hanging on the per-request timeout as the loop tears down.
+        await uninstall_approval_runtime(self._bus)
 
         await self._bus.publish(
             new_event(

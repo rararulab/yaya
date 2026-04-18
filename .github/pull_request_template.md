@@ -28,6 +28,17 @@
 
 Closes #
 
+## Spec
+
+<!-- OPTIONAL: path to the BDD spec this PR owns. When set, agent-spec
+     boundary violations on that spec hard-fail CI (others stay
+     soft-reported). Also auto-detected from the branch name
+     `issue-{N}-{slug}` → `specs/{slug}*.spec`, so this line is only
+     needed when the branch name does not resolve. See
+     docs/dev/agent-spec.md. -->
+
+Spec:
+
 ## Issue context used
 
 <!-- Agent-authored PRs must list the issue context used before editing. -->

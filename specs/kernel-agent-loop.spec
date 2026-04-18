@@ -1,6 +1,5 @@
 spec: task
 name: "kernel-agent-loop"
-inherits: project
 tags: [kernel, agent-loop, scheduler]
 ---
 

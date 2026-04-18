@@ -112,7 +112,7 @@ class Subscription:
         if not self._active:
             return
         self._active = False
-        self._bus._remove(self._sub)
+        self._bus.remove(self._sub)
 
 
 class EventBus:
@@ -161,8 +161,16 @@ class EventBus:
         self._subs[kind].append(sub)
         return Subscription(_bus=self, _sub=sub)
 
-    def _remove(self, sub: _Subscriber) -> None:
-        """Drop ``sub`` from the routing table; called by :class:`Subscription`."""
+    def remove(self, sub: _Subscriber) -> None:
+        """Drop ``sub`` from the routing table.
+
+        Called by :class:`Subscription` from ``unsubscribe()``. The public
+        name is honest about the tight coupling: ``Subscription`` is a
+        handle the bus issues, and its whole job is to call this method
+        back. Renaming to drop the leading underscore keeps
+        ``reportPrivateUsage`` at strict ``error`` without a per-site
+        suppression.
+        """
         subs = self._subs.get(sub.kind)
         if not subs:
             return

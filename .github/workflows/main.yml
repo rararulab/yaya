@@ -34,7 +34,7 @@ jobs:
       - name: Install Rust toolchain (for agent-spec)
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo + agent-spec binary
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/agent-spec
@@ -47,7 +47,7 @@ jobs:
             cargo install agent-spec --version 0.2.7 --locked
           fi
           agent-spec --version
-      - name: Lint specs (agent-spec)
+      - name: Enforce specs (agent-spec lifecycle — lint hard, boundary/verify report)
         run: bash scripts/check_specs.sh
 
   tests:
@@ -67,7 +67,7 @@ jobs:
         run: uv run python -m pytest --cov --cov-report=xml --cov-report=term
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.os }}-${{ matrix.python-version }}
           path: coverage.xml
@@ -100,7 +100,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
           allow-prereleases: true

@@ -12,26 +12,76 @@ plugins, behavior changes — must have a spec.
 
 ## What this harness enforces today
 
-- **Lint** on every PR and pre-commit: parse errors, missing
-  frontmatter, quality metrics (determinism / testability / coverage),
-  unbound scenarios, vague verbs.
-- Spec files MUST live under `specs/<slug>.spec` (no `.md` suffix; the
-  tool parses a YAML-front-matter format, not Markdown).
+`scripts/check_specs.sh` runs `agent-spec lifecycle` on every
+`specs/*.spec` and classifies findings into hard-fail vs soft-report,
+matching the upstream [`contract-guard.yml`](https://github.com/ZhangHanDong/agent-spec/blob/main/.github/workflows/contract-guard.yml)
+model (which uses `continue-on-error: true` for the same reasons).
+The wrapper then runs in three places: `just check`, the pre-commit
+hook for `specs/*.spec` changes, and the CI `check` job.
 
-**Not yet enforced** (tracked separately):
+**Hard-fail (blocks merge):**
 
-- `boundary` layer (diff-vs-allowed-paths) is implemented upstream but
-  has a path-handling bug on non-linux runners in 0.2.7 that we are
-  avoiding until the next release. Boundaries are still declared in
-  specs — we just don't block merges on them yet.
-- `verify` layer (scenario-level pass/fail) needs an AI backend we
-  have not wired up. Scenarios lint-pass when they bind a real test
-  via the `Test:` selector, but the tool can't yet confirm the test
-  exists or passes.
+- Parse error — bad frontmatter, unresolved `inherits:`, malformed
+  scenario block.
+- `quality_score < 0.6` — sloppy spec authoring; see the lint rules
+  below.
+- Boundary violation on **the owning spec** — see "PR ownership"
+  below. Each PR can own at most one spec; that spec's Allowed /
+  Forbidden lists are enforced as a hard gate.
+- Non-boundary scenario failures — reserved for when an AI backend
+  lands and the `verify` layer returns real `fail` verdicts.
 
-When the upstream fix lands we flip from `lint` to
-`lifecycle --layers lint,boundary`; the AI verify layer is a separate
-future issue.
+**Soft-report (visible in logs, does not block merge):**
+
+- Boundary violations on **non-owning specs**. A repo with N specs
+  evaluates boundary per spec; a cross-cutting PR will naturally
+  violate every spec except the one it owns. Reported so reviewers
+  see which surfaces a PR touched, but not failed.
+- Scenario verify SKIPs — `no verifier covered this step`. The
+  `verify` layer needs an AI backend (`--ai-mode` with a real LLM)
+  or the `agent-spec-tool-first` skill to interpret Given/When/Then
+  against code. Not wired today; tracked separately.
+
+## PR ownership (`scripts/_detect_owning_spec.py`)
+
+Which spec does a PR own? Resolution chain (first match wins):
+
+1. **Branch name convention** — `issue-{N}-{slug}` (or
+   `feat/slug`, `fix/slug`, …). The slug is matched against
+   `specs/*.spec` file stems by prefix. Exactly one candidate must
+   match; ambiguous slugs return no owner with a warning. Works in
+   CI (`$GITHUB_HEAD_REF`) and in local worktrees.
+2. **PR body trailer** — a line `Spec: specs/<path>.spec` anywhere
+   in the PR body. Fetched via `gh pr view --json body`. Used when
+   the branch name does not resolve.
+3. **HEAD commit trailer** — a line `Spec: specs/<path>.spec` in
+   the last commit message. Last-resort fallback for stacked
+   branches or offline cases.
+4. **No match** — meta PRs (infra, docs, dep bumps) have no owner.
+   Boundary stays soft-reported for every spec; the build is not
+   blocked on boundary for these PRs.
+
+The pull request template has an optional `Spec:` line so authors
+can override when the branch name heuristic is wrong.
+
+Spec files MUST live under `specs/<slug>.spec` (no `.md` suffix; the
+tool parses YAML frontmatter, not Markdown).
+
+## Lint rules the wrapper exposes
+
+Invoked via the `lint` layer of `agent-spec lifecycle`; visible in the
+summary line as `lint_issues=N quality=X.XX`:
+
+- `[implicit-dep]` — parameter referenced without a `Given` step that
+  establishes it.
+- `[decision-coverage]` — `## Decisions` entry with no matching scenario.
+- `[error-path]` — spec has no error-path scenarios.
+- `[vague-verb]` — constraint uses a hand-wavy verb (`manage`, `handle`).
+- `[platform-decision-tag]` — decision references a platform-specific
+  tool (`pip`, `cargo`, …) without a `[platform-specific]` tag.
+
+A quality score is aggregated across determinism / testability /
+coverage; `min_score=0.6` is the floor.
 
 ## Install
 

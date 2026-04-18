@@ -167,5 +167,5 @@ jobs:
           # shellcheck disable=SC1091
           if [ -f .smoke-venv/bin/activate ]; then . .smoke-venv/bin/activate; else . .smoke-venv/Scripts/activate; fi
           python -m pip install --upgrade pip
-          python -m pip install dist/*.whl pytest pytest-timeout pytest-bdd
+          python -m pip install dist/*.whl pytest pytest-timeout pytest-bdd pytest-asyncio websockets
           python -m pytest tests/e2e -v

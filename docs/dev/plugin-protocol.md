@@ -136,6 +136,13 @@ namespace for plugin-private payloads (e.g., a `stats` skill plugin
 emitting `x.stats.token.counted`). Do not use `x.*` as a workaround
 for missing public events — propose a public event kind instead.
 
+Currently in use by bundled plugins:
+
+| Extension kind | Owner | Payload | Purpose |
+|---|---|---|---|
+| `x.mcp.server.ready` | `mcp_bridge` | `{ server: str, tools: list[{name, mcp_name, description}] }` | One emit per MCP server the bridge brought up at boot. |
+| `x.mcp.server.error` | `mcp_bridge` | `{ server: str, kind: "config_invalid" \| "boot_failed", message: str }` | One emit per MCP server that failed config validation or exhausted boot retries. The bridge keeps running. |
+
 ### What makes the set "closed"
 
 - A PR that introduces a new **public** event kind (anything not under

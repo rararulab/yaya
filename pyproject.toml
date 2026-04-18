@@ -29,6 +29,7 @@ dependencies = [
 strategy_react = "yaya.plugins.strategy_react:plugin"
 memory_sqlite = "yaya.plugins.memory_sqlite:plugin"
 llm_openai = "yaya.plugins.llm_openai:plugin"
+llm_echo = "yaya.plugins.llm_echo:plugin"
 tool_bash = "yaya.plugins.tool_bash:plugin"
 web = "yaya.plugins.web:plugin"
 

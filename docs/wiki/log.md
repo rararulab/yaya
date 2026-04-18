@@ -70,6 +70,20 @@ ships a BDD `.spec` (0 WARN from `agent-spec lint`) + unit tests
 under `tests/plugins/<name>/`.
 See: ../../specs/plugin-strategy_react.spec, ../../specs/plugin-memory_sqlite.spec, ../../specs/plugin-llm_openai.spec, ../../specs/plugin-tool_bash.spec, ../../src/yaya/plugins/
 
+## [2026-04-18] ingest | bundled llm_echo dev provider (issue #24)
+Shipped `src/yaya/plugins/llm_echo/` so `yaya serve` round-trips the
+kernel end-to-end without any API key — closes the 0.1 onboarding gap
+exposed by the Playwright smoke (PR #74). The plugin filters
+`llm.call.request` on `provider == "echo"` and replies with
+`(echo) <last user message>` at zero token usage; sibling providers
+coexist on the same subscription via the same payload-filter pattern
+as `llm_openai`. Auto-selection lives in `strategy_react`:
+`_provider_and_model` now sniffs `OPENAI_API_KEY` and falls back to
+`("echo", "echo")` when the key is unset. Temporary env sniff with
+TODO(#23) — provider-selection policy migrates to `ctx.config` once
+the config-loading PR lands. Stdlib-only implementation; no LLM SDK.
+See: ../../specs/plugin-llm_echo.spec, ../../src/yaya/plugins/llm_echo/, ../../src/yaya/plugins/strategy_react/plugin.py
+
 ## [2026-04-18] ingest | pi-web-ui landing (issue #66)
 Replaced the 305-line vanilla-JS placeholder under
 `src/yaya/plugins/web/static/` with a Vite-built integration of

@@ -67,8 +67,14 @@ async def _drive(
     return captured
 
 
-async def test_no_assistant_yet_returns_llm(tmp_path: Path) -> None:
-    """No assistant message → llm with provider + model + request_id."""
+async def test_no_assistant_yet_returns_llm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No assistant message → llm with provider + model + request_id.
+
+    Pins ``OPENAI_API_KEY`` so the strategy's env-sniff fallback (see
+    ``_provider_and_model``) resolves to the configured ``openai``
+    branch rather than the ``echo`` dev fallback.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     bus = EventBus()
     captured = await _drive(
         bus,

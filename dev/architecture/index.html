@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#architecture">Architecture</a></li>
-        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#layering-rules">Layering rules</a></li><li><a href="#kernel-adapter-contract">Kernel ↔ adapter contract</a></li><li><a href="#specs-live-next-to-code">Specs live next to code</a></li><li><a href="#code-style">Code style</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#layering-rules">Layering rules</a></li><li><a href="#kernel-adapter-contract">Kernel ↔ adapter contract</a></li><li><a href="#specs-live-next-to-code">Specs live next to code</a></li><li><a href="#configuration">Configuration</a></li><li><a href="#code-style">Code style</a></li>
     </ul>
 </nav>
 </aside>
@@ -533,6 +533,28 @@ contract verified with <a href="https://github.com/ZhangHanDong/agent-spec"><cod
 Scenarios bind to test functions via <code>Test:</code> selectors. Run
 <code>agent-spec lifecycle</code> before commit; CI runs <code>agent-spec guard</code> on
 staged changes. See <a href="../agent-spec/">agent-spec.md</a>.</p>
+<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
+<p>Settings resolve through a single ordered loader in
+<code>src/yaya/kernel/config.py</code>. The merge order is fixed and
+most-specific wins:</p>
+<ol>
+<li>Command-line flags — handled per command in <code>cli/commands/</code>.</li>
+<li>Environment variables — <code>YAYA_*</code> for the kernel and plugin
+   namespaces. <code>__</code> is the nesting delimiter, so
+   <code>YAYA_LLM_OPENAI__MODEL=gpt-4o</code> lands at
+   <code>KernelConfig.plugin_config("llm_openai")["model"]</code>.</li>
+<li>User TOML at <code>$XDG_CONFIG_HOME/yaya/config.toml</code> (default
+   <code>~/.config/yaya/config.toml</code>). Absent is fine — no auto-create.</li>
+<li>Built-in defaults declared on <code>KernelConfig</code>.</li>
+</ol>
+<p><code>PluginRegistry</code> constructs each <code>KernelContext</code> with the resolved
+sub-tree for that plugin (<code>config=kernel_config.plugin_config(name)</code>).
+Plugins read their own settings via <code>ctx.config["..."]</code> and MUST
+tolerate an empty mapping — first-run users have no config file and no
+env vars set.</p>
+<p><code>yaya config show [--json]</code> is the read-only diagnostic surface. Keys
+matching <code>r".*(token|key|secret|password|passphrase).*"</code> (case-insensitive)
+render as <code>"***"</code> so dumping the config in a bug report is safe.</p>
 <h2 id="code-style">Code style<a class="headerlink" href="#code-style" title="Permanent link">&para;</a></h2>
 <p>Python follows the <a href="https://google.github.io/styleguide/pyguide.html">Google Python Style Guide</a>
 with yaya overlays in <a href="../code-comments/">code-comments.md</a>. Enforced by

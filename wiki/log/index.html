@@ -453,7 +453,7 @@
 <nav>
     <ul>
         <li><a href="#wiki-log">Wiki Log</a></li>
-        <li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li>
+        <li><a href="#2026-04-17-ingest-karpathy-llm-wiki-gist-442a6bf">[2026-04-17] ingest | Karpathy — LLM Wiki (gist 442a6bf)</a></li><li><a href="#2026-04-17-ingest-spec-migration-specmd-spec-issue-52">[2026-04-17] ingest | spec migration — .spec.md → .spec (issue #52)</a></li><li><a href="#2026-04-17-ingest-bmad-method-bmad-code-orgbmad-method">[2026-04-17] ingest | BMAD-METHOD (bmad-code-org/BMAD-METHOD)</a></li><li><a href="#2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)</a></li><li><a href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)</a></li><li><a href="#2026-04-18-ingest-seed-plugins-issue-14">[2026-04-18] ingest | seed plugins (issue #14)</a></li><li><a href="#2026-04-18-ingest-bundled-llm_echo-dev-provider-issue-24">[2026-04-18] ingest | bundled llm_echo dev provider (issue #24)</a></li><li><a href="#2026-04-18-ingest-pi-web-ui-landing-issue-66">[2026-04-18] ingest | pi-web-ui landing (issue #66)</a></li>
     </ul>
 </nav>
 </aside>
@@ -492,6 +492,22 @@ party mode, and the BMB/TEA/BMGD/CIS sibling modules — out of
 scope for yaya. Retrospective ceremony merged into the existing
 Karpathy wiki lint operation; no duplicate cadence.
 See: sources/bmad-method.md, ../dev/workflow.md</p>
+<h2 id="2026-04-18-ingest-ordered-config-loading-issue-23">[2026-04-18] ingest | ordered config loading (issue #23)<a class="headerlink" href="#2026-04-18-ingest-ordered-config-loading-issue-23" title="Permanent link">&para;</a></h2>
+<p>Landed <code>src/yaya/kernel/config.py</code>: a pydantic-settings <code>KernelConfig</code>
+that resolves settings in fixed order — CLI flags → <code>YAYA_*</code> env vars
+(with <code>__</code> delimiter for nested keys) → <code>$XDG_CONFIG_HOME/yaya/config.toml</code>
+→ built-in defaults. Plugin sub-trees are accessed via
+<code>KernelConfig.plugin_config(name)</code>; the registry now feeds that sub-tree
+into <code>KernelContext.config</code> so <code>ctx.config</code> is finally populated
+(previously hard-coded to <code>{}</code>). Two pydantic-settings quirks worth
+noting: (1) <code>env_nested_delimiter</code> only nests declared fields, so a
+custom <code>_NestedEnvExtras</code> source lifts <code>YAYA_&lt;NS&gt;__&lt;KEY&gt;</code> for arbitrary
+plugin namespaces into <code>model_extra</code>; (2) <code>toml_file</code> is bound inside
+<code>settings_customise_sources</code> so tests can monkeypatch the module-level
+<code>CONFIG_PATH</code> between instantiations. New CLI: <code>yaya config show [--json]</code>
+prints the merged config with secrets (<code>r".*(token|key|secret|password|passphrase).*"</code>)
+redacted to <code>"***"</code>.
+See: ../../specs/kernel-config.spec, ../dev/architecture.md</p>
 <h2 id="2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15">[2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)<a class="headerlink" href="#2026-04-18-ingest-kernel-bootstrap-cli-commands-issue-15" title="Permanent link">&para;</a></h2>
 <p>Landed the three remaining kernel-built-in CLI commands —
 <code>yaya serve</code>, the rewritten <code>yaya hello</code>, and the <code>yaya plugin

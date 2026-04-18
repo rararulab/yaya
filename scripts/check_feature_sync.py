@@ -1,19 +1,23 @@
-"""Verify every `.feature` file under tests/bdd/features/ stays in sync
-with its companion `specs/*.spec`.
+"""Verify every mirrored `.feature` stays in sync with its companion spec.
 
 Each `.feature` is the executable Gherkin for a spec's Completion
 Criteria scenarios. When an author edits a spec's scenarios without
 updating the `.feature`, pytest-bdd would either run stale text or
 silently fail to bind — the scenarios become de-facto unverified.
 
-This check closes that gap. For every `tests/bdd/features/X.feature`,
-the script looks for `specs/X.spec` and compares:
+This check closes that gap. For every mirrored pair, the script compares:
 
   * Set of scenario names
   * Ordered list of Given/When/Then/And steps per scenario
 
-If any drift, exit non-zero with a human-readable diff. Intended to
-run as part of `just check` and in CI.
+Both directions are enforced:
+
+  * every `specs/*.spec` must have a matching `.feature`;
+  * every mirrored `.feature` must have a matching `.spec`.
+
+If any drift or missing mirror exists, exit non-zero with a
+human-readable diff. Intended to run as part of `just check`, CI, and
+pre-commit.
 
 stdlib-only.
 """
@@ -21,6 +25,7 @@ stdlib-only.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -115,22 +120,42 @@ def diff_scenarios(spec: list[Scenario], feature: list[Scenario]) -> list[str]:
     return diffs
 
 
+def iter_feature_dirs(repo: Path) -> list[Path]:
+    """Return the feature directories that mirror repo specs."""
+    candidates = [
+        repo / "tests" / "bdd" / "features",
+        repo / "tests" / "e2e" / "bdd" / "features",
+    ]
+    return [path for path in candidates if path.is_dir()]
+
+
+def _feature_stems(feature_dirs: Iterable[Path]) -> dict[str, Path]:
+    """Return a stable stem -> feature path map across all mirror dirs."""
+    mapping: dict[str, Path] = {}
+    for feature_dir in feature_dirs:
+        for feature_path in sorted(feature_dir.glob("*.feature")):
+            mapping[feature_path.stem] = feature_path
+    return mapping
+
+
 def collect_sync_errors(repo: Path) -> list[str]:
     """Return human-readable sync errors for all spec/feature pairs."""
-    features_dir = repo / "tests" / "bdd" / "features"
     specs_dir = repo / "specs"
+    feature_dirs = iter_feature_dirs(repo)
 
     errors: list[str] = []
     specs = sorted(specs_dir.glob("*.spec")) if specs_dir.is_dir() else []
-    features = sorted(features_dir.glob("*.feature")) if features_dir.is_dir() else []
+    features_by_stem = _feature_stems(feature_dirs)
+    feature_stems = set(features_by_stem)
 
-    feature_stems = {feature_path.stem for feature_path in features}
     for spec_path in specs:
         if spec_path.stem not in feature_stems:
-            expected = features_dir / f"{spec_path.stem}.feature"
+            expected = (
+                feature_dirs[0] if feature_dirs else repo / "tests" / "bdd" / "features"
+            ) / f"{spec_path.stem}.feature"
             errors.append(f"❌ {_repo_path(spec_path, repo)}: no matching {_repo_path(expected, repo)}")
 
-    for feature_path in features:
+    for feature_path in sorted(features_by_stem.values()):
         spec_path = specs_dir / f"{feature_path.stem}.spec"
         if not spec_path.is_file():
             errors.append(f"❌ {_repo_path(feature_path, repo)}: no matching {_repo_path(spec_path, repo)}")
@@ -152,8 +177,8 @@ def collect_sync_errors(repo: Path) -> list[str]:
 
 def main() -> int:
     repo = Path(__file__).resolve().parents[1]
-    features_dir = repo / "tests" / "bdd" / "features"
     specs_dir = repo / "specs"
+    feature_dirs = iter_feature_dirs(repo)
 
     if not specs_dir.is_dir():
         print(f"no specs dir at {specs_dir}; nothing to check")
@@ -164,13 +189,14 @@ def main() -> int:
         print("\n".join(errors))
         return 1
 
-    if not features_dir.is_dir():
-        print(f"no features dir at {features_dir}; nothing to check")
+    if not feature_dirs:
+        print(f"no feature dirs under {repo / 'tests'}; nothing to check")
         return 0
 
-    features = sorted(features_dir.glob("*.feature"))
+    features = sorted(path for feature_dir in feature_dirs for path in feature_dir.glob("*.feature"))
     if not features:
-        print(f"no .feature files in {features_dir}; nothing to check")
+        joined = ", ".join(_repo_path(path, repo) for path in feature_dirs)
+        print(f"no .feature files in {joined}; nothing to check")
         return 0
 
     for feature_path in features:

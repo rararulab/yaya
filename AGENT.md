@@ -40,7 +40,7 @@ Accountability is to the **artifact**, not to the user's approval.
 
 ## 4. Constraints
 
-- Python 3.14+, `uv` envs, `just` tasks, `ruff`, `mypy --strict`, `pytest`, coverage ≥80%.
+- Python 3.14+, `uv` envs, `just` tasks, `ruff`, `mypy --strict`, `pytest`, coverage ≥88%.
 - English-only in code, comments, commits, docs. Chinese only in user-facing chat.
 - Conventional Commits with `(#N)` + `Closes #N`. Never `--no-verify`.
 - Layout: `cli/` depends on `core/`, never the reverse.

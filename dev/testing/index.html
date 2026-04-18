@@ -540,6 +540,15 @@
   and snapshots drift. Refresh deliberately, not reflexively.</li>
 <li><strong>CLI tests</strong>: <code>runner.invoke(cli_app, [...])</code> + assert exit code, JSON
   shape, stderr vs stdout routing. See <a href="../cli/">cli.md</a>.</li>
+<li><strong>BDD tests (pytest-bdd)</strong>: Gherkin scenarios in
+  <code>tests/bdd/features/*.feature</code> bound to step definitions in
+  <code>tests/bdd/test_*.py</code>. Each scenario in <code>specs/&lt;slug&gt;.spec</code> Completion
+  Criteria has a matching <code>.feature</code> scenario; changing the scenario text
+  without updating the step definition causes pytest to fail with
+  <code>StepDefinitionNotFoundError</code>. <code>scripts/check_feature_sync.py</code> verifies
+  <code>.feature</code> and <code>.spec</code> stay aligned; it runs in <code>just check</code> and CI.
+  See <a href="../agent-spec/">agent-spec.md</a> for how <code>.spec</code> authoring and BDD
+  execution relate.</li>
 </ul>
 <h2 id="isolation-fixtures">Isolation fixtures<a class="headerlink" href="#isolation-fixtures" title="Permanent link">&para;</a></h2>
 <p>Two autouse fixtures in <code>tests/conftest.py</code>:</p>

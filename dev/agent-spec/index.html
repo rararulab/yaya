@@ -468,7 +468,10 @@ plugins, behavior changes — must have a spec.</p>
 matching the upstream <a href="https://github.com/ZhangHanDong/agent-spec/blob/main/.github/workflows/contract-guard.yml"><code>contract-guard.yml</code></a>
 model (which uses <code>continue-on-error: true</code> for the same reasons).
 The wrapper then runs in three places: <code>just check</code>, the pre-commit
-hook for <code>specs/*.spec</code> changes, and the CI <code>check</code> job.</p>
+hook for staged <code>specs/*.spec</code> changes, and the CI <code>check</code> job.
+<code>scripts/check_feature_sync.py</code> runs alongside it in <code>just check</code>, CI,
+and pre-commit for staged <code>.spec</code> / <code>.feature</code> changes so executable
+Gherkin cannot drift from the task contract.</p>
 <p><strong>Hard-fail (blocks merge):</strong></p>
 <ul>
 <li>Parse error — bad frontmatter, unresolved <code>inherits:</code>, malformed
@@ -599,14 +602,16 @@ MUST have a <code>Test:</code> block binding it to a concrete test function.</p>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># 3. Implement inside the issue worktree</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="c1"># 4. Verify locally (full lifecycle)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="c1"># 4. Verify locally (full lifecycle plus executable BDD mirror)</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>just<span class="w"> </span>check-specs
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># 5. Before PR: ensure `just check` is green (it runs check-specs too)</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>just<span class="w"> </span>check<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>just<span class="w"> </span><span class="nb">test</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>just<span class="w"> </span>check-features
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># 5. Before PR: ensure `just check` is green (it runs check-specs too)</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>just<span class="w"> </span>check<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>just<span class="w"> </span><span class="nb">test</span>
 </code></pre></div>
-<p>Pre-commit runs <code>agent-spec lint</code> automatically on any staged
-<code>.spec</code> file.</p>
+<p>Pre-commit runs <code>scripts/check_specs.sh</code> automatically on any staged
+<code>.spec</code> file, and <code>scripts/check_feature_sync.py</code> on staged <code>.spec</code> or
+<code>.feature</code> files.</p>
 <h2 id="contract-authoring-rules">Contract authoring rules<a class="headerlink" href="#contract-authoring-rules" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Intent is stakeholder-readable.</strong> No code, no jargon the user didn't use.</li>

@@ -531,8 +531,9 @@ serialization of the event catalog, and mismatches fail CI.</p>
 <p>Every non-trivial feature is backed by a <code>specs/&lt;slug&gt;.spec</code> BDD
 contract verified with <a href="https://github.com/ZhangHanDong/agent-spec"><code>ZhangHanDong/agent-spec</code></a>.
 Scenarios bind to test functions via <code>Test:</code> selectors. Run
-<code>agent-spec lifecycle</code> before commit; CI runs <code>agent-spec guard</code> on
-staged changes. See <a href="../agent-spec/">agent-spec.md</a>.</p>
+<code>scripts/check_specs.sh</code> before commit; CI runs the same lifecycle
+wrapper and <code>scripts/check_feature_sync.py</code>. See
+<a href="../agent-spec/">agent-spec.md</a>.</p>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
 <p>Settings resolve through a single ordered loader in
 <code>src/yaya/kernel/config.py</code>. The merge order is fixed and

@@ -584,9 +584,10 @@ full rationale lives in that wiki source page.</p>
 <ol>
 <li><strong>Analysis → Plan</strong>: Does the issue state <em>what</em> and <em>why</em> against
    a GOAL.md principle? Are all required labels attached?</li>
-<li><strong>Plan → Solutioning</strong>: Does the <code>specs/&lt;slug&gt;.spec</code> lint clean
-   (<code>agent-spec lint</code>)? Is every Completion Criteria scenario bound
-   to a concrete test via <code>Test:</code>?</li>
+<li><strong>Plan → Solutioning</strong>: Does the <code>specs/&lt;slug&gt;.spec</code> pass the
+   lifecycle wrapper (<code>scripts/check_specs.sh</code>)? Is every Completion
+   Criteria scenario bound to a concrete test via <code>Test:</code> and mirrored
+   by a matching pytest-bdd <code>.feature</code> scenario?</li>
 <li><strong>Solutioning → Implementation</strong>: Does the design cite the
    authoritative <code>docs/dev/*.md</code> for every new contract it touches?
    Are dependency issues resolved (no forward references to unmerged

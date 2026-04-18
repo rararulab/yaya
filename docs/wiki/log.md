@@ -36,6 +36,23 @@ scope for yaya. Retrospective ceremony merged into the existing
 Karpathy wiki lint operation; no duplicate cadence.
 See: sources/bmad-method.md, ../dev/workflow.md
 
+## [2026-04-18] ingest | ordered config loading (issue #23)
+Landed `src/yaya/kernel/config.py`: a pydantic-settings `KernelConfig`
+that resolves settings in fixed order — CLI flags → `YAYA_*` env vars
+(with `__` delimiter for nested keys) → `$XDG_CONFIG_HOME/yaya/config.toml`
+→ built-in defaults. Plugin sub-trees are accessed via
+`KernelConfig.plugin_config(name)`; the registry now feeds that sub-tree
+into `KernelContext.config` so `ctx.config` is finally populated
+(previously hard-coded to `{}`). Two pydantic-settings quirks worth
+noting: (1) `env_nested_delimiter` only nests declared fields, so a
+custom `_NestedEnvExtras` source lifts `YAYA_<NS>__<KEY>` for arbitrary
+plugin namespaces into `model_extra`; (2) `toml_file` is bound inside
+`settings_customise_sources` so tests can monkeypatch the module-level
+`CONFIG_PATH` between instantiations. New CLI: `yaya config show [--json]`
+prints the merged config with secrets (`r".*(token|key|secret|password|passphrase).*"`)
+redacted to `"***"`.
+See: ../../specs/kernel-config.spec, ../dev/architecture.md
+
 ## [2026-04-18] ingest | kernel-bootstrap CLI commands (issue #15)
 Landed the three remaining kernel-built-in CLI commands —
 `yaya serve`, the rewritten `yaya hello`, and the `yaya plugin

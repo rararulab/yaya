@@ -130,7 +130,7 @@ async def test_run_serve_startup_failure(monkeypatch: pytest.MonkeyPatch) -> Non
     from yaya.cli.commands import serve as serve_mod
 
     class _Boom:
-        def __init__(self, _bus) -> None:  # type: ignore[no-untyped-def]
+        def __init__(self, _bus, **_kwargs) -> None:  # type: ignore[no-untyped-def]
             pass
 
         async def start(self) -> None:

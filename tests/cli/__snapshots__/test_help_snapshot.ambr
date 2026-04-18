@@ -1,0 +1,46 @@
+# serializer version: 1
+# name: test_root_help_snapshot
+  '''
+  
+   Usage: yaya [OPTIONS] COMMAND [ARGS]...
+  
+   yaya — a Python agent.
+  
+  +- Options ----------------------------------------------------------------------------------------+
+  | --json                                 Emit machine-readable JSON to stdout instead of rich      |
+  |                                        text.                                                     |
+  | --verbose             -v      INTEGER  Increase log verbosity (-v info, -vv debug). [default: 0] |
+  | --quiet               -q               Suppress all log output.                                  |
+  | --version                              Print version and exit.                                   |
+  | --install-completion                   Install completion for the current shell.                 |
+  | --show-completion                      Show completion for the current shell, to copy it or      |
+  |                                        customize the installation.                               |
+  | --help                -h               Show this message and exit.                               |
+  +--------------------------------------------------------------------------------------------------+
+  +- Commands ---------------------------------------------------------------------------------------+
+  | hello    Kernel smoke-test: boot, round-trip one event, shut down.                               |
+  | serve    Boot the yaya kernel and wait for shutdown.                                             |
+  | update   Check for and apply updates from GitHub releases.                                       |
+  | version  Print the installed version.                                                            |
+  | plugin   Manage installed plugins.                                                               |
+  +--------------------------------------------------------------------------------------------------+
+  
+  '''
+# ---
+# name: test_update_help_snapshot
+  '''
+  
+   Usage: yaya update [OPTIONS]
+  
+   Check for and apply updates from GitHub releases.
+  
+  +- Options ----------------------------------------------------------------------------------------+
+  | --check            Only check, do not install.                                                   |
+  | --skip             Skip the current latest version.                                              |
+  | --help   -h        Show this message and exit.                                                   |
+  +--------------------------------------------------------------------------------------------------+
+  
+   Examples:   yaya update --check   yaya update --check --json   yaya update --skip   yaya update
+  
+  '''
+# ---

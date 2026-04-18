@@ -8,7 +8,7 @@ AC-bindings from ``specs/kernel-registry.spec``:
 * AC-04 snapshot → ``test_snapshot_lists_every_plugin_with_status``
 
 Extras cover ``install``, ``remove`` bundled-guard, ``stop`` clean
-shutdown, and ``_validate_install_source``.
+shutdown, and ``validate_install_source``.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from yaya.kernel.plugin import Category, KernelContext
 from yaya.kernel.registry import (
     PluginRegistry,
     PluginStatus,
-    _validate_install_source,
+    validate_install_source,
 )
 
 # ---------------------------------------------------------------------------
@@ -396,20 +396,20 @@ async def test_stop_runs_on_unload_in_reverse_order(tmp_path: Path) -> None:
     await bus.close()
 
 
-def test_validate_install_source_accepts_common_forms(tmp_path: Path) -> None:
+def testvalidate_install_source_accepts_common_forms(tmp_path: Path) -> None:
     """PyPI names, absolute paths, and file:// / https:// URLs are accepted."""
-    _validate_install_source("yaya-tool-bash")
-    _validate_install_source("yaya-tool-bash==1.2.3")
-    _validate_install_source(str(tmp_path))  # absolute path
-    _validate_install_source("file:///tmp/my-plugin")
-    _validate_install_source("https://example.com/plugin.whl")
+    validate_install_source("yaya-tool-bash")
+    validate_install_source("yaya-tool-bash==1.2.3")
+    validate_install_source(str(tmp_path))  # absolute path
+    validate_install_source("file:///tmp/my-plugin")
+    validate_install_source("https://example.com/plugin.whl")
 
 
-def test_validate_install_source_rejects_hazards() -> None:
+def testvalidate_install_source_rejects_hazards() -> None:
     """Shell metachars, unsupported schemes, and empty input are rejected."""
     for bad in ["", "foo; rm -rf /", "git+ssh://example.com/x.git", "http://plain"]:
         with pytest.raises(ValueError):
-            _validate_install_source(bad)
+            validate_install_source(bad)
 
 
 def test_plugin_status_values() -> None:
@@ -831,12 +831,12 @@ async def test_remove_bundled_plugin_raises_when_load_failed(tmp_path: Path) -> 
 
 def test_validate_accepts_windows_forward_slash_path() -> None:
     """P2 — ``C:/foo`` accepted regardless of the runner's OS."""
-    _validate_install_source("C:/Users/x/plugin")
+    validate_install_source("C:/Users/x/plugin")
 
 
 def test_validate_accepts_windows_backslash_path() -> None:
     """P2 — ``C:\\foo`` accepted regardless of the runner's OS."""
-    _validate_install_source("C:\\Users\\x\\plugin")
+    validate_install_source("C:\\Users\\x\\plugin")
 
 
 async def test_zero_plugins_logs_info(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

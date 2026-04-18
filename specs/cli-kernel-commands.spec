@@ -37,7 +37,7 @@ built-in subcommand would require a `GOAL.md` amendment.
   down. JSON mode emits `{"ok": true, "action": "plugin.list",
   "plugins": [...]}`; text mode renders a rich table.
 - `yaya plugin install <source>` reuses the registry's
-  `_validate_install_source` to reject shell metacharacters before
+  `validate_install_source` to reject shell metacharacters before
   any subprocess runs; under `--json` the command refuses to prompt
   and requires `--yes`, otherwise it emits `{"ok": false, "error":
   "confirmation_required", ...}`. `--dry-run` validates + confirms
@@ -117,7 +117,7 @@ Scenario: Error path — yaya plugin install rejects shell metacharacters
   Level: unit
   Given a source string containing shell metacharacters like `;`
   When `yaya --json plugin install "foo;rm -rf /" --yes` is invoked
-  Then `_validate_install_source` raises ValueError before any subprocess is spawned
+  Then `validate_install_source` raises ValueError before any subprocess is spawned
   And the CLI surfaces ok=false with a suggestion
 
 Scenario: yaya serve shuts down cleanly when the shutdown event is set

@@ -17,7 +17,7 @@ from yaya.kernel.events import (
 )
 from yaya.kernel.loop import AgentLoop, LoopConfig
 from yaya.kernel.plugin import Category, KernelContext, Plugin
-from yaya.kernel.registry import PluginRegistry, PluginStatus
+from yaya.kernel.registry import PluginRegistry, PluginStatus, validate_install_source
 
 __all__ = [
     "DEFAULT_HANDLER_TIMEOUT_S",
@@ -35,4 +35,5 @@ __all__ = [
     "PublicEventKind",
     "Subscription",
     "new_event",
+    "validate_install_source",
 ]

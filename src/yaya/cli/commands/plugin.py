@@ -22,10 +22,7 @@ from rich.table import Table
 
 from yaya.cli import CLIState
 from yaya.cli.output import emit_error, emit_ok
-from yaya.kernel import EventBus, PluginRegistry
-from yaya.kernel.registry import (
-    _validate_install_source,  # pyright: ignore[reportPrivateUsage]
-)
+from yaya.kernel import EventBus, PluginRegistry, validate_install_source
 
 EXAMPLES_LIST = """
 Examples:
@@ -140,7 +137,7 @@ def register(app: typer.Typer) -> None:  # noqa: C901 — three sibling Typer co
         state: CLIState = ctx.obj
 
         try:
-            _validate_install_source(source)
+            validate_install_source(source)
         except ValueError as exc:
             emit_error(
                 state,

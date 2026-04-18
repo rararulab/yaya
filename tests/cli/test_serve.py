@@ -103,9 +103,6 @@ async def test_run_serve_registers_signal_handler(monkeypatch: pytest.MonkeyPatc
     """
     import signal as signal_mod
 
-    # Inject an event so our ``add_signal_handler`` stub can trigger it.
-    trigger = asyncio.Event()
-
     def fake_add(sig, callback, *args):  # type: ignore[no-untyped-def]
         if sig == signal_mod.SIGINT:
             # Fire asynchronously so run_serve has time to block on wait().
@@ -125,7 +122,6 @@ async def test_run_serve_registers_signal_handler(monkeypatch: pytest.MonkeyPatc
     )
     # The fake handler sets the shutdown flag; run_serve exits cleanly.
     assert code == 0
-    _ = trigger  # explicit — only used to document intent.
 
 
 @pytest.mark.asyncio
@@ -214,3 +210,53 @@ async def test_run_serve_warns_when_no_adapter(capsys: pytest.CaptureFixture[str
     captured = capsys.readouterr()
     # Warning routed to stderr by ``warn()``.
     assert "no web adapter" in captured.err
+
+
+@pytest.mark.asyncio
+async def test_run_serve_warns_on_non_default_strategy(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--strategy <other> must warn until dispatch is wired."""
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=False)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=True,
+            strategy="plan-execute",
+            dev=False,
+            shutdown_event=shutdown,
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    await asyncio.wait_for(task, timeout=5.0)
+    captured = capsys.readouterr()
+    assert "--strategy 'plan-execute'" in captured.err
+    assert "not yet dispatched" in captured.err
+
+
+@pytest.mark.asyncio
+async def test_run_serve_warns_on_dev_flag(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--dev is a placeholder until the vite HMR proxy lands."""
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=False)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=True,
+            strategy="react",
+            dev=True,
+            shutdown_event=shutdown,
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    await asyncio.wait_for(task, timeout=5.0)
+    captured = capsys.readouterr()
+    assert "--dev is accepted" in captured.err
+    assert "not yet implemented" in captured.err

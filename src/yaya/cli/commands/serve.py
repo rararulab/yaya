@@ -113,6 +113,19 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
         await bus.close()
         return 1
 
+    # Lesson #23 + #10 — flags that don't yet dispatch must warn, not silently ignore.
+    if strategy != "react":
+        warn(
+            f"[yellow]--strategy {strategy!r} is accepted but not yet dispatched;[/] "
+            "strategy selection will activate once ctx.config plumbing lands "
+            "(tracked separately). Falling back to the default strategy plugin."
+        )
+    if dev:
+        warn(
+            "[yellow]--dev is accepted but not yet implemented;[/] "
+            "the vite HMR proxy ships with the web adapter plugin (#16)."
+        )
+
     snapshot = registry.snapshot()
     web_present = _has_web_adapter(snapshot)
     if not web_present:
@@ -204,12 +217,12 @@ def register(app: typer.Typer) -> None:
         dev: bool = typer.Option(
             False,
             "--dev",
-            help="Proxy to the vite dev server for UI HMR (web adapter handles it).",
+            help="Reserved for the web adapter's vite HMR proxy (#16); warns when set.",
         ),
         strategy: str = typer.Option(
             "react",
             "--strategy",
-            help="Strategy plugin id to activate (default: react).",
+            help="Strategy plugin id to activate (default: react). Non-default values warn until ctx.config lands.",
         ),
     ) -> None:
         """Boot the yaya kernel and wait for shutdown."""

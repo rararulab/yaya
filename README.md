@@ -15,11 +15,13 @@ Read the full anchor: **[GOAL.md](GOAL.md)**.
 
 ```bash
 pip install https://github.com/rararulab/yaya/releases/latest/download/yaya-<VERSION>-py3-none-any.whl
-yaya --help
+yaya serve
 ```
 
-Requires Python 3.14+. Other install options →
-[docs/guide/install.md](docs/guide/install.md).
+`yaya serve` boots the kernel, opens a chat in your browser, and works
+offline out of the box — the bundled `llm_echo` dev provider replies
+deterministically until you set `OPENAI_API_KEY`. Requires Python 3.14+.
+Other install options → [docs/guide/install.md](docs/guide/install.md).
 
 ## Documentation
 

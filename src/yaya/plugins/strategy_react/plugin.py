@@ -9,6 +9,7 @@ turns remain deterministic.
 
 from __future__ import annotations
 
+import os
 from typing import Any, ClassVar, cast
 
 from yaya.kernel.events import Event
@@ -18,7 +19,11 @@ from yaya.kernel.plugin import Category, KernelContext
 # plumbs per-plugin config (the registry currently hands every plugin
 # an empty Mapping; see ``src/yaya/kernel/registry.py::_make_context``).
 _DEFAULT_PROVIDER = "openai"
+_FALLBACK_PROVIDER = "echo"
 _DEFAULT_MODEL = "gpt-4o-mini"
+# The bundled echo provider needs no model id — pick a stable
+# placeholder so the ``llm.call.request`` payload type-checks.
+_FALLBACK_MODEL = "echo"
 
 _NAME = "strategy-react"
 _VERSION = "0.1.0"
@@ -92,14 +97,34 @@ class ReActStrategy:
         """Return the effective ``(provider, model)`` pair.
 
         Reads ``ctx.config`` first (for when registry P3 plumbs config),
-        falling back to the seed defaults so current bundled boots keep
-        working without a config file.
+        then falls back to an env sniff so a fresh ``yaya serve`` with
+        no API key still round-trips through the bundled ``llm_echo``
+        dev provider. Resolution order:
+
+        1. ``ctx.config["provider"]`` / ``["model"]`` if non-empty strings.
+        2. ``OPENAI_API_KEY`` set → ``("openai", "gpt-4o-mini")``.
+        3. Otherwise → ``("echo", "echo")`` so the bundled echo
+           provider answers the request.
+
+        TODO(#23): replace the env sniff with ``ctx.config`` once the
+        config-loading PR lands. Strategy plugins must not own
+        provider-selection policy long-term.
         """
         cfg = ctx.config
         provider_raw = cfg.get("provider") if cfg else None
         model_raw = cfg.get("model") if cfg else None
-        provider = provider_raw if isinstance(provider_raw, str) and provider_raw else _DEFAULT_PROVIDER
-        model = model_raw if isinstance(model_raw, str) and model_raw else _DEFAULT_MODEL
+        if isinstance(provider_raw, str) and provider_raw:
+            provider = provider_raw
+        elif os.environ.get("OPENAI_API_KEY"):
+            provider = _DEFAULT_PROVIDER
+        else:
+            provider = _FALLBACK_PROVIDER
+        if isinstance(model_raw, str) and model_raw:
+            model = model_raw
+        elif provider == _FALLBACK_PROVIDER:
+            model = _FALLBACK_MODEL
+        else:
+            model = _DEFAULT_MODEL
         return provider, model
 
 

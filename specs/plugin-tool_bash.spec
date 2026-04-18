@@ -1,6 +1,5 @@
 spec: task
 name: "plugin-tool_bash"
-inherits: project
 tags: [plugin, tool]
 ---
 

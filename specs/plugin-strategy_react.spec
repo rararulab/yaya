@@ -1,6 +1,5 @@
 spec: task
 name: "plugin-strategy_react"
-inherits: project
 tags: [plugin, strategy]
 ---
 

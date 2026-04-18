@@ -2,9 +2,10 @@
 
 Stores conversation entries under ``ctx.state_dir / "memory.db"`` and
 answers ``memory.query`` with the top-``k`` entries whose ``text`` matches
-a ``LIKE`` pattern, ordered by recency. Uses :mod:`sqlite3` via
-:func:`asyncio.to_thread` to keep the event loop non-blocking; no
-third-party drivers.
+a ``LIKE`` pattern, ordered by recency. Uses :mod:`sqlite3` via a
+dedicated single-worker :class:`concurrent.futures.ThreadPoolExecutor`
+so concurrent sessions serialize at the thread level and the event
+loop stays non-blocking; no third-party drivers.
 """
 
 from yaya.plugins.memory_sqlite.plugin import SqliteMemory

@@ -18,5 +18,14 @@ Argv-only bash tool plugin. Never `shell=True`. Runs a `list[str]` through `asyn
 - `on_load`/`on_unload`: no-ops (stateless). `on_load` emits a DEBUG line for boot traceability.
 - Do NOT buffer stdout/stderr in memory beyond one subprocess lifetime; `proc.communicate()` already returns full byte strings at exit.
 
+## Testing knobs
+
+`BashTool(timeout_s: float = 30.0)` accepts an override for the
+per-command timeout. This is **testing only** — the runtime registry
+always instantiates with defaults via entry-point discovery. When
+ctx.config is wired up (tracked in a later issue), the timeout
+should move to a config key and the constructor knob will be
+removed.
+
 ## Budget & Loading
 - Sibling: [`../AGENT.md`](../AGENT.md). Authoritative: [`docs/dev/plugin-protocol.md`](../../../../docs/dev/plugin-protocol.md#tool-execution-kernel--tool).

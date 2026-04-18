@@ -1,4 +1,3 @@
-# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 """SQLite memory plugin implementation.
 
 Schema::
@@ -10,17 +9,22 @@ Schema::
         ts REAL
     )
 
-Handlers dispatch synchronous :mod:`sqlite3` calls through
-:func:`asyncio.to_thread` so a slow disk does not stall the event bus.
-Connection is per-plugin-instance and therefore NOT shared across
-sessions — ``sqlite3.Connection`` is not safe to use from multiple
-threads simultaneously without ``check_same_thread=False`` plus a
-serialization discipline we do not want here.
+Concurrency model: the plugin opens ONE ``sqlite3.Connection`` with
+``check_same_thread=False`` and dispatches every synchronous DB call
+through a dedicated single-worker :class:`concurrent.futures.ThreadPoolExecutor`.
+That executor is the authoritative serialization primitive — all
+DB access is funneled onto one worker thread, so the connection is
+safe for concurrent sessions without any additional lock or
+per-operation reopen. ``check_same_thread=False`` without that
+serialization would be unsafe (see ``docs/wiki/lessons-learned.md``
+lesson #20).
 """
 
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import functools
 import json
 import sqlite3
 import time
@@ -62,16 +66,28 @@ class SqliteMemory:
     def __init__(self) -> None:
         self._conn: sqlite3.Connection | None = None
         self._db_path: Path | None = None
+        self._db_executor: concurrent.futures.ThreadPoolExecutor | None = None
 
     def subscriptions(self) -> list[str]:
         """Memory category handles both query and write requests."""
         return ["memory.query", "memory.write"]
 
     async def on_load(self, ctx: KernelContext) -> None:
-        """Open the per-plugin sqlite db and ensure the schema exists."""
+        """Open the per-plugin sqlite db and ensure the schema exists.
+
+        A single-worker executor owns every subsequent DB call so
+        concurrent sessions serialize at the thread level; this pairs
+        with ``check_same_thread=False`` to make the connection safe
+        across the executor worker.
+        """
         db_path = ctx.state_dir / _DB_FILENAME
         self._db_path = db_path
-        self._conn = await asyncio.to_thread(_open_db, db_path)
+        self._db_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="yaya-memsql",
+        )
+        loop = asyncio.get_running_loop()
+        self._conn = await loop.run_in_executor(self._db_executor, _open_db, db_path)
         ctx.logger.debug("memory-sqlite loaded at %s", db_path)
 
     async def on_event(self, ev: Event, ctx: KernelContext) -> None:
@@ -84,10 +100,18 @@ class SqliteMemory:
             await self._handle_write(ev, ctx)
 
     async def on_unload(self, ctx: KernelContext) -> None:
-        """Close the sqlite connection. Idempotent."""
+        """Close the sqlite connection and shut the executor. Idempotent."""
         conn, self._conn = self._conn, None
         if conn is not None:
-            await asyncio.to_thread(conn.close)
+            loop = asyncio.get_running_loop()
+            executor = self._db_executor
+            if executor is not None:
+                await loop.run_in_executor(executor, conn.close)
+            else:
+                conn.close()
+        if self._db_executor is not None:
+            self._db_executor.shutdown(wait=True)
+            self._db_executor = None
 
     # -- handlers -------------------------------------------------------------
 
@@ -102,7 +126,7 @@ class SqliteMemory:
             k = _DEFAULT_K
         if k <= 0:
             k = _DEFAULT_K
-        rows = await asyncio.to_thread(_query_like, self._conn, query, k)
+        rows = await self._run_db(_query_like, self._conn, query, k)
         hits = [_row_to_entry(row) for row in rows]
         await ctx.emit(
             "memory.result",
@@ -125,16 +149,32 @@ class SqliteMemory:
         ts = float(entry.get("ts") or time.time())
 
         try:
-            await asyncio.to_thread(_insert_entry, self._conn, entry_id, text, meta_json, ts)
+            await self._run_db(_insert_entry, self._conn, entry_id, text, meta_json, ts)
         except sqlite3.IntegrityError as exc:
             # Duplicate id — surface a WARNING so the author sees the collision.
             ctx.logger.warning("memory.write duplicate id %r: %s", entry_id, exc)
             return
         ctx.logger.debug("memory.write persisted id=%s (len=%d)", entry_id, len(text))
 
+    # -- executor plumbing ----------------------------------------------------
+
+    async def _run_db(self, fn: Any, /, *args: Any, **kwargs: Any) -> Any:
+        """Run ``fn(*args, **kwargs)`` on the dedicated DB worker thread.
+
+        Every DB-touching call MUST funnel through here so the single-
+        worker executor serializes access across concurrent sessions.
+        """
+        if self._db_executor is None:
+            raise RuntimeError("memory-sqlite executor not initialized")
+        loop = asyncio.get_running_loop()
+        call = functools.partial(fn, *args, **kwargs) if kwargs else fn
+        if kwargs:
+            return await loop.run_in_executor(self._db_executor, call)
+        return await loop.run_in_executor(self._db_executor, call, *args)
+
 
 # ---------------------------------------------------------------------------
-# Synchronous sqlite helpers. Kept module-level so ``asyncio.to_thread`` has a
+# Synchronous sqlite helpers. Kept module-level so the DB executor has a
 # picklable callable and tests can exercise them directly.
 # ---------------------------------------------------------------------------
 
@@ -142,11 +182,11 @@ class SqliteMemory:
 def _open_db(db_path: Path) -> sqlite3.Connection:
     """Open ``db_path`` and ensure the schema exists.
 
-    ``check_same_thread=False`` is required because we dispatch every
-    sqlite call through ``asyncio.to_thread`` — the connection is
-    inherently used across the thread-pool worker threads, and all
-    calls are serialized by the per-session FIFO worker on the bus so
-    the concurrency model stays safe.
+    ``check_same_thread=False`` is paired with the plugin's single-
+    worker executor: every DB call is serialized onto one worker
+    thread, so the connection is safe across concurrent sessions
+    without an additional lock. Setting this flag WITHOUT that
+    serialization would be unsafe (lesson #20).
     """
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)

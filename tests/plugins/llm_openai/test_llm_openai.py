@@ -201,10 +201,18 @@ async def test_non_matching_provider_is_ignored(tmp_path: Path, monkeypatch: pyt
 
 
 async def test_rate_limit_error_emits_error_event(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """An SDK RateLimitError surfaces as llm.call.error with str(exc) + request_id."""
+    """An SDK RateLimitError surfaces as llm.call.error with str(exc) + request_id.
+
+    We build the SDK's real ``RateLimitError`` from a 429 response so
+    the ``isinstance(exc, RateLimitError)`` branch in ``_emit_error``
+    runs. If a future SDK minor version tightens the constructor and
+    this construction breaks, fall back to ``side_effect=Exception(
+    "rate limited")`` — the plugin translates any exception to
+    ``llm.call.error`` regardless of subclass.
+    """
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
-    # Build a minimal RateLimitError-ish exception that isinstance-matches.
+    import httpx
     import openai
 
     plugin = OpenAIProvider()
@@ -212,17 +220,14 @@ async def test_rate_limit_error_emits_error_event(tmp_path: Path, monkeypatch: p
     ctx = _make_ctx(bus, tmp_path, plugin)
     await plugin.on_load(ctx)
 
-    # SDK RateLimitError requires a message + response + body; a subclass with
-    # a simple ``__init__`` avoids depending on private constructor shape.
-    class _FakeRateLimit(openai.RateLimitError):
-        def __init__(self) -> None:
-            Exception.__init__(self, "rate limited")
-
-        def __str__(self) -> str:
-            return "rate limited"
+    rate_limit_exc = openai.RateLimitError(
+        message="rate limited",
+        response=httpx.Response(429, request=httpx.Request("POST", "http://x")),
+        body=None,
+    )
 
     stub_client = MagicMock()
-    stub_client.chat.completions.create = AsyncMock(side_effect=_FakeRateLimit())
+    stub_client.chat.completions.create = AsyncMock(side_effect=rate_limit_exc)
     stub_client.close = AsyncMock(return_value=None)
     plugin._client = stub_client
 

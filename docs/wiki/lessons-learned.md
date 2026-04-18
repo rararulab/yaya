@@ -414,6 +414,64 @@ authoring: authors verify format against tool output.
 
 ---
 
+## 20. `sqlite3 check_same_thread=False` is not a safety flag
+
+**Symptom** — PR #59's memory_sqlite plugin set
+`check_same_thread=False` to fix a Windows-only test failure
+(`asyncio.to_thread` occasionally hopped worker threads). Concurrent
+writes from multiple sessions silently corrupted data: 200 writes
+across 200 sessions landed 117 rows with "bad parameter or other API
+misuse" and "cannot start a transaction within a transaction" errors
+on the rest.
+
+**Root cause** — Python's sqlite3 `check_same_thread=True` is a
+sanity check, not a concurrency primitive. Turning it off tells the
+library to stop enforcing single-owner thread; the user is then
+responsible for serializing access via an external mutex or a single-
+worker executor. The fix silenced the warning without adding the
+protection it was warning about.
+
+**Rule** — If you set `check_same_thread=False`, pair it with one
+of: (a) a dedicated `ThreadPoolExecutor(max_workers=1)` that owns
+the connection, (b) an `asyncio.Lock` around every DB op, or (c)
+reopen the connection per operation. (a) is preferred for
+throughput; the SQL still serializes at the SQLite level but you
+avoid data-race UB in the Python bindings.
+
+**Reference** — PR #59 review round 1. Cf. lesson #18 (authoritative
+enforcement, not cached state): silencing the enforcement check must
+be matched by an explicit protection primitive.
+
+---
+
+## 21. Blanket file-level pyright pragmas silence more than they should
+
+**Symptom** — PR #59 shipped four plugin files with file-level
+`# pyright: reportUnknown*=false`. Two of the four had ZERO unknown-
+type warnings without the pragma (pure cargo); two had single-line
+warnings fixable with a cast; only one (llm_openai) had a genuine
+SDK-surface reason. The blanket pragma means every new line added
+to those files bypasses strict checking, invisibly.
+
+**Root cause** — Silencing at the broadest scope that makes the
+warning go away is easy; narrowing to exactly the offending line is
+tedious. Authors reach for file-level pragmas when per-line
+`# pyright: ignore[reportSpecificRule]` would have done.
+
+**Rule** — Pyright (and mypy) pragmas MUST be scoped to the tightest
+unit that makes the warning go away, in this order: per-line
+`# pyright: ignore[reportRuleName]` first, then local block, then
+function, then file — only if every line in the file genuinely hits
+the rule. Reviewers verify the pragma's scope by removing it and
+re-running the checker; if the count of warnings dropped is smaller
+than the lines silenced, narrow the scope.
+
+**Reference** — PR #59 review round 1. Applies to any diagnostic
+suppression: mypy `# type: ignore[...]`, ruff `# noqa:`, pyright
+`# pyright: ignore[...]`. Tighter is always better.
+
+---
+
 ## How to use this doc
 
 - Before starting a PR that touches the kernel, event bus, plugin ABI,

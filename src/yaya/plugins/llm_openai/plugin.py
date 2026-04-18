@@ -1,4 +1,3 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false
 """OpenAI LLM-provider plugin implementation.
 
 The plugin is env-driven: ``OPENAI_API_KEY`` is required (a missing
@@ -12,13 +11,10 @@ the adapter-plugin spec. Every response event echoes ``request_id``
 so the agent loop's ``_RequestTracker`` correlates concurrent calls
 (lesson #15 in ``docs/wiki/lessons-learned.md``).
 
-The file-level ``pyright: reportUnknown*=false`` pragmas are necessary
-because the OpenAI SDK's return types resolve to ``Unknown`` in
-environments where pyright does not discover the project virtualenv
-(notably the CI linter step). The runtime shape is covered by
-``tests/plugins/llm_openai/`` using a stubbed ``AsyncOpenAI`` client,
-and every outbound ``dict[str, Any]`` is constructed from typed
-locals so the contract at the bus boundary stays checked.
+Per-line ``# pyright: ignore[...]`` pragmas on the SDK-accessor lines
+narrow the suppression to exactly where the OpenAI SDK surface widens
+to ``Unknown`` (see lesson #21). The runtime shape is covered by
+``tests/plugins/llm_openai/`` using a stubbed ``AsyncOpenAI`` client.
 """
 
 from __future__ import annotations
@@ -143,10 +139,10 @@ class OpenAIProvider:
         # The SDK typing union (ChatCompletion | AsyncStream[...]) widens
         # everything past this point to Any — that matches the tests'
         # stub-client pattern and the runtime shape we actually emit.
-        completion: Any = await self._client.chat.completions.create(**create_kwargs)
+        completion: Any = await self._client.chat.completions.create(**create_kwargs)  # pyright: ignore[reportUnknownVariableType]
 
-        choices_raw: Any = completion.choices or []
-        choices: list[Any] = list(choices_raw) if choices_raw else []
+        choices_raw: Any = completion.choices or []  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        choices: list[Any] = list(choices_raw) if choices_raw else []  # pyright: ignore[reportUnknownArgumentType]
         choice: Any = choices[0] if choices else None
         message: Any = choice.message if choice is not None else None
         text: str = getattr(message, "content", "") or ""
@@ -154,7 +150,7 @@ class OpenAIProvider:
         raw_tool_calls: list[Any] = list(raw_tool_calls_obj) if raw_tool_calls_obj else []
         tool_calls = [_tool_call_to_dict(tc) for tc in raw_tool_calls]
 
-        usage_obj: Any = getattr(completion, "usage", None)
+        usage_obj: Any = getattr(completion, "usage", None)  # pyright: ignore[reportUnknownArgumentType]
         usage: dict[str, int] = {}
         if usage_obj is not None:
             input_tokens = getattr(usage_obj, "prompt_tokens", None)

@@ -1,6 +1,5 @@
 spec: task
 name: "plugin-llm_openai"
-inherits: project
 tags: [plugin, llm-provider]
 ---
 

@@ -8,8 +8,8 @@ Stdlib `sqlite3`-backed memory plugin. Persists entries to `<state_dir>/memory.d
 
 ## Constraints
 - `Category.MEMORY`. Subscribes to `memory.query` + `memory.write`.
-- Stdlib `sqlite3` only — no `aiosqlite`, no ORM. Run blocking calls through `asyncio.to_thread` (lesson spirit: do not block the event loop).
-- Connection is **per-plugin-instance** and NOT shared across sessions (`sqlite3.Connection` thread-safety). `on_load` opens; `on_unload` closes.
+- Stdlib `sqlite3` only — no `aiosqlite`, no ORM. Run every blocking DB call through the plugin's dedicated single-worker `ThreadPoolExecutor` (see `_run_db`) — `asyncio.to_thread` hops worker threads and races the `sqlite3.Connection` (lesson #20).
+- Connection is **per-plugin-instance**, opened with `check_same_thread=False` and owned by the single-worker executor so concurrent sessions serialize at the thread level. `on_load` opens the connection AND the executor; `on_unload` closes both.
 - Schema: `memory(id TEXT PRIMARY KEY, text TEXT NOT NULL, meta TEXT, ts REAL)`. `meta` is JSON-serialized.
 - Every `memory.result` echoes `request_id` (lesson #15).
 - Duplicate `entry.id` on `memory.write` → log WARNING and return (do NOT raise — duplicates are a data event, not a plugin bug).

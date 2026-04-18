@@ -1,4 +1,3 @@
-# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
 """ReAct strategy plugin implementation.
 
 The strategy inspects the :class:`yaya.kernel.events.AgentLoopState`
@@ -6,12 +5,6 @@ snapshot the loop hands it and picks the next step. It carries no
 per-session state of its own — the loop's ``state.messages`` +
 ``state.last_tool_result`` is the authoritative context, so repeated
 turns remain deterministic.
-
-The file-level ``pyright: reportUnknown*=false`` pragmas silence
-``Unknown`` propagation through ``Event.payload: dict[str, Any]``;
-we narrow to ``dict[str, Any]`` via ``cast`` after the isinstance
-checks and the decision payload emitted to the bus is a plain
-``dict[str, Any]`` by construction.
 """
 
 from __future__ import annotations
@@ -149,7 +142,7 @@ def _decide(state: dict[str, Any], *, provider: str, model: str) -> dict[str, An
     if last_assistant is not None:
         tool_calls = last_assistant.get("tool_calls")
         if isinstance(tool_calls, list) and tool_calls:
-            first: Any = tool_calls[0]
+            first = cast("Any", tool_calls[0])
             if isinstance(first, dict):
                 return {
                     "next": "tool",

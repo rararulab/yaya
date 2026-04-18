@@ -1,6 +1,5 @@
 spec: task
 name: "plugin-memory_sqlite"
-inherits: project
 tags: [plugin, memory]
 ---
 

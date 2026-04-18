@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.8.0">
+    
+    <meta name="description" content="A Python AI agent built with engineering rigor."> 
+    
+    <meta name="author" content="rararulab"> 
+    
+    <link rel="canonical" href="https://rararulab.github.io/yaya/dev/bdd-workflow/"><link rel="icon" type="image/png" sizes="192x192" href="../../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>BDD workflow — from .spec to executable Gherkin - yaya</title>
+
+
+<link href="../../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../../css/normalize.css" rel="stylesheet">
+<link href="../../css/terminal.css" rel="stylesheet">
+<link href="../../css/theme.css" rel="stylesheet">
+<link href="../../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../../css/theme.footer.css" rel="stylesheet">
+<!-- dark color palette -->
+<link href="../../css/palettes/dark.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+
+
+    
+    <link href="../../assets/_mkdocstrings.css" rel="stylesheet">  
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "../..",
+    shortcuts = "{}";
+</script>
+<script src="../../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://rararulab.github.io/yaya/" class="no-style">yaya</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../.." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href="../../goal/" class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Goal</span>
+                    </a>
+                    <meta property="position" content="1">
+                </li>
+                
+                
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="2">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../..">Home</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../goal/">Goal</a>
+        
+    
+    
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Wiki</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../wiki/lessons-learned/">Lessons Learned</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">User Guide</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/install/">Install</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../../guide/usage/">Usage</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+          <li class="terminal-mkdocs-side-nav-li">
+    
+        
+        
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Development</span>
+        
+    
+    
+        
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../architecture/">Architecture</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../plugin-protocol/">Plugin Protocol</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../no-agent-frameworks/">No Third-Party Agent Frameworks</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../workflow/">Workflow</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../multi-agent/">Multi-Agent</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../maintaining-agent-md/">Maintaining AGENT.md</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../cli/">CLI Conventions</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../agent-friendly-cli/">Agent-Friendly CLI (org spec)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../web-ui/">Web UI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../testing/">Testing</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../agent-spec/">Agent Spec (BDD Contracts)</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../code-comments/">Code Comments & Docstrings</a>
+        
+    
+    </li>
+            
+        
+            
+            
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="terminal-mkdocs-side-nav-item" href="../release/">Release</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+       </li>
+        
+    </ul>
+</nav><hr>
+<nav>
+    <ul>
+        <li><a href="#bdd-workflow-from-spec-to-executable-gherkin">BDD workflow — from .spec to executable Gherkin</a></li>
+        <li><a href="#when-to-use-this-workflow">When to use this workflow</a></li><li><a href="#what-bdd-means-here">What BDD means here</a></li><li><a href="#file-locations-cheat-sheet">File locations cheat sheet</a></li><li><a href="#the-procedure">The procedure</a></li><li><a href="#common-pitfalls">Common pitfalls</a></li><li><a href="#verification-checklist">Verification checklist</a></li><li><a href="#see-also">See also</a></li>
+    </ul>
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="bdd-workflow-from-spec-to-executable-gherkin">BDD workflow — from <code>.spec</code> to executable Gherkin<a class="headerlink" href="#bdd-workflow-from-spec-to-executable-gherkin" title="Permanent link">&para;</a></h1>
+<p>How an agent (human or AI) takes a <code>specs/&lt;slug&gt;.spec</code> contract and
+lands real BDD-backed tests that fail on scenario-text drift. This is
+the complete playbook; new agents should follow it step-by-step and not
+improvise.</p>
+<h2 id="when-to-use-this-workflow">When to use this workflow<a class="headerlink" href="#when-to-use-this-workflow" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Every new feature PR.</strong> If you land a new <code>specs/&lt;slug&gt;.spec</code>,
+  land the matching <code>.feature</code> + step definitions <strong>in the same PR</strong>.
+  The <code>agent-spec lifecycle</code> + <code>check_feature_sync.py</code> gates will
+  otherwise fail on the spec author's next merge.</li>
+<li><strong>Backfilling an existing spec.</strong> If a <code>.spec</code> predates this
+  workflow, convert it in one focused PR. Do not mix conversion with
+  feature work.</li>
+</ul>
+<h2 id="what-bdd-means-here">What BDD means here<a class="headerlink" href="#what-bdd-means-here" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>specs/&lt;slug&gt;.spec</code> — authoritative human-facing contract. Authored
+  with agent-spec's YAML-frontmatter + Completion Criteria sections.</li>
+<li><code>tests/bdd/features/&lt;slug&gt;.feature</code> — executable Gherkin mirror of
+  the spec's Completion Criteria. One scenario per <code>.spec</code> scenario,
+  same ordering, same Given/When/Then wording (minus agent-spec's
+  <code>Test:</code> / <code>Package:</code> / <code>Filter:</code> / <code>Level:</code> metadata lines).</li>
+<li><code>tests/bdd/test_&lt;slug&gt;.py</code> — pytest-bdd step definitions that wire
+  each Given/When/Then to real production code. pytest-bdd fails
+  collection with <code>StepDefinitionNotFoundError</code> if any scenario step
+  lacks a matching <code>@given</code> / <code>@when</code> / <code>@then</code>, so drift between
+  scenario text and code is impossible to commit quietly.</li>
+<li><code>tests/bdd/conftest.py</code> — shared fixtures (BDDContext, event loop,
+  common Given steps).</li>
+<li><code>scripts/check_feature_sync.py</code> — fails CI when <code>.spec</code> and
+  <code>.feature</code> scenario names or step texts drift.</li>
+</ul>
+<h2 id="file-locations-cheat-sheet">File locations cheat sheet<a class="headerlink" href="#file-locations-cheat-sheet" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>specs/&lt;slug&gt;.spec                              # author
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>tests/bdd/features/&lt;slug&gt;.feature              # mirror of spec scenarios
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>tests/bdd/test_&lt;module&gt;.py                     # step definitions
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>tests/bdd/conftest.py                          # reuse existing fixtures; add shared steps here
+</code></pre></div>
+<p>The feature-file stem must equal the spec stem: the sync check pairs
+them by filename. <code>tests/bdd/test_&lt;module&gt;.py</code> name is free; use the
+kernel module being exercised.</p>
+<h2 id="the-procedure">The procedure<a class="headerlink" href="#the-procedure" title="Permanent link">&para;</a></h2>
+<h3 id="1-read-the-spec-completion-criteria">1. Read the <code>.spec</code> Completion Criteria<a class="headerlink" href="#1-read-the-spec-completion-criteria" title="Permanent link">&para;</a></h3>
+<p>Open <code>specs/&lt;slug&gt;.spec</code>. Skim the Intent and Decisions for context.
+The Completion Criteria section lists every scenario. You are going to
+translate that block verbatim (minus metadata) into a <code>.feature</code>.</p>
+<h3 id="2-create-testsbddfeaturesslugfeature">2. Create <code>tests/bdd/features/&lt;slug&gt;.feature</code><a class="headerlink" href="#2-create-testsbddfeaturesslugfeature" title="Permanent link">&para;</a></h3>
+<p>Template:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">Feature:</span><span class="nf"> &lt;One-line summary of the capability&gt;</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nf">  &lt;One-paragraph narrative. Usually paraphrases the spec Intent in</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nf">  business-readable prose.&gt;</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nf">  </span><span class="k">Scenario:</span><span class="nf"> &lt;copy the first `.spec` Scenario: line verbatim&gt;</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">    Given </span><span class="nv">&lt;copy the spec&#39;s Given verbatim&gt;</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="nf">    </span><span class="k">And </span><span class="nv">&lt;copy And&gt;</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="nf">    </span><span class="k">When </span><span class="nv">&lt;copy the spec&#39;s When verbatim&gt;</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="nf">    </span><span class="k">Then </span><span class="nv">&lt;copy the spec&#39;s Then verbatim&gt;</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="c">  # Repeat for every scenario in the .spec Completion Criteria,</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="c">  # preserving order.</span>
+</code></pre></div>
+<p><strong>Drop entirely</strong>: <code>Test:</code>, <code>Package:</code>, <code>Filter:</code>, <code>Level:</code> lines.
+They are agent-spec authoring metadata; pytest-bdd does not read them
+and the sync check strips them on both sides.</p>
+<p><strong>Preserve exactly</strong>: scenario names, step prefixes (Given/When/Then/And),
+and step text wording. <code>scripts/check_feature_sync.py</code> compares
+string-for-string.</p>
+<h3 id="3-write-testsbddtest_modulepy">3. Write <code>tests/bdd/test_&lt;module&gt;.py</code><a class="headerlink" href="#3-write-testsbddtest_modulepy" title="Permanent link">&para;</a></h3>
+<p>Template:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="sd">&quot;&quot;&quot;Pytest-bdd execution of specs/&lt;slug&gt;.spec scenarios.</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="sd">The Gherkin text in ``features/&lt;slug&gt;.feature`` is the authoritative</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="sd">BDD contract for &lt;subsystem&gt;. Each scenario binds to step definitions</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="sd">in this module via pytest-bdd; changing the scenario text without a</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="sd">matching step def causes pytest to fail with</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="sd">``StepDefinitionNotFoundError``.</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="sd">This complements (does not replace) the engineering-level tests in</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="sd">``tests/&lt;area&gt;/test_&lt;module&gt;.py``. BDD here proves the scenarios the</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="sd">spec advertises are actually executed; the pytest unit tests cover</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="sd">edge cases and internals not worth surfacing in Gherkin.</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="sd">&quot;&quot;&quot;</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pytest_bdd</span><span class="w"> </span><span class="kn">import</span> <span class="n">given</span><span class="p">,</span> <span class="n">parsers</span><span class="p">,</span> <span class="n">scenarios</span><span class="p">,</span> <span class="n">then</span><span class="p">,</span> <span class="n">when</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="c1"># Production-code imports only. Step defs wire Gherkin text to the real</span>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="c1"># API; they do NOT import test helpers from tests/&lt;area&gt;/*.</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="kn">from</span><span class="w"> </span><span class="nn">yaya.kernel.</span><span class="o">&lt;</span><span class="n">module</span><span class="o">&gt;</span> <span class="kn">import</span><span class="w"> </span><span class="o">&lt;</span><span class="n">Type</span><span class="o">&gt;</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a><span class="kn">from</span><span class="w"> </span><span class="nn">.conftest</span><span class="w"> </span><span class="kn">import</span> <span class="n">BDDContext</span>
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="n">pytestmark</span> <span class="o">=</span> <span class="n">pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">unit</span>  <span class="c1"># BDD tests run in the default unit suite</span>
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>
+<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a><span class="n">FEATURE_FILE</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;features&quot;</span> <span class="o">/</span> <span class="s2">&quot;&lt;slug&gt;.feature&quot;</span>
+<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a><span class="n">scenarios</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">FEATURE_FILE</span><span class="p">))</span>
+<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a>
+<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a>
+<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a><span class="c1"># -- Scenario N: &lt;paraphrase the scenario name&gt; ---------------------------</span>
+<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a>
+<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a><span class="nd">@given</span><span class="p">(</span><span class="s2">&quot;&lt;exact Given text from the .feature&gt;&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a><span class="k">def</span><span class="w"> </span><span class="nf">_some_precondition</span><span class="p">(</span><span class="n">ctx</span><span class="p">:</span> <span class="n">BDDContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a>    <span class="o">...</span>
+<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a>
+<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a><span class="nd">@when</span><span class="p">(</span><span class="s2">&quot;&lt;exact When text from the .feature&gt;&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a><span class="k">def</span><span class="w"> </span><span class="nf">_some_action</span><span class="p">(</span><span class="n">ctx</span><span class="p">:</span> <span class="n">BDDContext</span><span class="p">,</span> <span class="n">loop</span><span class="p">:</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">AbstractEventLoop</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a>    <span class="c1"># ``loop`` fixture is defined in conftest.py — per-scenario event</span>
+<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a>    <span class="c1"># loop so async publishes do not leak between scenarios.</span>
+<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a>    <span class="k">assert</span> <span class="n">ctx</span><span class="o">.</span><span class="n">bus</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a>    <span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">bus</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="o">...</span><span class="p">))</span>
+<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a>
+<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a><span class="nd">@then</span><span class="p">(</span><span class="s2">&quot;&lt;exact Then text from the .feature&gt;&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a><span class="k">def</span><span class="w"> </span><span class="nf">_assert_outcome</span><span class="p">(</span><span class="n">ctx</span><span class="p">:</span> <span class="n">BDDContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-2-50" name="__codelineno-2-50" href="#__codelineno-2-50"></a>    <span class="o">...</span>
+</code></pre></div>
+<h3 id="4-step-definition-patterns">4. Step definition patterns<a class="headerlink" href="#4-step-definition-patterns" title="Permanent link">&para;</a></h3>
+<h4 id="pattern-a-literal-text-match">Pattern A: literal text match<a class="headerlink" href="#pattern-a-literal-text-match" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nd">@given</span><span class="p">(</span><span class="s2">&quot;a running EventBus&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">_a_running_event_bus</span><span class="p">(</span><span class="n">ctx</span><span class="p">:</span> <span class="n">BDDContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">ctx</span><span class="o">.</span><span class="n">bus</span> <span class="o">=</span> <span class="n">EventBus</span><span class="p">()</span>
+</code></pre></div>
+<h4 id="pattern-b-capture-a-value-via-parsersre">Pattern B: capture a value via <code>parsers.re</code><a class="headerlink" href="#pattern-b-capture-a-value-via-parsersre" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@given</span><span class="p">(</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">parsers</span><span class="o">.</span><span class="n">re</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;a subscriber registered for &quot;(?P&lt;kind&gt;[\w.]+)&quot;$&#39;</span><span class="p">),</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">target_fixture</span><span class="o">=</span><span class="s2">&quot;_kind&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="p">)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">_subscriber_for</span><span class="p">(</span><span class="n">ctx</span><span class="p">:</span> <span class="n">BDDContext</span><span class="p">,</span> <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="o">...</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="k">return</span> <span class="n">kind</span>
+</code></pre></div>
+<p>Use <code>parsers.re</code> when the scenario text contains a value the step uses
+(event kinds, config ints, payload keys). The named capture group
+becomes a step parameter; declare it in the function signature.</p>
+<h4 id="pattern-c-async-step-that-publishes-on-the-bus">Pattern C: async step that publishes on the bus<a class="headerlink" href="#pattern-c-async-step-that-publishes-on-the-bus" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nd">@when</span><span class="p">(</span><span class="n">parsers</span><span class="o">.</span><span class="n">re</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;a &quot;(?P&lt;kind&gt;[\w.]+)&quot; event is published$&#39;</span><span class="p">))</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">_publish</span><span class="p">(</span><span class="n">ctx</span><span class="p">:</span> <span class="n">BDDContext</span><span class="p">,</span> <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">loop</span><span class="p">:</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">AbstractEventLoop</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="k">assert</span> <span class="n">ctx</span><span class="o">.</span><span class="n">bus</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">ev</span> <span class="o">=</span> <span class="n">new_event</span><span class="p">(</span><span class="n">kind</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;hi&quot;</span><span class="p">},</span> <span class="n">session_id</span><span class="o">=</span><span class="s2">&quot;bdd&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="s2">&quot;adapter&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">ctx</span><span class="o">.</span><span class="n">published_events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ev</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">bus</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">ev</span><span class="p">))</span>
+</code></pre></div>
+<p>Any step that awaits a coroutine takes the <code>loop</code> fixture and calls
+<code>loop.run_until_complete(...)</code>. pytest-bdd step defs are synchronous
+functions; <strong>do not</strong> use <code>async def</code> for them (pytest-bdd does not
+await them).</p>
+<h4 id="pattern-d-shared-precondition-moved-to-conftest">Pattern D: shared precondition moved to conftest<a class="headerlink" href="#pattern-d-shared-precondition-moved-to-conftest" title="Permanent link">&para;</a></h4>
+<p>If more than one feature file needs the same <code>@given</code>, move it to
+<code>tests/bdd/conftest.py</code> so the step is discovered by every test module
+that imports from there. Example: <code>@given("a running EventBus")</code> is in
+conftest because every kernel feature file uses it.</p>
+<h3 id="5-bddcontext-usage">5. BDDContext usage<a class="headerlink" href="#5-bddcontext-usage" title="Permanent link">&para;</a></h3>
+<p><code>tests/bdd/conftest.py</code> provides <code>BDDContext</code>, a scenario-scoped
+dataclass for step-to-step state transfer:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nd">@dataclass</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">BDDContext</span><span class="p">:</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">bus</span><span class="p">:</span> <span class="n">EventBus</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">received</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">Event</span><span class="p">]]</span> <span class="o">=</span> <span class="o">...</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">errors</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Event</span><span class="p">]</span> <span class="o">=</span> <span class="o">...</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">handlers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Event</span><span class="p">],</span> <span class="n">Awaitable</span><span class="p">[</span><span class="kc">None</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">...</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">published_events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Event</span><span class="p">]</span> <span class="o">=</span> <span class="o">...</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">publish_error</span><span class="p">:</span> <span class="ne">Exception</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">extras</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="o">...</span>
+</code></pre></div>
+<ul>
+<li>Use named fields when the concept is durable (<code>bus</code>, <code>received</code>).</li>
+<li>Use <code>extras</code> for scenario-specific scratch state (a captured
+  exception, a counter, an intermediate value).</li>
+<li>Fixtures reset the ctx per scenario automatically; never put shared
+  state in module globals.</li>
+</ul>
+<h3 id="6-verify-locally">6. Verify locally<a class="headerlink" href="#6-verify-locally" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Every scenario collects and passes</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/bdd/test_&lt;module&gt;.py<span class="w"> </span>-v
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># .feature text matches .spec text</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>scripts/check_feature_sync.py
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Full gate</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>just<span class="w"> </span>check<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>just<span class="w"> </span><span class="nb">test</span>
+</code></pre></div>
+<h3 id="7-commit">7. Commit<a class="headerlink" href="#7-commit" title="Permanent link">&para;</a></h3>
+<p>One PR, one spec's worth of conversion. Commit message pattern:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>feat(bdd): &lt;slug&gt; scenarios via pytest-bdd
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>- Add tests/bdd/features/&lt;slug&gt;.feature mirroring
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  specs/&lt;slug&gt;.spec Completion Criteria (&lt;N&gt; scenarios)
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>- Add tests/bdd/test_&lt;module&gt;.py with step defs wired to the real
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>  &lt;subsystem&gt; API
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>- &lt;any new shared steps added to tests/bdd/conftest.py&gt;
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>Closes: makes specs/&lt;slug&gt;.spec scenarios drift-proof — changing the
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>Gherkin text without updating a step def breaks pytest collection.
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>Closes #&lt;issue&gt;
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>Co-Authored-By: &lt;you&gt;
+</code></pre></div>
+<h2 id="common-pitfalls">Common pitfalls<a class="headerlink" href="#common-pitfalls" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Wrong fixture name.</strong> <code>ctx</code> and <code>loop</code> are defined in
+  <code>tests/bdd/conftest.py</code>. Misspell either and pytest-bdd silently
+  fails to inject and the step crashes at runtime. Keep the names.</li>
+<li><strong><code>async def</code> step defs.</strong> pytest-bdd does not await them. Use
+  synchronous functions + <code>loop.run_until_complete(...)</code>.</li>
+<li><strong>Copy-paste with formatting changes.</strong> <code>check_feature_sync.py</code>
+  compares exact step text. "a running EventBus" and "an running
+  EventBus" are different scenarios to the checker.</li>
+<li><strong>Forgetting <code>scenarios(str(FEATURE_FILE))</code>.</strong> Without this call,
+  pytest-bdd does not bind any scenario to the step defs in the module;
+  the test file passes trivially without running anything.</li>
+<li><strong>Reusing a step def name.</strong> Python shadowing rules apply — two
+  <code>def _handler(...)</code> at module level collide. pytest-bdd uses the
+  registered Gherkin text, not the function name, so prefix step-def
+  functions with <code>_</code> (e.g. <code>_a_running_event_bus</code>) to avoid accidental
+  collisions with fixture names.</li>
+<li><strong>Mixing BDD with existing unit test patterns.</strong> BDD and unit tests
+  live side-by-side. BDD is the scenario contract; unit tests cover
+  edge cases that are not worth surfacing in Gherkin. Do not delete
+  the existing <code>tests/&lt;area&gt;/test_&lt;module&gt;.py</code> when converting the
+  spec — they remain the engineering verification.</li>
+</ul>
+<h2 id="verification-checklist">Verification checklist<a class="headerlink" href="#verification-checklist" title="Permanent link">&para;</a></h2>
+<p>Before opening a PR:</p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>tests/bdd/features/&lt;slug&gt;.feature</code> exists and has the same
+      scenario names (in order) as <code>specs/&lt;slug&gt;.spec</code>.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>uv run python scripts/check_feature_sync.py</code> exits 0.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>uv run python -m pytest tests/bdd/test_&lt;module&gt;.py -v</code> exits 0
+      and the scenario count matches the spec.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>just check &amp;&amp; just test</code> green.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> No new step defs duplicate an existing one in <code>conftest.py</code> — if
+      overlap exists, consolidate to <code>conftest.py</code>.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Step defs import <strong>only</strong> production code from <code>src/yaya/…</code>,
+      never from <code>tests/&lt;area&gt;/</code>.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Commit message follows the project's Conventional Commits style
+      (≤50-char title, body bullets starting with imperative verbs,
+      closing trailer).</li>
+</ul>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../agent-spec/"><code>docs/dev/agent-spec.md</code></a> — how <code>.spec</code> files are
+  authored and what <code>agent-spec lifecycle</code> enforces.</li>
+<li><a href="../testing/"><code>docs/dev/testing.md</code></a> — the broader test harness (unit,
+  property, snapshot, e2e) that BDD slots into.</li>
+<li><a href="../workflow/"><code>docs/dev/workflow.md</code></a> — issue → worktree → PR state
+  machine; BDD conversion happens inside a worktree for one issue.</li>
+<li><a href="../../specs/kernel-bus-and-abi.spec"><code>specs/kernel-bus-and-abi.spec</code></a>
+  and <a href="../../tests/bdd/test_kernel_bus.py"><code>tests/bdd/test_kernel_bus.py</code></a>
+  — reference conversion to copy the structure from.</li>
+</ul>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+            
+            <p class="text-center text-muted">Copyright (c) 2026 <a href="https://github.com/rararulab">rararulab</a> contributors.</p>
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal" aria-label="Close">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>

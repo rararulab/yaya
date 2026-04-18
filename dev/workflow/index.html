@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#workflow-yaya-addenda">Workflow (yaya addenda)</a></li>
-        <li><a href="#state-machine-reminder">State machine (reminder)</a></li><li><a href="#worktree-verification-commands-yaya">Worktree verification commands (yaya)</a></li><li><a href="#labels-required">Labels (required)</a></li><li><a href="#issue-as-the-task-record">Issue as the task record</a></li><li><a href="#agent-task-packet">Agent Task Packet</a></li><li><a href="#pr-as-the-implementation-record">PR as the implementation record</a></li><li><a href="#multi-agent-dispatch">Multi-agent dispatch</a></li><li><a href="#stacked-prs">Stacked PRs</a></li><li><a href="#phase-gates-yayas-flavour-of-the-bmad-4-phases">Phase gates (yaya's flavour of the BMAD 4 phases)</a></li><li><a href="#halt-conditions-when-to-stop-mid-implementation">HALT conditions — when to stop mid-implementation</a></li><li><a href="#retrospective-cadence">Retrospective cadence</a></li>
+        <li><a href="#state-machine-reminder">State machine (reminder)</a></li><li><a href="#worktree-verification-commands-yaya">Worktree verification commands (yaya)</a></li><li><a href="#labels-required">Labels (required)</a></li><li><a href="#issue-as-the-task-record">Issue as the task record</a></li><li><a href="#agent-task-packet">Agent Task Packet</a></li><li><a href="#pr-as-the-implementation-record">PR as the implementation record</a></li><li><a href="#multi-agent-dispatch">Multi-agent dispatch</a></li><li><a href="#stacked-prs">Stacked PRs</a></li><li><a href="#bdd-is-part-of-shipping-a-spec">BDD is part of shipping a spec</a></li><li><a href="#phase-gates-yayas-flavour-of-the-bmad-4-phases">Phase gates (yaya's flavour of the BMAD 4 phases)</a></li><li><a href="#halt-conditions-when-to-stop-mid-implementation">HALT conditions — when to stop mid-implementation</a></li><li><a href="#retrospective-cadence">Retrospective cadence</a></li>
     </ul>
 </nav>
 </aside>
@@ -531,6 +531,14 @@ with these additional facts instead of creating a separate local note:</p>
 <h2 id="stacked-prs">Stacked PRs<a class="headerlink" href="#stacked-prs" title="Permanent link">&para;</a></h2>
 <p>For features &gt; ~400 LOC or crossing layers, follow
 <code>rararulab/.github/docs/stacked-prs.md</code>.</p>
+<h2 id="bdd-is-part-of-shipping-a-spec">BDD is part of shipping a spec<a class="headerlink" href="#bdd-is-part-of-shipping-a-spec" title="Permanent link">&para;</a></h2>
+<p>Any PR that adds a new <code>specs/&lt;slug&gt;.spec</code> MUST, in the same PR, ship
+the matching <code>tests/bdd/features/&lt;slug&gt;.feature</code> and step definitions
+in <code>tests/bdd/test_&lt;module&gt;.py</code>. The sync check
+(<code>scripts/check_feature_sync.py</code>) and pytest-bdd's
+<code>StepDefinitionNotFoundError</code> gate this mechanically.</p>
+<p>Follow <a href="../bdd-workflow/"><code>docs/dev/bdd-workflow.md</code></a> step-by-step. Do
+not improvise. New agents start there.</p>
 <h2 id="phase-gates-yayas-flavour-of-the-bmad-4-phases">Phase gates (yaya's flavour of the BMAD 4 phases)<a class="headerlink" href="#phase-gates-yayas-flavour-of-the-bmad-4-phases" title="Permanent link">&para;</a></h2>
 <p>Every non-trivial change passes through four phases <strong>in order</strong>. You
 cannot skip a phase; each one produces the artifact the next consumes.

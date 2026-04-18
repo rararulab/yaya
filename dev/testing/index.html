@@ -547,8 +547,10 @@
   without updating the step definition causes pytest to fail with
   <code>StepDefinitionNotFoundError</code>. <code>scripts/check_feature_sync.py</code> verifies
   <code>.feature</code> and <code>.spec</code> stay aligned; it runs in <code>just check</code> and CI.
-  See <a href="../agent-spec/">agent-spec.md</a> for how <code>.spec</code> authoring and BDD
-  execution relate.</li>
+  Step-by-step conversion procedure lives in
+  <a href="../bdd-workflow/">bdd-workflow.md</a> — new agents authoring or
+  migrating a spec read that first. See <a href="../agent-spec/">agent-spec.md</a>
+  for how <code>.spec</code> authoring and BDD execution relate.</li>
 </ul>
 <h2 id="isolation-fixtures">Isolation fixtures<a class="headerlink" href="#isolation-fixtures" title="Permanent link">&para;</a></h2>
 <p>Two autouse fixtures in <code>tests/conftest.py</code>:</p>

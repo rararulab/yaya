@@ -136,6 +136,10 @@ def test_plugin_config_returns_defensive_copy(monkeypatch: pytest.MonkeyPatch, e
     cfg = load_config()
 
     first = dict(cfg.plugin_config("x_foo"))
+    # `dict(Mapping[str, str])` returns `dict[str, str]`, but mypy infers
+    # `dict[Any, Any]` here from the `cfg.plugin_config` Mapping ABI; the
+    # write is intentional — we want to verify the original Mapping is NOT
+    # a view that propagates mutation. Ignore the spurious index complaint.
     first["k"] = "tampered"  # type: ignore[index]
     second = cfg.plugin_config("x_foo")
     assert second["k"] == "v"

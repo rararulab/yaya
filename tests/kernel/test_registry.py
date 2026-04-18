@@ -373,6 +373,9 @@ async def test_stop_runs_on_unload_in_reverse_order(tmp_path: Path) -> None:
             calls.append(name)
             await orig(ctx)
 
+        # Monkey-patching a Plugin instance method to record unload order;
+        # mypy correctly forbids method reassignment, but the test owns this
+        # instance and the swap is the whole point.
         p.on_unload = _tracked  # type: ignore[method-assign]
         return p
 
@@ -437,6 +440,9 @@ async def test_entry_point_load_exception_emits_plugin_error(tmp_path: Path) -> 
 
     with patch(
         "yaya.kernel.registry.entry_points",
+        # `_BoomEP` duck-types `importlib.metadata.EntryPoint` for the
+        # subset the registry uses; full inheritance would force us to
+        # implement frozen-dataclass internals just to raise on `load()`.
         side_effect=_fake_entry_points([_BoomEP()]),  # type: ignore[list-item]
     ):
         registry = PluginRegistry(bus, state_dir=tmp_path)
@@ -646,6 +652,10 @@ def test_ep_is_bundled_none_dist_is_false(tmp_path: Path) -> None:
         name = "orphan"
         dist = None
 
+    # `_OrphanEP` duck-types EntryPoint with `name` + `dist=None`, which
+    # is exactly the shape `_is_ep_bundled` inspects; subclassing the
+    # frozen-dataclass EntryPoint just to test the None-dist branch isn't
+    # worth it.
     assert registry._is_ep_bundled(_OrphanEP()) is False  # type: ignore[arg-type]
 
 
@@ -818,6 +828,7 @@ async def test_remove_bundled_plugin_raises_when_load_failed(tmp_path: Path) -> 
 
     with patch(
         "yaya.kernel.registry.entry_points",
+        # Duck-typed bundled EP — same rationale as `_BoomEP` above.
         side_effect=_fake_entry_points([_BoomBundledEP()]),  # type: ignore[list-item]
     ):
         registry = PluginRegistry(bus, state_dir=tmp_path)
@@ -875,6 +886,7 @@ def test_ep_is_bundled_none_dist_logs_warning_once(
         dist = None
 
     with caplog.at_level(logging.WARNING, logger="yaya.kernel.registry"):
+        # Duck-typed orphan EP — see rationale on the earlier `_OrphanEP` use.
         assert registry._is_ep_bundled(_OrphanEP()) is False  # type: ignore[arg-type]
         # Subsequent passes must NOT emit another warning for the same name.
         assert registry._is_ep_bundled(_OrphanEP()) is False  # type: ignore[arg-type]

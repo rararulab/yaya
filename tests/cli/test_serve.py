@@ -103,6 +103,8 @@ async def test_run_serve_registers_signal_handler(monkeypatch: pytest.MonkeyPatc
     """
     import signal as signal_mod
 
+    # Monkeypatch shim mirroring `loop.add_signal_handler(sig, callback, *args)`;
+    # full annotations would couple the test to asyncio's private signature.
     def fake_add(sig, callback, *args):  # type: ignore[no-untyped-def]
         if sig == signal_mod.SIGINT:
             # Fire asynchronously so run_serve has time to block on wait().
@@ -130,6 +132,8 @@ async def test_run_serve_startup_failure(monkeypatch: pytest.MonkeyPatch) -> Non
     from yaya.cli.commands import serve as serve_mod
 
     class _Boom:
+        # Stub kernel constructor — annotating `_bus`/`_kwargs` would
+        # require importing private kernel types just to throw them away.
         def __init__(self, _bus, **_kwargs) -> None:  # type: ignore[no-untyped-def]
             pass
 

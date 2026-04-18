@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
@@ -121,7 +121,7 @@ class OpenAIProvider:
         assert self._client is not None  # noqa: S101 - guarded by on_event.
         payload = ev.payload
         model = str(payload.get("model", ""))
-        messages = payload.get("messages") or []
+        messages = cast("list[dict[str, Any]]", payload.get("messages") or [])
         tools = payload.get("tools")
 
         create_kwargs: dict[str, Any] = {
@@ -131,15 +131,16 @@ class OpenAIProvider:
         if tools:
             create_kwargs["tools"] = tools
 
-        completion = await self._client.chat.completions.create(**create_kwargs)
+        completion: Any = await self._client.chat.completions.create(**create_kwargs)
 
-        choice = completion.choices[0] if completion.choices else None
-        message = choice.message if choice is not None else None
-        text = getattr(message, "content", "") or ""
-        raw_tool_calls = getattr(message, "tool_calls", None) or []
+        choices: list[Any] = list(completion.choices or [])
+        choice: Any = choices[0] if choices else None
+        message: Any = choice.message if choice is not None else None
+        text: str = getattr(message, "content", "") or ""
+        raw_tool_calls: list[Any] = list(getattr(message, "tool_calls", None) or [])
         tool_calls = [_tool_call_to_dict(tc) for tc in raw_tool_calls]
 
-        usage_obj = getattr(completion, "usage", None)
+        usage_obj: Any = getattr(completion, "usage", None)
         usage: dict[str, int] = {}
         if usage_obj is not None:
             input_tokens = getattr(usage_obj, "prompt_tokens", None)
@@ -193,11 +194,11 @@ def _tool_call_to_dict(tc: Any) -> dict[str, Any]:
     # dict already in tests. Try ``model_dump`` first, fall back to dict().
     dump: Any = getattr(tc, "model_dump", None)
     if callable(dump):
-        data = dump()
+        data: Any = dump()
         if isinstance(data, dict):
-            return dict(data)
+            return cast("dict[str, Any]", data)
     if isinstance(tc, dict):
-        return dict(tc)
+        return cast("dict[str, Any]", tc)
     return {
         "id": getattr(tc, "id", ""),
         "name": getattr(getattr(tc, "function", None), "name", ""),

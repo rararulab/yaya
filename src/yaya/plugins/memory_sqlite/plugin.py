@@ -25,7 +25,7 @@ import sqlite3
 import time
 import uuid
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
@@ -116,7 +116,7 @@ class SqliteMemory:
         if not isinstance(raw_entry, dict):
             # Protocol violation: entry is required per plugin-protocol.md.
             raise ValueError("memory.write missing 'entry' dict")  # noqa: TRY004
-        entry = dict(raw_entry)
+        entry: dict[str, Any] = cast("dict[str, Any]", raw_entry)
         entry_id = str(entry.get("id") or uuid.uuid4().hex)
         text = str(entry.get("text", ""))
         meta = entry.get("meta")

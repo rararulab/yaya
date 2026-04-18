@@ -15,7 +15,7 @@ on every emit so the agent loop can correlate concurrent tool calls
 from __future__ import annotations
 
 import asyncio
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
@@ -60,10 +60,12 @@ class BashTool:
             return
 
         call_id = str(ev.payload.get("id", ""))
-        args = ev.payload.get("args") or {}
-        cmd = args.get("cmd") if isinstance(args, dict) else None
+        raw_args: Any = ev.payload.get("args") or {}
+        args = cast("dict[str, Any]", raw_args) if isinstance(raw_args, dict) else {}
+        cmd: Any = args.get("cmd")
 
-        if not (isinstance(cmd, list) and all(isinstance(x, str) for x in cmd)):
+        cmd_list: list[Any] = list(cmd) if isinstance(cmd, list) else []
+        if not (isinstance(cmd, list) and all(isinstance(x, str) for x in cmd_list)):
             await self._emit_result(
                 ctx,
                 ev,
@@ -76,7 +78,7 @@ class BashTool:
             )
             return
 
-        await self._run(ctx, ev, call_id, cmd)
+        await self._run(ctx, ev, call_id, cast("list[str]", cmd))
 
     async def on_unload(self, ctx: KernelContext) -> None:
         """No resources; no-op."""

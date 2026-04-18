@@ -9,7 +9,7 @@ turns remain deterministic.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
@@ -74,7 +74,7 @@ class ReActStrategy:
             raise ValueError("strategy.decide.request missing 'state' payload")  # noqa: TRY004
 
         provider, model = self._provider_and_model(ctx)
-        decision = _decide(raw_state, provider=provider, model=model)
+        decision = _decide(cast("dict[str, Any]", raw_state), provider=provider, model=model)
         decision["request_id"] = ev.id
         await ctx.emit(
             "strategy.decide.response",
@@ -120,8 +120,8 @@ def _decide(state: dict[str, Any], *, provider: str, model: str) -> dict[str, An
         this seed strategy — the loop supports them, but ReAct 0.1 does
         not use them.
     """
-    messages_raw = state.get("messages") or []
-    messages: list[dict[str, Any]] = [dict(m) for m in messages_raw if isinstance(m, dict)]
+    messages_raw: list[Any] = list(state.get("messages") or [])
+    messages: list[dict[str, Any]] = [cast("dict[str, Any]", m) for m in messages_raw if isinstance(m, dict)]
 
     last_tool_result = state.get("last_tool_result")
 
@@ -142,9 +142,12 @@ def _decide(state: dict[str, Any], *, provider: str, model: str) -> dict[str, An
     if last_assistant is not None:
         tool_calls = last_assistant.get("tool_calls")
         if isinstance(tool_calls, list) and tool_calls:
-            first = tool_calls[0]
+            first: Any = tool_calls[0]
             if isinstance(first, dict):
-                return {"next": "tool", "tool_call": dict(first)}
+                return {
+                    "next": "tool",
+                    "tool_call": cast("dict[str, Any]", first),
+                }
         # Assistant finished and has nothing to run → done.
         if last_tool_result is None:
             return {"next": "done"}

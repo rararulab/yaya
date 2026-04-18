@@ -316,10 +316,22 @@ class PluginErrorPayload(TypedDict):
 
     The kernel synthesizes this event on behalf of the failing plugin. Plugin
     code must not emit ``plugin.error`` directly.
+
+    Optional fields are populated when the failure surfaces through the bus
+    handler-isolation path (``EventBus._report_handler_failure``):
+
+    * ``kind`` — the exception subclass name (``"PluginError"`` or a
+      plugin-defined subclass like ``"OpenAIError"``); the literal
+      ``"plugin_error"`` for non-:class:`PluginError` exceptions.
+    * ``error_hash`` — first 8 hex chars of a SHA-1 over the formatted
+      traceback. Stable across identical failure modes so operators can
+      de-dup repeats in a log scrape.
     """
 
     name: str
     error: str
+    kind: NotRequired[str]
+    error_hash: NotRequired[str]
 
 
 # --- Kernel ----------------------------------------------------------------

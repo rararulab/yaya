@@ -9,6 +9,7 @@
   | --json Emit machine-readable JSON to stdout instead of rich text.
   | --verbose -v INTEGER Increase log verbosity (-v info, -vv debug). [default: 0]
   | --quiet -q Suppress all log output.
+  | --log-level TEXT Override log level (DEBUG, INFO, WARNING, ERROR). Defaults to config.
   | --version Print version and exit.
   | --install-completion Install completion for the current shell.
   | --show-completion Show completion for the current shell, to copy it or customize the installation.

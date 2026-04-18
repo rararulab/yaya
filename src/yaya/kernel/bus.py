@@ -33,12 +33,15 @@ Layering: no imports from ``cli``, ``plugins``, or ``core``.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import traceback
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 
+from yaya.kernel.errors import PluginError
 from yaya.kernel.events import Event, new_event
 
 _IN_WORKER: ContextVar[bool] = ContextVar("_IN_WORKER", default=False)
@@ -292,6 +295,14 @@ class EventBus:
         The synthetic event is enqueued on the ``"kernel"`` session (not the
         originating session) so it does not interleave with the caller's
         per-session FIFO. Delivery is fire-and-forget.
+
+        When the failure is a :class:`yaya.kernel.errors.PluginError`, the
+        payload carries the structured error kind (``"plugin_error"`` for
+        the base class, the subclass name otherwise) plus an
+        ``error_hash`` — the first 8 hex chars of a SHA-1 over the formatted
+        traceback. The hash is stable across identical failure modes so
+        operators can de-dup noisy plugins in a log scrape without losing
+        the "different bug, same plugin" signal.
         """
         if sub.source == "kernel":
             _logger.exception(
@@ -307,9 +318,17 @@ class EventBus:
             sub.kind,
             exc,
         )
+        kind = type(exc).__name__ if isinstance(exc, PluginError) else "plugin_error"
+        tb_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        error_hash = hashlib.sha1(tb_text.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
         err = new_event(
             "plugin.error",
-            {"name": sub.source, "error": str(exc)},
+            {
+                "name": sub.source,
+                "error": str(exc),
+                "kind": kind,
+                "error_hash": error_hash,
+            },
             session_id="kernel",
             source="kernel",
         )

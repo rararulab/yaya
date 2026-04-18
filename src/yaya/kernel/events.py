@@ -44,6 +44,7 @@ PublicEventKind = Literal[
     "tool.call.request",
     "tool.call.start",
     "tool.call.result",
+    "tool.error",
     # Memory (kernel ↔ memory).
     "memory.query",
     "memory.write",
@@ -204,11 +205,26 @@ class LlmCallErrorPayload(TypedDict):
 
 
 class ToolCallRequestPayload(TypedDict):
-    """``tool.call.request`` — kernel asks a tool plugin to run."""
+    """``tool.call.request`` — kernel asks a tool plugin to run.
+
+    ``schema_version`` is the v1-contract toggle (see
+    :mod:`yaya.kernel.tool`). When present and equal to ``"v1"`` the
+    kernel's tool dispatcher validates ``args`` against the pydantic
+    schema declared by the registered :class:`~yaya.kernel.tool.Tool`
+    subclass before any plugin code runs. When absent, the event falls
+    through to whatever plugin subscribed via ``on_event`` — the
+    pre-0.2 shape, preserved for backward compatibility.
+
+    ``request_id`` mirrors behaviour on other request kinds: downstream
+    results echo it as ``request_id`` on the corresponding result event
+    so the agent loop can correlate concurrent tool calls.
+    """
 
     id: str
     name: str
     args: dict[str, Any]
+    schema_version: NotRequired[Literal["v1"]]
+    request_id: NotRequired[str]
 
 
 class ToolCallStartPayload(TypedDict):
@@ -232,6 +248,35 @@ class ToolCallResultPayload(TypedDict):
     ok: bool
     value: NotRequired[Any]
     error: NotRequired[str]
+    envelope: NotRequired[dict[str, Any]]
+    request_id: NotRequired[str]
+
+
+class ToolErrorPayload(TypedDict):
+    """``tool.error`` — kernel rejects a ``tool.call.request`` before dispatch.
+
+    Emitted by :func:`yaya.kernel.tool.dispatch` when the v1 contract
+    refuses a call *before* the tool's :meth:`~yaya.kernel.tool.Tool.run`
+    executes. Distinct from ``tool.call.result`` because the target tool
+    never ran — adapters render these differently (usually a red banner
+    at the originating turn, not a tool-pane update).
+
+    Fields:
+        id: Logical tool-call id carried by the originating request.
+        kind: ``"validation"`` (params failed the pydantic schema),
+            ``"not_found"`` (no tool registered under ``payload.name``),
+            or ``"rejected"`` (the tool's ``pre_approve`` hook returned
+            ``False``).
+        brief: One-liner (≤80 char) suitable for log lines.
+        detail: Optional structured context — e.g. ``pydantic``'s
+            ``errors()`` list for ``kind="validation"``.
+        request_id: Mirror of the originating ``tool.call.request`` id.
+    """
+
+    id: str
+    kind: Literal["validation", "not_found", "rejected"]
+    brief: str
+    detail: NotRequired[dict[str, Any]]
     request_id: NotRequired[str]
 
 
@@ -466,6 +511,7 @@ __all__ = [
     "ToolCallRequestPayload",
     "ToolCallResultPayload",
     "ToolCallStartPayload",
+    "ToolErrorPayload",
     "ToolSchema",
     "Usage",
     "UserInterruptPayload",

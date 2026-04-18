@@ -67,9 +67,10 @@ class Event(TypedDict):
 
 | kind | direction | payload |
 |---|---|---|
-| `tool.call.request` | kernel → tool | `{ id: str, name: str, args: dict }` |
+| `tool.call.request` | kernel → tool | `{ id: str, name: str, args: dict, schema_version?: "v1", request_id?: str }` |
 | `tool.call.start` | kernel → adapters (for UI) | `{ id: str, name: str, args: dict }` |
-| `tool.call.result` | tool → kernel | `{ id: str, ok: bool, value?: Any, error?: str, request_id?: str }` |
+| `tool.call.result` | tool → kernel | `{ id: str, ok: bool, value?: Any, error?: str, envelope?: dict, request_id?: str }` |
+| `tool.error` | kernel → originator | `{ id: str, kind: "validation" \| "not_found" \| "rejected", brief: str, detail?: dict, request_id?: str }` |
 
 #### Memory (kernel ↔ memory)
 
@@ -194,11 +195,92 @@ class Plugin(Protocol):
 session_id)` method, a scoped logger, access to its configuration,
 and a state directory under `<XDG_DATA_HOME>/yaya/plugins/<name>/`.
 
+### Tools (v1 contract)
+
+Since 0.2, tools declare their contract through a pydantic-backed
+`Tool` base class in `yaya.kernel.tool`. Plugins on this path do
+**not** implement `on_event` to route `tool.call.request` themselves
+— the kernel's dispatcher does it for them.
+
+```python
+from typing import ClassVar
+from yaya.kernel import KernelContext
+from yaya.kernel.tool import Tool, ToolOk, ToolReturnValue, TextBlock, register_tool
+
+class EchoTool(Tool):
+    name: ClassVar[str] = "echo"
+    description: ClassVar[str] = "Echo the input text."
+    text: str  # parameters are ordinary pydantic fields
+
+    async def run(self, ctx: KernelContext) -> ToolReturnValue:
+        return ToolOk(brief=f"echo: {self.text[:40]}", display=TextBlock(text=self.text))
+
+# In the plugin's on_load:
+async def on_load(self, ctx: KernelContext) -> None:
+    register_tool(EchoTool)
+```
+
+**JSON schema** is derived by `Tool.openai_function_spec()` →
+`{"name", "description", "parameters": model_json_schema()}`,
+directly compatible with the OpenAI chat-completions `tools` array
+shape. Anthropic's Messages API accepts the same dict under a
+different key, so adapters repack without rewriting.
+
+**Return envelope** — `ToolOk` / `ToolError` each carry:
+
+- `brief: str` — one-liner (≤80 chars) for logs and status panes.
+- `display: DisplayBlock` — adapter-rendering hint. Built-ins:
+  `TextBlock(kind="text", text=...)`,
+  `MarkdownBlock(kind="markdown", markdown=...)`,
+  `JsonBlock(kind="json", data=...)`.
+
+`ToolError` additionally carries `kind: str` — one of
+`"validation" | "timeout" | "rejected" | "crashed" | "internal"`.
+Additional kinds may be introduced additively.
+
+**Dispatcher behaviour** — `yaya.kernel.tool.dispatch` handles a
+`tool.call.request` event whose payload's `schema_version` equals
+`"v1"`:
+
+1. Looks the tool up by `payload.name` in the registry. Unknown name →
+   `tool.error` with `kind="not_found"`.
+2. Validates `payload.args` against the tool's pydantic schema.
+   Failure → `tool.error` with `kind="validation"` and
+   `detail.errors` carrying pydantic's structured error list.
+   `run()` is **not** called.
+3. If `requires_approval=True`, calls `pre_approve(ctx)`. A `False`
+   return → `tool.error` with `kind="rejected"`.
+4. Calls `run(ctx)`. A raised exception is coerced into
+   `tool.call.result` with a `ToolError(kind="crashed")` envelope —
+   the kernel never lets a tool exception escape onto the bus.
+5. Emits `tool.call.result` with `{"id", "ok", "envelope":
+   <model_dump>, "request_id"}`.
+
+**Approval hook shape (placeholder)** — `requires_approval: ClassVar[bool]
+= False` and `async def pre_approve(self, ctx) -> bool` exist on the
+contract today. The real approval runtime (prompt the user, cancel on
+interrupt, resume on approval) lands in a follow-up issue. Default
+behaviour is no-approval.
+
+**Backward compatibility** — A `tool.call.request` payload without
+`schema_version` falls through to whatever plugin subscribed via
+`on_event`. Bundled plugins that pre-date v1 (e.g. `tool_bash`) keep
+working unchanged. If a legacy plugin and a v1 registration claim the
+same tool name, the registry logs a WARNING; duplicate
+`tool.call.result` emissions are possible until one path is retired.
+
+**The new `tool.error` event kind** is a kernel → originator event
+emitted only by the v1 dispatcher (never by plugins). Adapters
+typically render it inline with the originating assistant turn rather
+than as a tool-pane update, because the target tool never ran.
+
 ### Category-specific extras
 
 - **`tool`** declares `tool_name: str` and `json_schema: dict` for
   arguments. The kernel routes `tool.call.request` to the plugin whose
-  `tool_name` matches.
+  `tool_name` matches. Since 0.2 the preferred path is to declare a
+  `Tool` subclass and call `register_tool()` — see "Tools (v1
+  contract)" above.
 - **`llm-provider`** declares `provider_id: str` (e.g., `"openai"`).
   The kernel routes `llm.call.request` by `payload.provider`.
 - **`strategy`** declares `strategy_id: str`. Only one strategy is

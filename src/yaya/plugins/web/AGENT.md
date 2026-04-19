@@ -35,14 +35,16 @@ Bundled `web` adapter plugin. Loads through `yaya.plugins.v1` like any third-par
 
 ## Surface (kimi-style, issue #108)
 
-Entry element: `<yaya-app>`. Hash-based routing:
+Entry element: `<yaya-app>`. Chat view always mounted; settings is a **float modal overlay** (`<yaya-settings-modal>` wrapping a native `<dialog>`) — not a route swap (issue #113). Hash states:
 
-| Route | Component | Purpose |
-|---|---|---|
-| `#/chat` (default) | `<yaya-chat>` | chat transcript + empty-state hero (wordmark + quick-start chips) + prompt input. |
-| `#/settings` | `<yaya-settings>` (lazy chunk) | Settings tabs: LLM Providers · Plugins · Advanced. |
+| Hash | Behavior |
+|---|---|
+| `#/chat` (default) | chat transcript + empty-state hero (wordmark + quick-start chips) + prompt input. |
+| `#/settings` | opens the modal over the chat; `<yaya-settings>` (lazy chunk) renders LLM Providers · Plugins · Advanced tabs inside it. Closing the modal rewrites the hash back to `#/chat` via `history.replaceState`. |
 
-Sidebar (≤240 px, collapsible to 56 px): logo · New chat · Chat/Settings nav · recent-chat list · theme toggle · version footer. Theme palette driven by CSS custom properties with a `prefers-color-scheme: dark` media-query override and an explicit `.dark` toggle on `<html>`.
+Modal pattern: `showModal()` gives us the platform focus trap, ESC handling, and inert backdrop. Backdrop click is detected by `event.target === dialogEl`. The modal dispatches a bubbling `yaya:settings-close` event on native `close` so the shell can clear the hash.
+
+Sidebar (≤240 px, collapsible to 56 px): logo · New chat · Chat nav · recent-chat list · **gear settings button (footer-left) + theme toggle + version (footer-right)**. Theme palette driven by CSS custom properties with a `prefers-color-scheme: dark` media-query override and an explicit `.dark` toggle on `<html>`.
 
 Settings tabs consume PR B's HTTP config surface:
 

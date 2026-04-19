@@ -89,7 +89,8 @@ src/yaya/plugins/web/
 ## Browser routes (kimi-style redesign, issue #108)
 
 The UI is a two-column layout: a collapsible sidebar on the left and
-the active route in the main area.
+the chat view in the main area. Settings is a float **modal overlay**
+(issue #113) above the chat — not a route swap.
 
 ```
 ┌────────────┬───────────────────────────────────┐
@@ -98,11 +99,11 @@ the active route in the main area.
 │  ▸ logo    │  #/chat      → <yaya-chat>        │
 │  ▸ New chat│    · empty-state hero (wordmark   │
 │  ▸ Chat    │      + quick-start chips)         │
-│  ▸ Settings│    · streaming bubbles            │
-│  ▸ history │    · prompt input pinned bottom   │
-│  ▸ theme   │                                   │
-│  ▸ version │  #/settings  → <yaya-settings>    │
-│            │    tabs:                          │
+│  ▸ history │    · streaming bubbles            │
+│  ▸ theme   │    · prompt input pinned bottom   │
+│  ▸ ⚙ gear  │                                   │
+│  ▸ version │  #/settings  → modal opens over   │
+│            │                chat with tabs:    │
 │            │    · LLM Providers                │
 │            │    · Plugins                      │
 │            │    · Advanced (raw config)        │
@@ -112,6 +113,23 @@ the active route in the main area.
 Routing is hash-based: `#/chat` (default) and `#/settings`. The
 settings module is a dynamic import so chat-only users do not pay
 for its bundle — Vite emits it as a separate chunk.
+
+### Settings modal semantics (issue #113)
+
+- `<yaya-settings-modal>` owns a native `<dialog>` element and calls
+  `showModal()` for the built-in focus trap, ESC handling, and inert
+  backdrop. The dialog's `::backdrop` pseudo-element paints the scrim.
+- Backdrop clicks are detected by comparing `event.target` to the
+  dialog element — clicks inside the card bubble from inner children
+  and never match the dialog itself.
+- The modal dispatches a bubbling `yaya:settings-close` event on
+  `close` (native dialog close). `<yaya-app>` listens and rewrites the
+  URL hash back to `#/chat` via `history.replaceState` so the modal
+  close does not push a history entry.
+- The sidebar gear button in `.yaya-sidebar-footer` opens the modal;
+  the old `Settings` nav item is removed. `#/settings` on page load
+  still deep-links into the modal (queued in a microtask so the modal
+  element is registered first).
 
 ### Extending Settings with a new tab
 

@@ -205,6 +205,29 @@ yaya-app {
 	color: var(--yaya-text-secondary);
 }
 
+.yaya-sidebar-footer-right {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.yaya-sidebar-settings {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	background: transparent;
+	border: 0;
+	color: var(--yaya-text-primary);
+	cursor: pointer;
+	font-size: 14px;
+	padding: 6px 8px;
+	border-radius: 8px;
+}
+
+.yaya-sidebar-settings:hover {
+	background: var(--yaya-hover);
+}
+
 .yaya-version {
 	font-variant-numeric: tabular-nums;
 }
@@ -549,4 +572,85 @@ yaya-app {
 yaya-chat {
 	display: block;
 	min-height: 100vh;
+}
+
+/* --- Settings dialog (float modal overlay) ------------------------- */
+
+yaya-settings-modal {
+	display: contents;
+}
+
+.yaya-settings-dialog {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	max-width: 960px;
+	width: 90vw;
+	max-height: 80vh;
+	border-radius: 12px;
+	color: var(--yaya-text-primary);
+	overflow: hidden;
+}
+
+.yaya-settings-dialog::backdrop {
+	background: rgba(0, 0, 0, 0.45);
+}
+
+.yaya-settings-dialog-card {
+	display: flex;
+	flex-direction: column;
+	max-height: 80vh;
+	background: var(--yaya-main-bg);
+	border: 1px solid var(--yaya-border);
+	border-radius: 12px;
+	overflow: hidden;
+}
+
+.yaya-settings-dialog-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 20px;
+	border-bottom: 1px solid var(--yaya-border);
+}
+
+.yaya-settings-dialog-head h2 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.yaya-settings-dialog-close {
+	background: transparent;
+	border: 0;
+	color: var(--yaya-text-secondary);
+	font-size: 22px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 4px 8px;
+	border-radius: 6px;
+}
+
+.yaya-settings-dialog-close:hover {
+	background: var(--yaya-hover);
+	color: var(--yaya-text-primary);
+}
+
+.yaya-settings-dialog-body {
+	flex: 1;
+	overflow: auto;
+	padding: 0;
+}
+
+/* When rendered inside the modal, the inner <yaya-settings> drops the
+ * page-level max-width/padding — the dialog provides the frame. */
+.yaya-settings-dialog-body .yaya-settings {
+	max-width: none;
+	margin: 0;
+	padding: 16px 20px 20px;
+}
+
+.yaya-settings-dialog-body .yaya-settings-header h2 {
+	display: none;
 }

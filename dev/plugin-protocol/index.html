@@ -789,6 +789,35 @@ the deadlock rationale (lesson #2).</p>
 </tr>
 </tbody>
 </table>
+<h4 id="conversation-compaction-kernel-all">Conversation compaction (kernel → all)<a class="headerlink" href="#conversation-compaction-kernel-all" title="Permanent link">&para;</a></h4>
+<p>All three events route on the reserved <code>session_id="kernel"</code> session.
+The originating session is carried inside <code>payload.target_session_id</code>
+so adapters can correlate progress against the right conversation.
+Publishing on the originating session would deadlock its FIFO because
+the handler that triggered the compaction check is still draining it
+(same rule as <code>approval.*</code>).</p>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session.compaction.started</code></td>
+<td><code>{ target_session_id: str, tokens_before: int }</code></td>
+</tr>
+<tr>
+<td><code>session.compaction.completed</code></td>
+<td><code>{ target_session_id: str, tokens_before: int, tokens_after: int }</code></td>
+</tr>
+<tr>
+<td><code>session.compaction.failed</code></td>
+<td><code>{ target_session_id: str, error: str }</code></td>
+</tr>
+</tbody>
+</table>
 <h3 id="extension-namespace">Extension namespace<a class="headerlink" href="#extension-namespace" title="Permanent link">&para;</a></h3>
 <p>Plugins may emit and subscribe to events named <code>x.&lt;plugin&gt;.&lt;kind&gt;</code>.
 The kernel routes these through the same bus but <strong>does not interpret

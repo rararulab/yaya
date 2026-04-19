@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#release">Release</a></li>
-        
+        <li><a href="#post-install-smoke">Post-install smoke</a></li>
     </ul>
 </nav>
 </aside>
@@ -469,6 +469,48 @@ A single workflow (<code>.github/workflows/release-please.yml</code>) owns the e
    release assets.</li>
 </ol>
 <p>No manual tagging or separate tag-triggered workflow is needed.</p>
+<h2 id="post-install-smoke">Post-install smoke<a class="headerlink" href="#post-install-smoke" title="Permanent link">&para;</a></h2>
+<p>Unit + integration tests run against the source tree under <code>uv sync</code>, so
+they never see release regressions that only show up after install: missing
+entry-points in <code>pyproject.toml</code>, wrong package layout, sdist <code>MANIFEST</code>
+gaps, or a wheel built without the web adapter's bundled Vite assets
+(<code>src/yaya/plugins/web/static/</code>).</p>
+<p>The post-install smoke (<code>tests/e2e/</code>) closes that gap. Every PR's CI runs
+the matrix <code>E2E smoke (ubuntu/macos/windows)</code> job which:</p>
+<ol>
+<li>Downloads the built wheel + sdist from the <code>Build wheel + sdist</code> job.</li>
+<li>Creates a fresh venv (no project source on <code>PYTHONPATH</code>).</li>
+<li><code>pip install dist/*.whl</code> into the venv.</li>
+<li>Runs <code>pytest tests/e2e -v</code>.</li>
+<li>On Ubuntu only, repeats steps 2–4 for <code>dist/*.tar.gz</code> (sdist parity).</li>
+</ol>
+<p>What the smoke covers:</p>
+<ul>
+<li><code>yaya version</code> / <code>yaya --json version</code> — entry-point wiring, version
+  string shape.</li>
+<li><code>yaya hello</code> / <code>yaya --json hello</code> — kernel bus boot round-trip.</li>
+<li><code>yaya --json plugin list</code> — asserts every bundled plugin in the 0.1
+  catalog loads with the declared category
+  (<code>tests/e2e/test_plugin_list_smoke.py</code>).</li>
+<li><code>yaya --help</code> — every kernel subcommand advertised.</li>
+<li><code>tests/e2e/test_broken_binary_gate.py</code> — AC-03 self-test that proves
+  the gate actually fails on a broken binary.</li>
+</ul>
+<h3 id="reproducing-the-smoke-locally">Reproducing the smoke locally<a class="headerlink" href="#reproducing-the-smoke-locally" title="Permanent link">&para;</a></h3>
+<p>Requires <code>uv</code> installed (provides <code>uvx</code>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Wheel + sdist, two fresh venvs:</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>scripts/post_install_smoke.sh
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Wheel only:</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>scripts/post_install_smoke.sh<span class="w"> </span>wheel
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Against the PyInstaller onefile binary:</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>just<span class="w"> </span>build-bin
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nv">YAYA_BIN</span><span class="o">=</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/dist/yaya<span class="w"> </span>pytest<span class="w"> </span>tests/e2e<span class="w"> </span>-v
+</code></pre></div>
+<p>The <code>tests/e2e/test_binary_smoke.py</code> module skips automatically unless
+<code>YAYA_BIN</code> points at an executable, so the standard <code>pytest tests/e2e</code>
+invocation stays focused on the installed wheel.</p>
 </section>
 
             </main>

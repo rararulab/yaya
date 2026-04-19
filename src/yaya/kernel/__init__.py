@@ -20,8 +20,18 @@ from yaya.kernel.approval import (
     uninstall_approval_runtime,
 )
 from yaya.kernel.bus import DEFAULT_HANDLER_TIMEOUT_S, EventBus, EventHandler, Subscription
+from yaya.kernel.compaction import (
+    COMPACTION_ANCHOR_KIND,
+    CompactionManager,
+    Summarizer,
+    compact_session,
+    estimate_text_tokens,
+    install_compaction_manager,
+    should_auto_compact,
+)
 from yaya.kernel.config import (
     CONFIG_PATH,
+    CompactionConfig,
     KernelConfig,
     SessionConfig,
     default_config_path,
@@ -95,6 +105,7 @@ from yaya.kernel.tool import (
 )
 
 __all__ = [
+    "COMPACTION_ANCHOR_KIND",
     "CONFIG_PATH",
     "DEFAULT_APPROVAL_TIMEOUT_S",
     "DEFAULT_HANDLER_TIMEOUT_S",
@@ -110,6 +121,8 @@ __all__ = [
     "ApprovalRuntime",
     "Category",
     "ChatProviderError",
+    "CompactionConfig",
+    "CompactionManager",
     "ConfigError",
     "ContentPart",
     "DisplayBlock",
@@ -138,6 +151,7 @@ __all__ = [
     "StreamPart",
     "StreamedMessage",
     "Subscription",
+    "Summarizer",
     "TextBlock",
     "ThinkingEffort",
     "TokenUsage",
@@ -152,16 +166,19 @@ __all__ = [
     "YayaTimeoutError",
     "after_last_anchor",
     "anthropic_to_chat_provider_error",
+    "compact_session",
     "configure_logging",
     "convert_httpx_error",
     "default_config_path",
     "default_session_dir",
     "default_tape_context",
     "dispatch",
+    "estimate_text_tokens",
     "get_approval_runtime",
     "get_plugin_logger",
     "get_tool",
     "install_approval_runtime",
+    "install_compaction_manager",
     "install_dispatcher",
     "install_session_persister",
     "load_config",
@@ -171,6 +188,7 @@ __all__ = [
     "register_tool",
     "registered_tools",
     "select_messages",
+    "should_auto_compact",
     "tape_name_for",
     "uninstall_approval_runtime",
     "validate_install_source",

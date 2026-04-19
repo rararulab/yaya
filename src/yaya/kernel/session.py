@@ -659,6 +659,42 @@ class Session:
         )
         return archive_path
 
+    async def compact(
+        self,
+        summarizer: Any,
+        *,
+        target_tokens: int = 10_000,
+        bus: Any | None = None,
+    ) -> str:
+        """Run compaction against this session.
+
+        Thin method wrapper around
+        :func:`yaya.kernel.compaction.compact_session` so callers holding
+        a ``Session`` do not need to import the compaction module
+        directly. See that function for the full contract.
+
+        Args:
+            summarizer: A :class:`~yaya.kernel.compaction.Summarizer`.
+                Typed as :data:`Any` to avoid a circular import between
+                :mod:`session` and :mod:`compaction`.
+            target_tokens: Soft ceiling passed to the summariser.
+            bus: Optional :class:`~yaya.kernel.bus.EventBus` — when
+                provided, ``session.compaction.*`` events are published.
+
+        Returns:
+            The persisted summary string (empty when no post-anchor entries exist).
+        """
+        # Lazy import: compaction depends on session; the reverse would
+        # form a module-level cycle at import time.
+        from yaya.kernel.compaction import compact_session
+
+        return await compact_session(
+            self,
+            summarizer,
+            target_tokens=target_tokens,
+            bus=bus,
+        )
+
     def fork(self, child_id: str) -> Session:
         """Return a child Session that overlays this one's tape.
 

@@ -46,6 +46,7 @@ from pydantic_settings import (
 
 __all__ = [
     "CONFIG_PATH",
+    "CompactionConfig",
     "KernelConfig",
     "SessionConfig",
     "default_config_path",
@@ -141,6 +142,38 @@ class SessionConfig(BaseModel):
     default_id: str | None = None
 
 
+class CompactionConfig(BaseModel):
+    """Conversation compaction settings (see :mod:`yaya.kernel.compaction`).
+
+    Compaction is **opt-in** by default — ``auto=False`` — so upgrading
+    the kernel never surprises a user with summarised context. Operators
+    flip the knob in ``config.toml`` once they have wired a summariser:
+
+    .. code-block:: toml
+
+        [session.compaction]
+        auto = true
+        threshold_tokens = 50_000
+        target_tokens = 10_000
+
+    Attributes:
+        auto: Master switch for the auto-trigger
+            :class:`~yaya.kernel.compaction.CompactionManager`. Off by
+            default; manual :meth:`~yaya.kernel.session.Session.compact`
+            always works regardless.
+        threshold_tokens: Approximate post-last-anchor window size
+            (per :func:`~yaya.kernel.compaction.estimate_text_tokens`)
+            that triggers an auto-compaction. ``0`` disables the check
+            even when ``auto=True``.
+        target_tokens: Soft ceiling handed to the summariser so it
+            knows how much the compacted history should weigh.
+    """
+
+    auto: bool = False
+    threshold_tokens: int = 50_000
+    target_tokens: int = 10_000
+
+
 class KernelConfig(BaseSettings):
     """Resolved kernel + plugin configuration.
 
@@ -179,6 +212,9 @@ class KernelConfig(BaseSettings):
 
     session: SessionConfig = Field(default_factory=SessionConfig)
     """Session / tape-store policy. See :class:`SessionConfig`."""
+
+    compaction: CompactionConfig = Field(default_factory=CompactionConfig)
+    """Conversation compaction policy. See :class:`CompactionConfig`."""
 
     @classmethod
     @override

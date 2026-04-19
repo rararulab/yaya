@@ -127,6 +127,21 @@ the deadlock rationale (lesson #2).
 | `session.archived` | `{ session_id: str, archive_path: str }` |
 | `session.forked` | `{ parent_id: str, child_id: str }` |
 
+#### Conversation compaction (kernel → all)
+
+All three events route on the reserved `session_id="kernel"` session.
+The originating session is carried inside `payload.target_session_id`
+so adapters can correlate progress against the right conversation.
+Publishing on the originating session would deadlock its FIFO because
+the handler that triggered the compaction check is still draining it
+(same rule as `approval.*`).
+
+| kind | payload |
+|---|---|
+| `session.compaction.started` | `{ target_session_id: str, tokens_before: int }` |
+| `session.compaction.completed` | `{ target_session_id: str, tokens_before: int, tokens_after: int }` |
+| `session.compaction.failed` | `{ target_session_id: str, error: str }` |
+
 ### Extension namespace
 
 Plugins may emit and subscribe to events named `x.<plugin>.<kind>`.

@@ -61,6 +61,12 @@ _SKIP_KINDS: frozenset[str] = frozenset({
     "session.reset",
     "session.archived",
     "session.forked",
+    # Compaction events ride on session_id="kernel" (lesson #2) so they
+    # never land on a user tape; listing them here documents the intent
+    # and makes future audits cheap.
+    "session.compaction.started",
+    "session.compaction.completed",
+    "session.compaction.failed",
 })
 """Kinds the persister never writes to a tape."""
 

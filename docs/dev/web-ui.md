@@ -131,6 +131,24 @@ for its bundle — Vite emits it as a separate chunk.
   still deep-links into the modal (queued in a microtask so the modal
   element is registered first).
 
+### Chat input keybindings (issue #115)
+
+The chat composer is an auto-growing `<textarea>` (`.yaya-input`) with
+`rows=1` starting height and a 240 px cap; past the cap the internal
+`overflow-y: auto` takes over. `chat-shell.ts` detects macOS at module
+load via `navigator.platform` (with a `userAgent` fallback) and stores
+it in `IS_MAC`.
+
+| Keys | Behaviour |
+|------|-----------|
+| **Cmd+Enter** (macOS) / **Ctrl+Enter** (other) | Submit. `preventDefault()`; clears value + resets height. |
+| **Enter** | Native newline (no JS). |
+| **Shift+Enter** | Native newline (no JS). |
+
+A small hint line below the textarea shows the active modifier label.
+The submit button stays for click submission and is disabled while a
+turn is in flight.
+
 ### Extending Settings with a new tab
 
 1. Add a `Tab` variant in `settings-view.ts`
@@ -187,10 +205,12 @@ keys, and session storage. yaya inverts each of those — the Python
 kernel owns the agent, env vars hold keys, a future memory plugin
 holds sessions. We cherry-pick; we do NOT import the barrel index.
 
-**Whitelist:** `MessageList`, `StreamingMessageContainer`, `Input`,
+**Whitelist:** `MessageList`, `StreamingMessageContainer`,
 `ConsoleBlock`. Plus `@mariozechner/mini-lit` primitives (including
 `ThemeToggle`), `lit`, `lucide`, and Tailwind via
-`@tailwindcss/vite`.
+`@tailwindcss/vite`. The chat input is a plain
+auto-growing `<textarea>` (see "Chat input keybindings"); pi-web-ui's
+`Input` was removed in #115 when we adopted multiline + Cmd/Ctrl+Enter.
 
 **Blacklist (pre-commit grep enforces in `src/yaya/plugins/web/src/`):**
 

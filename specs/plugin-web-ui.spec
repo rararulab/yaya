@@ -70,6 +70,7 @@ without Node.
 - src/yaya/plugins/web/src/__tests__/store.test.ts
 - src/yaya/plugins/web/src/__tests__/schema-form.test.ts
 - src/yaya/plugins/web/src/__tests__/settings-modal.test.ts
+- src/yaya/plugins/web/src/__tests__/chat-shell.test.ts
 - src/yaya/plugins/web/static/
 - src/yaya/plugins/web/static/**
 - src/yaya/plugins/web/static/index.html

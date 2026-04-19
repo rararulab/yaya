@@ -1,12 +1,13 @@
 /**
  * Top-level Lit component assembling the yaya chat surface.
  *
- * Composition (all pure-presentation pi-web-ui exports):
- *   - `MessageList`              — scrolling transcript
- *   - `StreamingMessageContainer`— in-flight assistant bubble
- *   - `Input`                    — text box atom (mini-lit fc)
- *   - `ConsoleBlock`             — tool stdout/stderr rendering
- *   - `ThemeToggle` (mini-lit)   — dark/light
+ * Composition:
+ *   - local `<yaya-bubble>`        — user/assistant bubbles
+ *   - auto-growing `<textarea>`    — see `onKeyDown` + `autoGrow` for
+ *                                    keybinding + height clamping
+ *                                    (max-height mirrored in CSS)
+ *   - `ConsoleBlock` (pi-web-ui)   — tool stdout/stderr rendering
+ *   - `ThemeToggle` (mini-lit)     — dark/light
  *
  * No agent logic runs here: this is a renderer + WS bridge. The
  * Python kernel owns the agent, keys, and session storage. See
@@ -343,6 +344,12 @@ export class YayaChat extends LitElement {
 
 	private onKeyDown(e: KeyboardEvent): void {
 		if (e.key !== "Enter") {
+			return;
+		}
+		// IME composition: Enter (with or without modifier) commits the
+		// candidate — never treat it as a submit intent. Critical for
+		// Chinese/Japanese/Korean input.
+		if (e.isComposing || e.keyCode === 229) {
 			return;
 		}
 		const isSubmit = IS_MAC ? e.metaKey : e.ctrlKey;

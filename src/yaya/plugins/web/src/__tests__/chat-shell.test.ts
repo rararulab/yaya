@@ -190,6 +190,32 @@ describe("YayaChat multiline input (issue #115)", () => {
 		expect((captured[0] as { type: string }).type).toBe("user.message");
 	});
 
+	it("does not submit on Cmd+Enter during IME composition", () => {
+		// Pressing Enter during IME composition (Chinese pinyin / Japanese
+		// kana / Korean hangul) commits the candidate — the browser fires
+		// `keydown` with `isComposing: true` (or `keyCode: 229` on older
+		// engines). We must not treat that as a submit, even if modifiers
+		// are present.
+		const shell = makeShell() as unknown as KeyboardInternals;
+		const captured = sends(shell);
+		shell.inputValue = "hello";
+		const ev = new KeyboardEvent("keydown", {
+			key: "Enter",
+			metaKey: true,
+			ctrlKey: true,
+		});
+		Object.defineProperty(ev, "isComposing", { value: true });
+		let prevented = false;
+		Object.defineProperty(ev, "preventDefault", {
+			value: () => {
+				prevented = true;
+			},
+		});
+		shell.onKeyDown(ev);
+		expect(prevented).toBe(false);
+		expect(captured).toHaveLength(0);
+	});
+
 	it("plain Enter does not submit — native newline falls through", () => {
 		const shell = makeShell() as unknown as KeyboardInternals;
 		const captured = sends(shell);

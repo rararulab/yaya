@@ -204,6 +204,38 @@ YAYA_WEB_PORT=7456 yaya serve --port 7456 --no-open
 A follow-up issue will have `serve` pass its port to the adapter via
 config. Until then, check `/api/health` to confirm the actual port.
 
+## Multi-connection fanout integration (#36)
+
+The kernel ships the `SessionContext` / `SessionManager` primitive
+in `src/yaya/kernel/session_context.py`. The web adapter will
+consume it directly — one `SessionManager` per process; each
+WebSocket connection maps to one `Connection` handle.
+
+Forward-compat wire format (finalised by the follow-up PR that
+wires the adapter in):
+
+- **Attach**: client opens a WebSocket, sends
+  `{"op": "attach", "session_id": "<id>", "since_entry": <int|null>}`.
+- **Server ack**: kernel replies with
+  `{"op": "attached", "connection_id": "<uuid>"}`. Client stores
+  the `connection_id` in `sessionStorage` so a tab reload can
+  reattach.
+- **Replay**: server pushes each `session.replay.entry` envelope
+  as `{"op":"event", ...envelope}`, closed by a
+  `session.replay.done` frame.
+- **Live**: server pushes every subsequent event through the same
+  `{"op":"event", ...envelope}` frame.
+- **Heartbeat**: client sends `{"op": "heartbeat"}` every 20 s;
+  the kernel refreshes `last_seen`.
+- **Detach**: client sends `{"op": "detach"}` or simply closes
+  the socket; the adapter calls `SessionManager.detach` either
+  way.
+
+The adapter is NOT modified in this PR — only the kernel
+primitive and CLI validation land here. The follow-up that plumbs
+the WebSocket handler to `SessionManager` reuses the exact shape
+above so no fresh protocol freeze is required.
+
 ## What NOT To Do
 
 - Do NOT special-case the web plugin in kernel code.

@@ -68,6 +68,12 @@ Examples:
   yaya --json session compact default
 """
 
+EXAMPLES_CONNECTIONS = """
+Examples:
+  yaya session connections default
+  yaya --json session connections default
+"""
+
 _stdout = Console()
 
 
@@ -220,6 +226,36 @@ def register(app: typer.Typer) -> None:  # noqa: C901 — four sibling Typer com
             session_id=session_id,
             tokens_before=tokens_before,
             summary=summary,
+        )
+
+    @session_app.command("connections", epilog=EXAMPLES_CONNECTIONS)
+    def session_connections(
+        ctx: typer.Context,
+        session_id: str = typer.Argument(..., help="Session id to inspect."),
+    ) -> None:
+        """List active connections for ``session_id``.
+
+        The CLI runs in a transient process with no live kernel, so
+        this command is deterministic: it reports an empty list with
+        a hint pointing operators at ``yaya serve``. Inside a live
+        kernel, the bundled web adapter consumes
+        :class:`~yaya.kernel.SessionManager` directly and exposes the
+        same data via its own HTTP route — the kernel primitive is
+        shared; the CLI just validates the surface exists.
+        """
+        state: CLIState = ctx.obj
+        # No running kernel in the CLI process → empty snapshot.
+        # Keeps the command honest (no fabricated rows) and preserves
+        # `yaya --json` stability for scripts polling connection
+        # counts via the manager's snapshot shape.
+        emit_ok(
+            state,
+            action="session.connections",
+            session_id=session_id,
+            connections=[],
+            note=(
+                "yaya session connections is a live-kernel query; run `yaya serve` to observe attached tabs / clients."
+            ),
         )
 
     app.add_typer(session_app, name="session")

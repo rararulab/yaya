@@ -688,6 +688,14 @@ never cross-host sync.
    `SessionManager.heartbeat(session_id, connection_id)`. Clients
    silent for more than `heartbeat_timeout_s` (default 60 s) are
    reaped and surface `session.context.detached(reason="timeout")`.
+   The detection latency floor is
+   `[heartbeat_timeout_s, heartbeat_timeout_s + reap_interval_s)`
+   because the reap loop polls every 5 s
+   (`_REAP_INTERVAL_S` in `session_context.py`). Operators who want
+   sub-second timeouts MUST lower **both** `heartbeat_timeout_s`
+   and the reap cadence; tuning only the timeout lands a stale
+   connection in the tail of a 5 s poll regardless of how small the
+   timeout is set.
 6. Normal teardown: the adapter calls
    `SessionManager.detach(session_id, connection_id)`. On kernel
    shutdown, `SessionContext.close` emits

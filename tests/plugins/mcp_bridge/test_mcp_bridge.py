@@ -339,6 +339,41 @@ async def test_unload_closes_every_client(
     assert all(client.close_calls == 1 for client in clients)
 
 
+async def test_on_unload_unregisters_dynamic_tools(
+    tmp_path: Path,
+    captured_bus: tuple[EventBus, list[Event]],
+) -> None:
+    """on_unload drops every dynamically-registered MCP tool from the kernel registry (#90).
+
+    Without the unregister hook a bridge hot-reload would leave stale
+    Tool subclasses pointing at a closed client in the registry —
+    correctness-safe (dispatch would return ToolError) but ugly UX.
+    """
+    bus, _captured = captured_bus
+    descriptor = MCPToolDescriptor(
+        name="echo",
+        description="",
+        input_schema={"type": "object", "properties": {"msg": {"type": "string"}}, "required": ["msg"]},
+    )
+    client = _FakeClient(descriptors=[descriptor])
+    bridge = MCPBridge(
+        retry_delays_s=(0.0,),
+        client_factory=_factory_for(client),
+    )
+    ctx = _make_ctx(
+        tmp_path,
+        bus,
+        config={"servers": {"alpha": {"command": "x"}}},
+    )
+    await bridge.on_load(ctx)
+    assert get_tool("mcp_alpha_echo") is not None
+
+    await bridge.on_unload(ctx)
+    # Tool row is gone — hot-reload leaves no stale registration.
+    assert get_tool("mcp_alpha_echo") is None
+    assert "mcp_alpha_echo" not in registered_tools()
+
+
 # ---------------------------------------------------------------------------
 # Unit tests for inner pieces — exercise edge cases the AC list does not cover.
 # ---------------------------------------------------------------------------

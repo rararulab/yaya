@@ -533,6 +533,66 @@ async def test_serve_wires_compaction_manager_when_auto(
 
 
 @pytest.mark.asyncio
+async def test_serve_warns_when_multiple_llm_providers_loaded(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-provider setup warns with the chosen provider's name (#95 N2)."""
+    from yaya.cli.commands import serve as serve_mod
+    from yaya.kernel import CompactionConfig, KernelConfig
+
+    async def _fake_install(**kwargs):  # type: ignore[no-untyped-def]
+        class _Mgr:
+            async def stop(self) -> None:
+                return None
+
+        return _Mgr()
+
+    monkeypatch.setattr(serve_mod, "install_compaction_manager", _fake_install)
+
+    class _FakeProvider:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            self.model_name = "fake-1"
+            self.thinking_effort = "off"
+
+        async def generate(self, *, system_prompt, tools, history):  # type: ignore[no-untyped-def]
+            raise RuntimeError("unused")
+
+    first = _FakeProvider("first-provider")
+    second = _FakeProvider("second-provider")
+    # Two providers loaded — first one wins, warn names it.
+    monkeypatch.setattr(
+        serve_mod.PluginRegistry,
+        "loaded_plugins",
+        lambda self, category=None: [first, second],
+    )
+
+    cfg = KernelConfig(compaction=CompactionConfig(auto=True))
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=False)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=True,
+            strategy="react",
+            dev=False,
+            shutdown_event=shutdown,
+            kernel_config=cfg,
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    code = await asyncio.wait_for(task, timeout=5.0)
+    assert code == 0
+    captured = capsys.readouterr()
+    # The warn fires and names the selected provider.
+    assert "multiple llm-providers" in captured.err
+    assert "first-provider" in captured.err
+
+
+@pytest.mark.asyncio
 async def test_serve_warns_when_auto_compaction_has_no_provider(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

@@ -27,6 +27,7 @@ from yaya.kernel.tool import (
     mark_legacy_tool,
     register_tool,
     registered_tools,
+    unregister_tool,
 )
 
 # ---------------------------------------------------------------------------
@@ -526,3 +527,41 @@ async def test_dispatch_function_can_be_called_directly(tmp_path: Any) -> None:
 
     assert len(results) == 1
     assert results[0].payload["id"] == "direct"
+
+
+# ---------------------------------------------------------------------------
+# #90 — public unregister_tool hook.
+# ---------------------------------------------------------------------------
+
+
+def test_unregister_tool_removes_registered_entry() -> None:
+    """unregister_tool() drops the class and the registry forgets the name."""
+    register_tool(EchoTool)
+    assert get_tool("echo") is EchoTool
+    assert unregister_tool("echo") is True
+    assert get_tool("echo") is None
+    assert "echo" not in registered_tools()
+
+
+def test_unregister_tool_is_idempotent() -> None:
+    """Unknown names return False; a second call returns False without raising."""
+    # Never-registered name.
+    assert unregister_tool("never-registered") is False
+
+    register_tool(EchoTool)
+    assert unregister_tool("echo") is True
+    # Second removal is a quiet no-op — the contract #90 commits to.
+    assert unregister_tool("echo") is False
+
+
+def test_unregister_tool_allows_reregistration() -> None:
+    """After unregister, register_tool() accepts the same name again.
+
+    Without a working unregister hook the second register_tool() raises
+    ToolAlreadyRegisteredError — this pins the hot-reload contract.
+    """
+    register_tool(EchoTool)
+    assert unregister_tool("echo") is True
+    # Would raise ToolAlreadyRegisteredError if the registry still held it.
+    register_tool(EchoTool)
+    assert get_tool("echo") is EchoTool

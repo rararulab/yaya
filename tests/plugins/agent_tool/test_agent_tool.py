@@ -367,3 +367,33 @@ async def test_registered_after_on_load(tmp_path: Path) -> None:
 
     await _bootstrap(tmp_path)
     assert get_tool("agent") is AgentTool
+
+
+async def test_on_unload_unregisters_agent_tool(tmp_path: Path) -> None:
+    """``on_unload`` drops ``agent`` from the registry and clears _Runtime (#90).
+
+    Without the unregister hook a plugin hot-reload would leave the
+    AgentTool class bound to a closed session/bus — the dispatcher's
+    exception guard catches it, but the UX is worse than a clean
+    ``tool.error(kind="not_found")``.
+    """
+    from yaya.kernel.tool import get_tool, registered_tools
+
+    bus, parent, plugin = await _bootstrap(tmp_path)
+    assert get_tool("agent") is AgentTool
+
+    ctx = KernelContext(
+        bus=bus,
+        logger=logging.getLogger("plugin.agent-tool"),
+        config={},
+        state_dir=tmp_path / "agent",
+        plugin_name=plugin.name,
+        session=parent,
+    )
+    await plugin.on_unload(ctx)
+
+    assert get_tool("agent") is None
+    assert "agent" not in registered_tools()
+    assert _Runtime.session is None
+    assert _Runtime.bus is None
+    assert _Runtime.plugin_ctx is None

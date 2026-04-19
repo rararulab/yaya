@@ -415,6 +415,30 @@ def get_tool(name: str) -> type[Tool] | None:
     return _tool_registry.get(name)
 
 
+def unregister_tool(name: str) -> bool:
+    """Remove ``name`` from the kernel tool registry. Idempotent.
+
+    Call this from a tool plugin's ``on_unload`` to drop the tool
+    classes the plugin added in ``on_load``. Without this hook a plugin
+    hot-reload leaves stale :class:`Tool` subclasses in the registry
+    pointing at closed clients / dead sessions — correctness-safe
+    (the dispatcher's exception guard still translates the crash to
+    ``ToolError(kind="crashed")``) but ugly UX (see #89, #90).
+
+    Args:
+        name: The tool name previously passed to :func:`register_tool`
+            via ``tool_cls.name``.
+
+    Returns:
+        ``True`` if a registration was removed; ``False`` when the
+        name was not present. Idempotent: a second call for the same
+        name returns ``False`` without raising. The legacy marker set
+        populated by :func:`mark_legacy_tool` is NOT touched — legacy
+        plugins own their own teardown via ``on_event`` unsubscribe.
+    """
+    return _tool_registry.pop(name, None) is not None
+
+
 def registered_tools() -> dict[str, type[Tool]]:
     """Return a shallow copy of the live registry (for diagnostics / tests)."""
     return dict(_tool_registry)
@@ -669,4 +693,5 @@ __all__ = [
     "mark_legacy_tool",
     "register_tool",
     "registered_tools",
+    "unregister_tool",
 ]

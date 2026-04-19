@@ -28,7 +28,7 @@ from typing import Any, ClassVar
 
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
-from yaya.kernel.tool import Tool, register_tool
+from yaya.kernel.tool import Tool, register_tool, unregister_tool
 from yaya.plugins.mcp_bridge.client import (
     MCPClient,
     MCPClientError,
@@ -125,22 +125,20 @@ class MCPBridge:
         """No-op — bridge does not subscribe to anything (see :meth:`subscriptions`)."""
 
     async def on_unload(self, ctx: KernelContext) -> None:
-        """Close every live client. Idempotent.
+        """Unregister every tool and close every live client. Idempotent.
 
+        Tools are unregistered BEFORE clients are closed so a concurrent
+        dispatch attempt cannot race with a half-closed client — the
+        registry lookup returns ``None`` (→ ``tool.error(kind=
+        "not_found")``) rather than hitting the closed transport.
         Subprocess teardown follows lesson #31 inside
-        :meth:`MCPClient.close`. Tool classes registered with the
-        kernel registry are intentionally NOT removed here: the kernel
-        registry is process-global with no public unregister hook at
-        0.1, and stale entries are harmless (their ``run`` will return
-        a ``ToolError(kind="crashed")`` once the closed client is hit).
-
-        TODO(#90): once ``yaya.kernel.tool.unregister_tool`` lands,
-        iterate ``record.tool_names`` and unregister before closing
-        the client so hot-reload leaves a clean registry.
+        :meth:`MCPClient.close`.
         """
         records = list(self._servers.values())
         self._servers.clear()
         for record in records:
+            for tool_name in record.tool_names:
+                unregister_tool(tool_name)
             try:
                 await record.client.close()
             except Exception:

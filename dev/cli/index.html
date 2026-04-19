@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#cli-conventions">CLI Conventions</a></li>
-        <li><a href="#command-surface-10-kernel-built-ins-only">Command surface (1.0, kernel built-ins only)</a></li><li><a href="#pattern">Pattern</a></li><li><a href="#yaya-serve-specifics">yaya serve specifics</a></li><li><a href="#yaya-plugin-specifics">yaya plugin specifics</a></li><li><a href="#json-mode-json">JSON mode (--json)</a></li><li><a href="#extending-the-cli-checklist-rarely-used">Extending the CLI — checklist (rarely used)</a></li>
+        <li><a href="#command-surface-10-kernel-built-ins-only">Command surface (1.0, kernel built-ins only)</a></li><li><a href="#pattern">Pattern</a></li><li><a href="#yaya-serve-specifics">yaya serve specifics</a></li><li><a href="#yaya-plugin-specifics">yaya plugin specifics</a></li><li><a href="#yaya-config-specifics-live-kv-store-104">yaya config specifics (live KV store, #104)</a></li><li><a href="#json-mode-json">JSON mode (--json)</a></li><li><a href="#extending-the-cli-checklist-rarely-used">Extending the CLI — checklist (rarely used)</a></li>
     </ul>
 </nav>
 </aside>
@@ -544,6 +544,28 @@ belongs in plugins.</p>
   <a href="../plugin-protocol/#plugin-discovery-and-loading">plugin-protocol.md</a>).</li>
 <li>Removing a bundled plugin is an error — the CLI rejects it with a
   <code>suggestion</code> pointing at <code>yaya plugin disable</code> (reserved for 0.5+).</li>
+</ul>
+<h2 id="yaya-config-specifics-live-kv-store-104"><code>yaya config</code> specifics (live KV store, #104)<a class="headerlink" href="#yaya-config-specifics-live-kv-store-104" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>yaya<span class="w"> </span>config<span class="w"> </span>get<span class="w"> </span>&lt;key&gt;<span class="w">                       </span><span class="c1"># print JSON-encoded value; exit 1 when missing</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>yaya<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>&lt;key&gt;<span class="w"> </span>&lt;value&gt;<span class="w">               </span><span class="c1"># JSON first, raw string fallback</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>yaya<span class="w"> </span>config<span class="w"> </span><span class="nb">unset</span><span class="w"> </span>&lt;key&gt;<span class="w">                     </span><span class="c1"># idempotent; exit 0 either way</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>yaya<span class="w"> </span>config<span class="w"> </span>list<span class="w"> </span><span class="o">[</span>prefix<span class="o">]</span><span class="w"> </span><span class="o">[</span>-v<span class="o">]</span><span class="w">              </span><span class="c1"># keys (or `key = value` with -v)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>yaya<span class="w"> </span>config<span class="w"> </span>list<span class="w"> </span>-v<span class="w"> </span>--show-secrets<span class="w">          </span><span class="c1"># reveal secret-suffixed values</span>
+</code></pre></div>
+<ul>
+<li>Backing store: <code>${XDG_STATE_HOME:-~/.local/state}/yaya/config.db</code> (SQLite).
+  Honours <code>YAYA_STATE_DIR</code> for tests / containers.</li>
+<li>Every <code>set</code> / <code>unset</code> emits <code>config.updated</code> on <code>session_id="kernel"</code>;
+  plugins subscribed to their <code>plugin.&lt;name&gt;.</code> prefix hot-reload
+  (e.g. <code>llm_openai</code> rebuilds its client; <code>strategy_react</code> picks up
+  <code>provider</code> on the next decision).</li>
+<li>Secret redaction: <code>list -v</code> masks values for keys whose last dotted
+  segment is <code>api_key</code>, <code>token</code>, <code>secret</code>, or <code>password</code>. Rendered as
+  <code>****&lt;last4&gt;</code> for strings ≥5 chars, otherwise <code>****</code>. Single-key
+  <code>get</code> never redacts — lookup is an explicit opt-in.</li>
+<li>TOML (<code>config.toml</code>) + env (<code>YAYA_*</code>) remain as <strong>first-run
+  bootstrap</strong> only; the store migrates them into the DB on an empty
+  install and subsequent boots read the DB.</li>
 </ul>
 <h2 id="json-mode-json">JSON mode (<code>--json</code>)<a class="headerlink" href="#json-mode-json" title="Permanent link">&para;</a></h2>
 <ul>

@@ -818,6 +818,36 @@ the handler that triggered the compaction check is still draining it
 </tr>
 </tbody>
 </table>
+<h4 id="live-config-store-kernel-all">Live config store (kernel → all)<a class="headerlink" href="#live-config-store-kernel-all" title="Permanent link">&para;</a></h4>
+<p>The live KV config store (<code>yaya.kernel.config_store</code>) emits one
+<code>config.updated</code> per <code>set</code> / <code>unset</code> / migration write. Every event
+routes on the reserved <code>session_id="kernel"</code> session (same rule as
+<code>approval.*</code> and compaction): the originating session worker may be
+mid-drain when a plugin calls into the config CLI, so the write
+cannot fan out on that session without deadlocking its FIFO.</p>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>config.updated</code></td>
+<td><code>{ key: str, prefix_match_hint: str }</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>prefix_match_hint</code> is the key up to and including the final dot
+(e.g. <code>"plugin.llm_openai."</code>) or the empty string when the key has
+no dots — plugins can early-exit a subscription filter without
+splitting the key themselves. Plugins that need to hot-reload
+typically match <code>key.startswith("plugin.&lt;name&gt;.")</code>:
+<code>llm_openai</code> rebuilds its <code>AsyncOpenAI</code> client on <code>api_key</code> /
+<code>base_url</code> change, <code>strategy_react</code> reads <code>ctx.config["provider"]</code>
+per decision so the next <code>strategy.decide.response</code> reflects a new
+provider without restart.</p>
 <h3 id="extension-namespace">Extension namespace<a class="headerlink" href="#extension-namespace" title="Permanent link">&para;</a></h3>
 <p>Plugins may emit and subscribe to events named <code>x.&lt;plugin&gt;.&lt;kind&gt;</code>.
 The kernel routes these through the same bus but <strong>does not interpret

@@ -462,11 +462,108 @@
 <h2 id="rules">Rules<a class="headerlink" href="#rules" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>No public function/class without a test.</strong> Coverage must not regress on any PR.</li>
-<li><strong>Coverage floor: 88%.</strong> Enforced by <code>fail_under = 88</code> in <code>pyproject.toml</code>.
-  Ratchet policy — every merge to <code>main</code> that raises global coverage by
-  ≥1 point must raise <code>fail_under</code> to <code>(new_value − 0.5)</code> in the same PR.
-  Never lower a floor without a <code>governance</code> issue. Per-module gates
-  (kernel ≥95%, core ≥90%, cli ≥85%) are tracked in #43.</li>
+<li><strong>Global coverage floor: 90%.</strong> Enforced by <code>fail_under = 90</code> in
+  <code>pyproject.toml</code> (applied by <code>pytest-cov</code> against combined line +
+  branch coverage).</li>
+<li><strong>Per-module gates</strong> enforced by <code>scripts/check_coverage.py</code> against
+  the <code>coverage.xml</code> that <code>pytest --cov-report=xml</code> produces.
+  The script runs locally via <code>just test</code> and in CI after the test
+  step on every OS in the matrix, so platform-specific regressions
+  surface at PR time. Current gates (line coverage):</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Prefix</th>
+<th>Gate</th>
+<th>Aspirational target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;global&gt;</code> (line + branch via <code>fail_under</code>)</td>
+<td>90.0%</td>
+<td>rise with reality</td>
+</tr>
+<tr>
+<td><code>src/yaya/kernel/</code></td>
+<td>93.5%</td>
+<td>95%</td>
+</tr>
+<tr>
+<td><code>src/yaya/core/</code></td>
+<td>90.0%</td>
+<td>90%</td>
+</tr>
+<tr>
+<td><code>src/yaya/cli/</code></td>
+<td>85.0%</td>
+<td>85%</td>
+</tr>
+<tr>
+<td><code>src/yaya/plugins/agent_tool/</code></td>
+<td>95.0%</td>
+<td>95%</td>
+</tr>
+<tr>
+<td><code>src/yaya/plugins/llm_echo/</code></td>
+<td>95.0%</td>
+<td>95%</td>
+</tr>
+<tr>
+<td><code>src/yaya/plugins/llm_openai/</code></td>
+<td>79.5%</td>
+<td>85%</td>
+</tr>
+<tr>
+<td><code>src/yaya/plugins/mcp_bridge/</code></td>
+<td>90.0%</td>
+<td>90%</td>
+</tr>
+<tr>
+<td><code>src/yaya/plugins/memory_sqlite/</code></td>
+<td>89.5%</td>
+<td>90%</td>
+</tr>
+<tr>
+<td><code>src/yaya/plugins/strategy_react/</code></td>
+<td>95.0%</td>
+<td>95%</td>
+</tr>
+<tr>
+<td><code>src/yaya/plugins/tool_bash/</code></td>
+<td>95.0%</td>
+<td>95%</td>
+</tr>
+<tr>
+<td><code>src/yaya/plugins/web/</code></td>
+<td>84.0%</td>
+<td>85%</td>
+</tr>
+</tbody>
+</table>
+<p>Gates tagged below their aspirational target track the ratchet
+  convention <em>"reality minus 0.5"</em> — they rise as coverage improves
+  and never drop without a <code>governance</code> issue. The tables in
+  <code>scripts/check_coverage.py</code> are the source of truth; the table here
+  is a mirror for readers who are not reading the script.</p>
+<h3 id="ratchet-policy">Ratchet policy<a class="headerlink" href="#ratchet-policy" title="Permanent link">&para;</a></h3>
+<ol>
+<li>After any merge to <code>main</code> that raises a prefix's coverage above
+   <code>gate + 0.5</code>, bump its gate in <code>scripts/check_coverage.py</code> (and the
+   global <code>fail_under</code> in <code>pyproject.toml</code>) to <code>floor(actual − 0.5)</code>
+   rounded down to the nearest 0.5. Do this in the same PR or an
+   immediate follow-up.</li>
+<li>Gates <strong>never retreat</strong>. Lowering a gate — or relaxing the global
+   floor — requires a dedicated issue labelled <code>governance</code> and owner
+   sign-off.</li>
+<li>If current reality is below an aspirational target (e.g.
+   <code>plugins/web/</code> below 85%), the gate sits at <em>reality minus 0.5</em>;
+   a follow-up issue raises coverage first, then the gate. Never set
+   a gate you cannot meet today.</li>
+<li>The <code>ratchet-&gt;</code> column in <code>check_coverage.py</code>'s output names the
+   value a gate could be raised to right now. Watch for it in PR
+   logs — free ratchet opportunities are ratchet opportunities missed.</li>
 <li><strong>Prefer integration over mocks.</strong> Reach for real objects, <code>tmp_path</code>, and
   recorded fixtures before <code>unittest.mock</code>.</li>
 <li><strong>Tests must fail before they pass.</strong> Write the failing test first, then
@@ -483,7 +580,7 @@
   longer, mark the test <code>@pytest.mark.slow</code> and justify it in the PR body.</li>
 <li><strong>Tests must pass in random order.</strong> <code>pytest-randomly</code> shuffles every run.
   Order-dependent tests are bugs.</li>
-</ul>
+</ol>
 <h2 id="stack">Stack<a class="headerlink" href="#stack" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>pytest</code> + <code>pytest-asyncio</code> (auto mode).</li>

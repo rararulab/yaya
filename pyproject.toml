@@ -39,6 +39,7 @@ llm_openai = "yaya.plugins.llm_openai:plugin"
 llm_echo = "yaya.plugins.llm_echo:plugin"
 tool_bash = "yaya.plugins.tool_bash:plugin"
 mcp_bridge = "yaya.plugins.mcp_bridge:plugin"
+agent_tool = "yaya.plugins.agent_tool:plugin"
 web = "yaya.plugins.web:plugin"
 
 [project.urls]

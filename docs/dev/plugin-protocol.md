@@ -655,6 +655,44 @@ collision-tolerant identifier — not a security primitive — hence
   land on any tape. Those events belong to the control plane; if
   an adapter needs to render them it subscribes to them directly.
 
+## Sub-agents via the `agent` tool (#34)
+
+Multi-agent in yaya is **not** a new plugin category. Spawning a
+sub-agent is done through one bundled `tool` plugin — `agent-tool` —
+that reuses the kernel primitives already in place:
+`Session.fork()` (tape overlay from #32), the running `AgentLoop` on
+the shared event bus, the v1 tool contract with approval runtime.
+
+**Child session id.** The tool generates the child id as
+`<parent>::agent::<uuid8>`. The `::agent::` separator is the depth
+counter: a root session has depth 0, a first-generation sub-agent
+depth 1, and so on. Depth `≥ max_depth` (default 5, overridable via
+`[agent_tool] max_depth` in TOML) refuses the spawn with
+`ToolError(kind="rejected")` before any fork.
+
+**Approval.** `AgentTool.requires_approval = True` is mandatory — the
+user sees one prompt per spawn. Tool calls *within* the sub-agent go
+through the same approval runtime; `approve_for_session` entries
+granted on the parent are visible to the child through the runtime's
+session cache.
+
+**Parent tape isolation.** Child writes land only on the overlay
+store owned by the forked manager; the parent's tape is untouched.
+Operators who want the full child log use `yaya session show
+<child_id>` against the forked manager.
+
+**Events.** Plugin-private extension events, routed on a stable
+bridge session id `_bridge:agent-tool` (lesson #2 — never interleave
+with a conversation FIFO):
+
+- `x.agent.subagent.started(parent_id, child_id, goal, strategy, tools)`
+- `x.agent.subagent.completed(child_id, final_text, steps_used, forbidden_tool_hits)`
+- `x.agent.subagent.failed(child_id, reason)` — `reason ∈ {"timeout", "cancelled"}`
+- `x.agent.allowlist.narrowed(child_id, attempted, allowed)` — one
+  event per run when an allowlist was supplied and a child call fell
+  outside it. At 0.2 this is observational only; hard kernel-side
+  enforcement is future work.
+
 ## Security posture (1.0)
 
 - Plugins run in-process as trusted code. There is no sandbox in 1.0.

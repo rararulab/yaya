@@ -452,6 +452,133 @@ async def test_run_serve_calls_webbrowser_in_executor(
 
 
 @pytest.mark.asyncio
+async def test_serve_wires_compaction_manager_when_auto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``compaction.auto=true`` + a loaded provider wires the manager (#93 P1).
+
+    The manager's install + stop is observed via a lightweight stub so
+    the test does not have to boot a real llm-provider plugin. Without
+    the wiring this test would never observe an ``install`` call.
+    """
+    from yaya.cli.commands import serve as serve_mod
+    from yaya.kernel import CompactionConfig, KernelConfig
+
+    install_calls: list[dict[str, object]] = []
+
+    class _FakeManager:
+        def __init__(self) -> None:
+            self.stopped = False
+
+        async def stop(self) -> None:
+            self.stopped = True
+
+    fake_mgr = _FakeManager()
+
+    async def _fake_install(**kwargs):  # type: ignore[no-untyped-def]
+        install_calls.append(kwargs)
+        return fake_mgr
+
+    monkeypatch.setattr(serve_mod, "install_compaction_manager", _fake_install)
+
+    class _FakeProvider:
+        name = "fake"
+        model_name = "fake-1"
+        thinking_effort = "off"
+
+        async def generate(self, *, system_prompt, tools, history):  # type: ignore[no-untyped-def]
+            raise RuntimeError("unused in this test")
+
+    # Force the provider lookup to return our fake without loading a real plugin.
+    monkeypatch.setattr(
+        serve_mod.PluginRegistry,
+        "loaded_plugins",
+        lambda self, category=None: [_FakeProvider()],
+    )
+
+    cfg = KernelConfig(
+        compaction=CompactionConfig(auto=True, threshold_tokens=10, target_tokens=100),
+    )
+
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=True)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=True,
+            strategy="react",
+            dev=False,
+            shutdown_event=shutdown,
+            kernel_config=cfg,
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    code = await asyncio.wait_for(task, timeout=5.0)
+    assert code == 0
+    assert install_calls, "expected install_compaction_manager to be called"
+    kwargs = install_calls[0]
+    assert kwargs["threshold_tokens"] == 10
+    assert kwargs["target_tokens"] == 100
+    # Compaction events must not be subscribed — the manager's own
+    # emissions must not re-enter the trigger path.
+    kinds = set(kwargs["kinds"])  # type: ignore[arg-type]
+    assert "session.compaction.started" not in kinds
+    assert "session.compaction.completed" not in kinds
+    assert "session.compaction.failed" not in kinds
+    assert "user.message.received" in kinds
+    # Teardown must have stopped the manager.
+    assert fake_mgr.stopped is True
+
+
+@pytest.mark.asyncio
+async def test_serve_warns_when_auto_compaction_has_no_provider(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``compaction.auto=true`` with no llm-provider → warn + skip (lesson #23)."""
+    from yaya.cli.commands import serve as serve_mod
+    from yaya.kernel import CompactionConfig, KernelConfig
+
+    install_calls: list[dict[str, object]] = []
+
+    async def _fake_install(**kwargs):  # type: ignore[no-untyped-def]
+        install_calls.append(kwargs)
+        return None
+
+    monkeypatch.setattr(serve_mod, "install_compaction_manager", _fake_install)
+    monkeypatch.setattr(
+        serve_mod.PluginRegistry,
+        "loaded_plugins",
+        lambda self, category=None: [],
+    )
+
+    cfg = KernelConfig(compaction=CompactionConfig(auto=True))
+
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=False)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=True,
+            strategy="react",
+            dev=False,
+            shutdown_event=shutdown,
+            kernel_config=cfg,
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    code = await asyncio.wait_for(task, timeout=5.0)
+    assert code == 0
+    assert install_calls == [], "install must NOT be called without a provider"
+    captured = capsys.readouterr()
+    assert "no llm-provider plugin" in captured.err
+
+
+@pytest.mark.asyncio
 async def test_serve_resume_stashes_on_config(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

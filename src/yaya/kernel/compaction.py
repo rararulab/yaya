@@ -64,10 +64,12 @@ from yaya.kernel.tape_context import after_last_anchor
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import
     from yaya.kernel.bus import EventBus, Subscription
+    from yaya.kernel.llm import LLMProvider
 
 __all__ = [
     "COMPACTION_ANCHOR_KIND",
     "CompactionManager",
+    "LLMSummarizer",
     "Summarizer",
     "compact_session",
     "estimate_text_tokens",
@@ -153,6 +155,9 @@ def _entry_text(entry: TapeEntry) -> str:
     # binary blobs, overcounts numbers, but stable enough for a threshold.
     try:
         return json.dumps(payload, ensure_ascii=False, default=str)
+    # PEP 758 (py3.12+) tuple-except without parens; ruff format normalises
+    # a parenthesised form back to this under ``target-version = "py314"``
+    # (lesson #16). Both forms catch the same exception set.
     except TypeError, ValueError:
         return str(payload)
 
@@ -213,6 +218,7 @@ async def compact_session(
     *,
     target_tokens: int = 10_000,
     bus: EventBus | None = None,
+    _emit_failure: bool = True,
 ) -> str:
     """Run compaction against ``session`` and append a compaction anchor.
 
@@ -242,6 +248,13 @@ async def compact_session(
             so adapters can render progress without touching the
             originating session's FIFO. ``None`` disables events (unit
             tests that do not need a bus).
+        _emit_failure: Internal toggle. When ``True`` (default), a
+            failed summariser emits a ``session.compaction.failed``
+            event before the exception propagates. The
+            :class:`CompactionManager` retry path flips this to
+            ``False`` so per-attempt failures do not flood adapters;
+            the manager emits a single terminal event itself after
+            the retry budget is exhausted.
 
     Returns:
         The summary string that was persisted on the anchor. Empty
@@ -266,14 +279,15 @@ async def compact_session(
     try:
         summary = await summarizer.summarize(entries, target_tokens)
     except Exception as exc:
-        await _emit(
-            bus,
-            "session.compaction.failed",
-            {
-                "target_session_id": session.session_id,
-                "error": str(exc) or type(exc).__name__,
-            },
-        )
+        if _emit_failure:
+            await _emit(
+                bus,
+                "session.compaction.failed",
+                {
+                    "target_session_id": session.session_id,
+                    "error": str(exc) or type(exc).__name__,
+                },
+            )
         raise
 
     await session.handoff(
@@ -374,7 +388,11 @@ class CompactionManager:
         # deterministic FIFO eviction when we hit _INFLIGHT_CAP.
         self._inflight: OrderedDict[str, asyncio.Task[None]] = OrderedDict()
         self._attempts: OrderedDict[str, int] = OrderedDict()
-        self._disabled: set[str] = set()
+        # Disabled session ids, bounded with the same FIFO policy so a
+        # long-lived ``yaya serve`` with many distinct sessions cannot
+        # leak entries (lesson #6). ``None`` is the unused-value slot —
+        # we only care about membership + insertion order.
+        self._disabled: OrderedDict[str, None] = OrderedDict()
         self._installed = False
 
     async def start(self, kinds: list[str]) -> None:
@@ -423,7 +441,18 @@ class CompactionManager:
         self._track_inflight(session_id, task)
 
     def _track_inflight(self, session_id: str, task: asyncio.Task[None]) -> None:
-        """Record a new in-flight task, evicting the oldest if at cap."""
+        """Record a new in-flight task, evicting the oldest if at cap.
+
+        Trade-off (accepted, #93 P3): when the cap evicts a still-running
+        record, the guard at :meth:`_on_event` no longer sees the
+        session as in-flight and may schedule a second, parallel
+        compaction for it. The only way to hit this is to have
+        :data:`_INFLIGHT_CAP` (1024) distinct sessions with compactions
+        in flight simultaneously — far above expected single-user
+        scale. We document rather than code around it; the alternative
+        (tracking evicted-but-live tasks in a second set) complicates
+        shutdown with no realistic payoff at 0.1.
+        """
         if len(self._inflight) >= _INFLIGHT_CAP:
             # FIFO eviction: drop the oldest record (lesson #6). The task
             # is NOT cancelled — it continues in the background. We just
@@ -438,9 +467,17 @@ class CompactionManager:
         task.add_done_callback(_discard)
 
     async def _run_with_retry(self, session: Session) -> None:
-        """Run compaction with bounded exponential backoff."""
+        """Run compaction with bounded exponential backoff.
+
+        Per-attempt failures are suppressed via ``_emit_failure=False``;
+        after the retry budget is exhausted a single terminal
+        ``session.compaction.failed`` event is emitted carrying the
+        ``attempts`` count. Adapters see one failure per retry chain,
+        not one per attempt (#93 P2).
+        """
         sid = session.session_id
         attempt = self._attempts.get(sid, 0)
+        last_error: str | None = None
         while attempt < _MAX_RETRIES:
             attempt += 1
             self._attempts[sid] = attempt
@@ -450,10 +487,12 @@ class CompactionManager:
                     self._summarizer,
                     target_tokens=self._target_tokens,
                     bus=self._bus,
+                    _emit_failure=False,
                 )
             except asyncio.CancelledError:  # pragma: no cover - shutdown path
                 raise
             except Exception as exc:
+                last_error = str(exc) or type(exc).__name__
                 _logger.warning(
                     "compaction attempt %d for session %r failed: %s",
                     attempt,
@@ -461,7 +500,20 @@ class CompactionManager:
                     exc,
                 )
                 if attempt >= _MAX_RETRIES:
-                    self._disabled.add(sid)
+                    # Terminal: disable the session, purge its attempts
+                    # row (bounded: matches _inflight cap policy), and
+                    # emit the single terminal failure event carrying
+                    # the attempts count.
+                    self._mark_disabled(sid)
+                    await _emit(
+                        self._bus,
+                        "session.compaction.failed",
+                        {
+                            "target_session_id": sid,
+                            "error": last_error,
+                            "attempts": attempt,
+                        },
+                    )
                     return
                 # Exponential backoff: 0.1s, 0.2s, 0.4s, ...
                 await asyncio.sleep(0.1 * (2 ** (attempt - 1)))
@@ -470,6 +522,103 @@ class CompactionManager:
                 # threshold breach starts fresh.
                 self._attempts.pop(sid, None)
                 return
+
+    def _mark_disabled(self, session_id: str) -> None:
+        """Add ``session_id`` to the disabled set with FIFO eviction.
+
+        Also purges the per-session attempts row — once a session is
+        pinned as disabled, further triggers short-circuit before the
+        retry loop runs, so the counter would otherwise leak forever.
+        """
+        if len(self._disabled) >= _INFLIGHT_CAP and session_id not in self._disabled:
+            # Drop the oldest disabled id so the map stays bounded.
+            self._disabled.popitem(last=False)
+        self._disabled[session_id] = None
+        # Disabled sessions never re-enter the retry loop; the attempts
+        # row is dead state that must not leak across the lifetime of
+        # the manager.
+        self._attempts.pop(session_id, None)
+
+
+class LLMSummarizer:
+    """Default :class:`Summarizer` that delegates to an :class:`~yaya.kernel.llm.LLMProvider`.
+
+    Formats the raw tape entries into a ``user`` message and asks the
+    provider to produce a concise summary bounded by ``target_tokens``.
+    The provider's streamed content parts are joined into a single
+    string — terminal tool-call parts are ignored because compaction
+    should not trigger side effects.
+
+    This is the kernel's bridge between the abstract :class:`Summarizer`
+    Protocol and the v1 ``llm-provider`` contract (#93 P1). Lifting the
+    provider lookup into the boot path (``yaya serve``) keeps the
+    manager itself provider-agnostic — tests still wire a deterministic
+    fake.
+    """
+
+    def __init__(
+        self,
+        provider: LLMProvider,
+        *,
+        system_prompt: str | None = None,
+    ) -> None:
+        """Bind the summariser to a provider.
+
+        Args:
+            provider: Any object implementing the
+                :class:`~yaya.kernel.llm.LLMProvider` Protocol.
+            system_prompt: Override for the default system prompt. The
+                default asks for a compact, faithful summary within the
+                ``target_tokens`` budget passed to :meth:`summarize`.
+        """
+        self._provider = provider
+        self._system_prompt = system_prompt or _DEFAULT_SUMMARY_SYSTEM_PROMPT
+
+    async def summarize(
+        self,
+        entries: list[TapeEntry],
+        target_tokens: int,
+    ) -> str:
+        """Produce a text summary by streaming the provider's response.
+
+        Args:
+            entries: Tape entries since the previous anchor.
+            target_tokens: Soft ceiling embedded in the user prompt.
+
+        Returns:
+            The joined content from the provider's stream. Tool-call
+            chunks are skipped — compaction must be side-effect-free.
+        """
+        rendered = "\n\n".join(_entry_text(e) for e in entries)
+        prompt = (
+            f"Summarize the conversation below in at most ~{target_tokens} tokens. "
+            "Preserve user intent, key decisions, outstanding tasks, and tool "
+            "outputs that affect later turns. Drop pleasantries and redundant "
+            "context.\n\n"
+            f"---\n{rendered}\n---"
+        )
+        history: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+        stream = await self._provider.generate(
+            system_prompt=self._system_prompt,
+            tools=[],
+            history=history,
+        )
+        chunks: list[str] = []
+        async for part in stream:
+            # ContentPart carries ``text``; ToolCallPart is ignored by
+            # design (see class docstring).
+            text = getattr(part, "text", None)
+            if isinstance(text, str) and text:
+                chunks.append(text)
+        return "".join(chunks)
+
+
+_DEFAULT_SUMMARY_SYSTEM_PROMPT = (
+    "You are a compaction summarizer. Produce a concise, faithful summary "
+    "of the supplied conversation fragment. Be terse; never add facts that "
+    "are not present; keep tool results verbatim when they affect later "
+    "turns."
+)
 
 
 async def install_compaction_manager(

@@ -25,13 +25,28 @@ import os
 import signal
 import socket
 import webbrowser
+from pathlib import Path
 
 import click
 import typer
 
 from yaya.cli import CLIState
 from yaya.cli.output import emit_error, emit_ok, warn
-from yaya.kernel import AgentLoop, EventBus, KernelConfig, PluginRegistry, load_config
+from yaya.kernel import (
+    PUBLIC_EVENT_KINDS,
+    AgentLoop,
+    Category,
+    CompactionManager,
+    EventBus,
+    KernelConfig,
+    LLMProvider,
+    LLMSummarizer,
+    MemoryTapeStore,
+    PluginRegistry,
+    SessionStore,
+    install_compaction_manager,
+    load_config,
+)
 
 EXAMPLES = """
 Examples:
@@ -88,6 +103,90 @@ def _has_web_adapter(snapshot: list[dict[str, str]]) -> bool:
     return any(
         row.get("category") == "adapter" and row.get("name", "").startswith("web") and row.get("status") == "loaded"
         for row in snapshot
+    )
+
+
+def _make_session_store(cfg: KernelConfig) -> SessionStore:
+    """Build the :class:`SessionStore` for ``yaya serve``.
+
+    Mirrors :func:`yaya.cli.commands.session._make_store` so the boot
+    path and the ``yaya session ...`` subcommands agree on the backing
+    store selection (see lesson #6 on parallel store construction).
+    """
+    if cfg.session.store == "memory":
+        return SessionStore(store=MemoryTapeStore())
+    if cfg.session.dir is not None:
+        return SessionStore(tapes_dir=cfg.session.dir)
+    return SessionStore()
+
+
+# Kinds the compaction manager subscribes to — the closed public catalog
+# minus the compaction events themselves (an event emitted by the
+# manager must not trigger another compaction pass) and the kernel
+# control-plane kinds which route on ``session_id="kernel"``.
+_COMPACTION_SKIP_KINDS: frozenset[str] = frozenset({
+    "session.compaction.started",
+    "session.compaction.completed",
+    "session.compaction.failed",
+    "kernel.ready",
+    "kernel.shutdown",
+    "kernel.error",
+    "plugin.loaded",
+    "plugin.reloaded",
+    "plugin.removed",
+    "plugin.error",
+})
+
+
+async def _maybe_install_compaction(
+    state: CLIState,
+    *,
+    cfg: KernelConfig,
+    bus: EventBus,
+    registry: PluginRegistry,
+    store: SessionStore,
+    workspace: Path,
+) -> CompactionManager | None:
+    """Wire auto-compaction when ``cfg.compaction.auto`` is set.
+
+    Resolves a loaded :class:`~yaya.kernel.llm.LLMProvider` plugin via
+    :meth:`PluginRegistry.loaded_plugins`; when none is available we
+    warn and return ``None`` rather than silently disabling the
+    feature (lesson #23 — an accepted knob must capture state or warn).
+
+    Returns:
+        The running :class:`CompactionManager` on success; ``None`` when
+        auto-compaction is off or no provider is available.
+    """
+    if not cfg.compaction.auto:
+        return None
+    providers = registry.loaded_plugins(Category.LLM_PROVIDER)
+    # The first loaded provider wins — this is the same rule the agent
+    # loop will apply once multi-provider routing ships. Callers wanting
+    # a specific provider pin it via ``plugins_disabled`` in config.
+    provider: LLMProvider | None = None
+    for plugin in providers:
+        if isinstance(plugin, LLMProvider):
+            provider = plugin
+            break
+    if provider is None:
+        warn(
+            "[yellow]compaction.auto=true but no llm-provider plugin is loaded;[/] "
+            "auto-compaction is disabled for this run. Install a provider "
+            "plugin (e.g. yaya-llm-openai) or set compaction.auto=false."
+        )
+        del state  # unused; parameter preserved for future structured emit
+        return None
+    summarizer = LLMSummarizer(provider)
+    kinds = sorted(k for k in PUBLIC_EVENT_KINDS if k not in _COMPACTION_SKIP_KINDS)
+    return await install_compaction_manager(
+        bus=bus,
+        store=store,
+        summarizer=summarizer,
+        workspace=workspace,
+        kinds=kinds,
+        threshold_tokens=cfg.compaction.threshold_tokens,
+        target_tokens=cfg.compaction.target_tokens,
     )
 
 
@@ -196,6 +295,8 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
     bus = EventBus()
     registry = PluginRegistry(bus, kernel_config=cfg)
     loop = AgentLoop(bus)
+    session_store: SessionStore | None = None
+    compaction_manager: CompactionManager | None = None
     registry_started = False
     loop_started = False
 
@@ -205,6 +306,20 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
             registry_started = True
             await loop.start()
             loop_started = True
+            # Compaction wiring runs AFTER registry.start so the
+            # llm-provider lookup has a non-empty load set. Failures
+            # here are non-fatal — the warn/skip path preserves kernel
+            # uptime (lesson #29: broken subsystem taints only itself).
+            if cfg.compaction.auto:
+                session_store = _make_session_store(cfg)
+                compaction_manager = await _maybe_install_compaction(
+                    state,
+                    cfg=cfg,
+                    bus=bus,
+                    registry=registry,
+                    store=session_store,
+                    workspace=Path.cwd(),
+                )
         except Exception as exc:
             emit_error(
                 state,
@@ -258,6 +373,14 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
         with contextlib.suppress(KeyboardInterrupt, asyncio.CancelledError):
             await event.wait()
     finally:
+        # Stop compaction before the registry so in-flight compactions
+        # cancel cleanly against a still-live llm-provider (lesson #29).
+        if compaction_manager is not None:
+            with contextlib.suppress(Exception):
+                await compaction_manager.stop()
+        if session_store is not None:
+            with contextlib.suppress(Exception):
+                await session_store.close()
         if loop_started:
             await loop.stop()
         if registry_started:

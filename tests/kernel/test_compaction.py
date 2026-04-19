@@ -415,3 +415,270 @@ async def test_session_compact_helper_returns_string(tmp_path: Path) -> None:
         assert out
     finally:
         await store.close()
+
+
+# ---------------------------------------------------------------------------
+# #93 P2 — retry / backoff / disable coverage.
+# ---------------------------------------------------------------------------
+
+
+async def _drain(bus: EventBus) -> None:
+    """Yield enough to let the bus deliver pending events to subscribers."""
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+
+async def test_manager_retries_three_times_then_disables(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Summariser raises every attempt → 3 attempts, single terminal failed event."""
+    bus = EventBus()
+    store = SessionStore(store=MemoryTapeStore())
+    # Kill the retry backoff so the test runs fast.
+    _real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _s=0: _real_sleep(0))
+
+    failed_events: list[Any] = []
+
+    async def _sink(ev: Any) -> None:
+        failed_events.append(ev)
+
+    attempts = {"n": 0}
+
+    class _AlwaysFailing:
+        async def summarize(self, entries: list[Any], target_tokens: int) -> str:
+            attempts["n"] += 1
+            raise RuntimeError("nope")
+
+    try:
+        bus.subscribe("session.compaction.failed", _sink, source="test")
+        session = await store.open(tmp_path, "retries")
+        for _ in range(6):
+            await session.append_message("user", "x" * 50)
+
+        mgr = await install_compaction_manager(
+            bus=bus,
+            store=store,
+            summarizer=_AlwaysFailing(),
+            workspace=tmp_path,
+            kinds=["user.message.received"],
+            threshold_tokens=10,
+            target_tokens=100,
+        )
+        await bus.publish(
+            new_event(
+                "user.message.received",
+                {"text": "go"},
+                session_id="retries",
+                source="test",
+            ),
+        )
+        # Wait for the retry loop to exhaust.
+        for _ in range(50):
+            if attempts["n"] >= 3:
+                break
+            await asyncio.sleep(0)
+        # Let the terminal .failed event propagate to the subscriber.
+        await bus.close()
+
+        assert attempts["n"] == 3, "expected exactly 3 summariser attempts"
+        assert len(failed_events) == 1, f"expected a single terminal failed event, got {len(failed_events)}"
+        payload = failed_events[0].payload
+        assert payload["attempts"] == 3
+        assert payload["target_session_id"] == "retries"
+        assert "nope" in payload["error"]
+        assert "retries" in mgr._disabled
+        assert "retries" not in mgr._attempts
+        await mgr.stop()
+    finally:
+        await store.close()
+
+
+async def test_manager_skips_disabled_session_on_next_trigger(
+    tmp_path: Path,
+) -> None:
+    """A session present in _disabled short-circuits: no summariser call, no events."""
+    bus = EventBus()
+    store = SessionStore(store=MemoryTapeStore())
+    summ = _FakeSummarizer()
+    seen: list[Any] = []
+
+    async def _sink(ev: Any) -> None:
+        seen.append(ev)
+
+    try:
+        bus.subscribe("session.compaction.started", _sink, source="test")
+        bus.subscribe("session.compaction.completed", _sink, source="test")
+        bus.subscribe("session.compaction.failed", _sink, source="test")
+
+        session = await store.open(tmp_path, "dead")
+        for _ in range(5):
+            await session.append_message("user", "z" * 60)
+
+        mgr = await install_compaction_manager(
+            bus=bus,
+            store=store,
+            summarizer=summ,
+            workspace=tmp_path,
+            kinds=["user.message.received"],
+            threshold_tokens=10,
+            target_tokens=100,
+        )
+        # Pre-populate the disabled set so the guard short-circuits.
+        mgr._mark_disabled("dead")
+
+        await bus.publish(
+            new_event(
+                "user.message.received",
+                {"text": "trigger"},
+                session_id="dead",
+                source="test",
+            ),
+        )
+        await _drain(bus)
+        await mgr.stop()
+        await bus.close()
+
+        assert summ.calls == [], "disabled session must not invoke the summariser"
+        assert seen == [], "disabled session must not emit compaction events"
+    finally:
+        await store.close()
+
+
+async def test_disabled_set_evicts_oldest_at_cap(tmp_path: Path) -> None:
+    """_disabled is bounded by _INFLIGHT_CAP via FIFO eviction (lesson #6)."""
+    from yaya.kernel.compaction import _INFLIGHT_CAP
+
+    bus = EventBus()
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        mgr = await install_compaction_manager(
+            bus=bus,
+            store=store,
+            summarizer=_FakeSummarizer(),
+            workspace=tmp_path,
+            kinds=["user.message.received"],
+            threshold_tokens=1_000_000,
+            target_tokens=100,
+        )
+        # Fill the disabled map to capacity.
+        for i in range(_INFLIGHT_CAP):
+            mgr._mark_disabled(f"s-{i}")
+        assert len(mgr._disabled) == _INFLIGHT_CAP
+        assert "s-0" in mgr._disabled
+        # One over the cap evicts the oldest entry (FIFO).
+        mgr._mark_disabled("s-overflow")
+        assert len(mgr._disabled) == _INFLIGHT_CAP
+        assert "s-0" not in mgr._disabled
+        assert "s-overflow" in mgr._disabled
+        await mgr.stop()
+    finally:
+        await bus.close()
+        await store.close()
+
+
+async def test_mark_disabled_purges_attempts_row(tmp_path: Path) -> None:
+    """Adding a session to _disabled drops its _attempts counter (lesson #6)."""
+    bus = EventBus()
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        mgr = await install_compaction_manager(
+            bus=bus,
+            store=store,
+            summarizer=_FakeSummarizer(),
+            workspace=tmp_path,
+            kinds=["user.message.received"],
+            threshold_tokens=1_000_000,
+            target_tokens=100,
+        )
+        mgr._attempts["live"] = 2
+        mgr._mark_disabled("live")
+        assert "live" not in mgr._attempts
+        assert "live" in mgr._disabled
+        await mgr.stop()
+    finally:
+        await bus.close()
+        await store.close()
+
+
+async def test_manager_emits_single_failed_after_retry_exhaustion_with_attempts_three(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end: three attempts → exactly one terminal .failed(attempts=3)."""
+    _real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _s=0: _real_sleep(0))
+    bus = EventBus()
+    store = SessionStore(store=MemoryTapeStore())
+    failed: list[Any] = []
+
+    async def _sink(ev: Any) -> None:
+        failed.append(ev)
+
+    try:
+        bus.subscribe("session.compaction.failed", _sink, source="test")
+        session = await store.open(tmp_path, "triple")
+        for _ in range(6):
+            await session.append_message("user", "x" * 50)
+        mgr = await install_compaction_manager(
+            bus=bus,
+            store=store,
+            summarizer=_ExplodingSummarizer(),
+            workspace=tmp_path,
+            kinds=["user.message.received"],
+            threshold_tokens=10,
+            target_tokens=100,
+        )
+        await bus.publish(
+            new_event(
+                "user.message.received",
+                {"text": "boom"},
+                session_id="triple",
+                source="test",
+            ),
+        )
+        # Give the retry loop enough scheduling turns.
+        for _ in range(100):
+            if failed:
+                break
+            await asyncio.sleep(0)
+        await bus.close()
+        await mgr.stop()
+        assert len(failed) == 1
+        assert failed[0].payload.get("attempts") == 3
+    finally:
+        await store.close()
+
+
+# ---------------------------------------------------------------------------
+# #93 P3 — after_last_anchor regression test.
+# ---------------------------------------------------------------------------
+
+
+async def test_after_last_anchor_filters_handoff_events(tmp_path: Path) -> None:
+    """Synthetic handoff events republic emits after an anchor are stripped.
+
+    Without this filter, auto-compaction would re-summarise its own
+    marker on every pass (#29 root cause). The fix lives in
+    :func:`yaya.kernel.tape_context.after_last_anchor`; this test
+    pins it.
+    """
+    from yaya.kernel import after_last_anchor
+
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await store.open(tmp_path, "anchor-filter")
+        # Append a compaction-style anchor and then a user message.
+        await session.handoff("compaction", state={"kind": "compaction", "summary": "s"})
+        await session.append_message("user", "after")
+        entries = await after_last_anchor(session.manager, session.tape_name)
+        # The republic handoff(kind=event, name=handoff) must be filtered
+        # out; only the user message survives.
+        kinds = [(e.kind, e.payload.get("name")) for e in entries]
+        assert ("event", "handoff") not in kinds
+        user_messages = [e for e in entries if e.kind == "message"]
+        assert len(user_messages) == 1
+        assert user_messages[0].payload.get("content") == "after"
+    finally:
+        await store.close()

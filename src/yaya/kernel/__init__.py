@@ -23,6 +23,7 @@ from yaya.kernel.bus import DEFAULT_HANDLER_TIMEOUT_S, EventBus, EventHandler, S
 from yaya.kernel.compaction import (
     COMPACTION_ANCHOR_KIND,
     CompactionManager,
+    LLMSummarizer,
     Summarizer,
     compact_session,
     estimate_text_tokens,
@@ -134,6 +135,7 @@ __all__ = [
     "KernelContext",
     "KernelError",
     "LLMProvider",
+    "LLMSummarizer",
     "LoopConfig",
     "MarkdownBlock",
     "MemoryTapeStore",

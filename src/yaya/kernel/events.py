@@ -634,14 +634,27 @@ class SessionCompactionCompletedPayload(TypedDict):
 class SessionCompactionFailedPayload(TypedDict):
     """``session.compaction.failed`` — the summariser raised.
 
+    Emitted at most once per retry chain by the
+    :class:`~yaya.kernel.compaction.CompactionManager`: per-attempt
+    failures are suppressed internally and a single terminal event is
+    published after the final attempt exhausts the retry budget. Direct
+    (non-manager) callers of
+    :func:`~yaya.kernel.compaction.compact_session` still get one event
+    per failed call, with ``attempts`` absent — the ``NotRequired``
+    shape makes both flows representable without a separate kind.
+
     Fields:
         target_session_id: Logical id of the session that failed.
         error: ``str(exc)`` (or the exception class name when the
             message is empty).
+        attempts: Total attempts consumed by the retry chain. Present
+            only on the manager's terminal emission; absent on
+            single-shot :func:`compact_session` failures.
     """
 
     target_session_id: str
     error: str
+    attempts: NotRequired[int]
 
 
 class KernelErrorPayload(TypedDict):

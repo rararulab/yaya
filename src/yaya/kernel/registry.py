@@ -339,6 +339,35 @@ class PluginRegistry:
             })
         return rows
 
+    def loaded_plugins(self, category: Category | None = None) -> list[Plugin]:
+        """Return live plugin instances, optionally filtered by ``category``.
+
+        Unlike :meth:`snapshot` (which returns string rows for UI /
+        JSON rendering), this surface exposes the concrete ``Plugin``
+        objects so kernel-side subsystems can introspect them — e.g.
+        the ``yaya serve`` boot path needs a live
+        :class:`~yaya.kernel.llm.LLMProvider` to wire the compaction
+        manager (#93). Only plugins currently in
+        :data:`PluginStatus.LOADED` are returned, in load order.
+
+        Args:
+            category: When set, restrict to this category; when
+                ``None``, return every loaded plugin.
+
+        Returns:
+            A list of :class:`~yaya.kernel.plugin.Plugin` instances,
+            empty when no plugin matches.
+        """
+        out: list[Plugin] = []
+        for name in self._load_order:
+            record = self._records.get(name)
+            if record is None or record.status is not PluginStatus.LOADED:
+                continue
+            if category is not None and record.plugin.category is not category:
+                continue
+            out.append(record.plugin)
+        return out
+
     # -- install / remove -------------------------------------------------------
 
     async def install(self, source: str, *, editable: bool = False) -> str:

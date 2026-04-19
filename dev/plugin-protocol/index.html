@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#plugin-protocol-v0-10">Plugin Protocol (v0 → 1.0)</a></li>
-        <li><a href="#plugin-categories-closed-set">Plugin categories (closed set)</a></li><li><a href="#event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)</a></li><li><a href="#plugin-discovery-and-loading">Plugin discovery and loading</a></li><li><a href="#plugin-abi">Plugin ABI</a></li><li><a href="#agent-loop-kernel-owned">Agent loop (kernel-owned)</a></li><li><a href="#plugin-failure-model">Plugin failure model</a></li><li><a href="#sessions-and-tape">Sessions and tape</a></li><li><a href="#sub-agents-via-the-agent-tool-34">Sub-agents via the agent tool (#34)</a></li><li><a href="#security-posture-10">Security posture (1.0)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#plugin-categories-closed-set">Plugin categories (closed set)</a></li><li><a href="#event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)</a></li><li><a href="#plugin-discovery-and-loading">Plugin discovery and loading</a></li><li><a href="#plugin-abi">Plugin ABI</a></li><li><a href="#agent-loop-kernel-owned">Agent loop (kernel-owned)</a></li><li><a href="#plugin-failure-model">Plugin failure model</a></li><li><a href="#sessions-and-tape">Sessions and tape</a></li><li><a href="#multi-connection-fanout-36">Multi-connection fanout (#36)</a></li><li><a href="#sub-agents-via-the-agent-tool-34">Sub-agents via the agent tool (#34)</a></li><li><a href="#security-posture-10">Security posture (1.0)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -1358,6 +1358,99 @@ collision-tolerant identifier — not a security primitive — hence
   land on any tape. Those events belong to the control plane; if
   an adapter needs to render them it subscribes to them directly.</li>
 </ul>
+<h2 id="multi-connection-fanout-36">Multi-connection fanout (#36)<a class="headerlink" href="#multi-connection-fanout-36" title="Permanent link">&para;</a></h2>
+<p>A <code>Session</code> (the tape) is durable; a <code>SessionContext</code> is the
+runtime overlay that lets <strong>multiple connections</strong> — two browser
+tabs, web + TUI, phone on the LAN behind the user's own reverse
+proxy — attach to the same session and observe a consistent event
+stream. GOAL.md caps scope at single-process local-first through
+1.0; "multi-connection" means many clients in one yaya process,
+never cross-host sync.</p>
+<h3 id="connection-lifecycle">Connection lifecycle<a class="headerlink" href="#connection-lifecycle" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Adapter receives a client connection and calls
+   <code>SessionManager.attach(session_id, send_cb, adapter_id=..., since_entry=...)</code>.</li>
+<li>The manager lazy-creates a <code>SessionContext</code> (backed by the
+   matching <code>Session</code>) and appends a <code>Connection</code> handle with a
+   fresh uuid4 hex id, heartbeat timestamp, and adapter label.</li>
+<li>When <code>since_entry</code> is set, the context holds a per-connection
+   <code>asyncio.Lock</code> and replays every tape entry whose <code>id</code> is
+   strictly greater than <code>since_entry</code> as a <code>session.replay.entry</code>
+   event. A terminating <code>session.replay.done</code> closes the replay.</li>
+<li>After replay, live bus events tagged with the session id fan
+   out to every attached connection via their <code>send_cb</code>. Send
+   failures translate to a quiet <code>detach(reason="send_failed")</code>;
+   the bus / surviving connections are unaffected.</li>
+<li>Adapters keep the connection alive with
+   <code>SessionManager.heartbeat(session_id, connection_id)</code>. Clients
+   silent for more than <code>heartbeat_timeout_s</code> (default 60 s) are
+   reaped and surface <code>session.context.detached(reason="timeout")</code>.</li>
+<li>Normal teardown: the adapter calls
+   <code>SessionManager.detach(session_id, connection_id)</code>. On kernel
+   shutdown, <code>SessionContext.close</code> emits
+   <code>session.context.detached(reason="shutdown")</code> for every
+   remaining connection before clearing the registry.</li>
+</ol>
+<h3 id="replay-protocol">Replay protocol<a class="headerlink" href="#replay-protocol" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Every tape entry has a monotonic <code>id</code>
+  (<code>republic.TapeEntry.id</code>). The client persists the highest <code>id</code>
+  it has rendered.</li>
+<li>On reconnect, the adapter calls
+  <code>attach(..., since_entry=last_id)</code>. The context queries
+  <code>Session.entries()</code>, filters to <code>id &gt; since_entry</code>, wraps each
+  survivor in a <code>session.replay.entry</code> envelope, and pushes them
+  in order. A final <code>session.replay.done</code> event marks catch-up
+  complete.</li>
+<li>Live events arriving during replay buffer behind the
+  per-connection lock so nothing is dropped or duplicated — the
+  lock is released synchronously when <code>session.replay.done</code> is
+  flushed.</li>
+<li>Connections that joined at the start of time use
+  <code>since_entry=0</code> (entry ids start at 1) to receive the full
+  tape; callers cold-starting without replay pass <code>None</code>.</li>
+</ul>
+<h3 id="lifecycle-event-payloads">Lifecycle event payloads<a class="headerlink" href="#lifecycle-event-payloads" title="Permanent link">&para;</a></h3>
+<p>Every <code>session.context.*</code> / <code>session.replay.*</code> envelope rides
+<code>session_id="kernel"</code> (lesson #2) with <code>source="kernel-session-context"</code>:</p>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session.context.attached</code></td>
+<td><code>{session_id, connection_id, adapter_id}</code></td>
+</tr>
+<tr>
+<td><code>session.context.detached</code></td>
+<td><code>{session_id, connection_id, reason}</code> with <code>reason ∈ {"client_close","timeout","shutdown","send_failed"}</code></td>
+</tr>
+<tr>
+<td><code>session.context.evicted</code></td>
+<td><code>{session_id, reason}</code> — reserved for idle-context eviction; the background scheduler lands with the web adapter</td>
+</tr>
+<tr>
+<td><code>session.replay.entry</code></td>
+<td><code>{session_id, entry_id, kind, payload}</code></td>
+</tr>
+<tr>
+<td><code>session.replay.done</code></td>
+<td><code>{session_id, connection_id, replayed}</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="adapter-side-wire-format">Adapter-side wire format<a class="headerlink" href="#adapter-side-wire-format" title="Permanent link">&para;</a></h3>
+<p>The bundled web adapter serialises each event envelope to JSON
+over its WebSocket transport using the <code>{id, kind, session_id,
+ts, source, payload}</code> shape. The <code>connection_id</code> is returned in
+the WebSocket's handshake reply so the client can persist it and
+send it back on reconnect alongside <code>since_entry=&lt;last_id&gt;</code>. See
+<code>docs/dev/web-ui.md</code> for the concrete WS schema (the web adapter
+integration lands in a follow-up that consumes this primitive).</p>
 <h2 id="sub-agents-via-the-agent-tool-34">Sub-agents via the <code>agent</code> tool (#34)<a class="headerlink" href="#sub-agents-via-the-agent-tool-34" title="Permanent link">&para;</a></h2>
 <p>Multi-agent in yaya is <strong>not</strong> a new plugin category. Spawning a
 sub-agent is done through one bundled <code>tool</code> plugin — <code>agent-tool</code> —

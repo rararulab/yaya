@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#web-adapter-plugin">Web Adapter Plugin</a></li>
-        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -682,6 +682,35 @@ auto). If you want them aligned, set the env var:</p>
 </code></pre></div>
 <p>A follow-up issue will have <code>serve</code> pass its port to the adapter via
 config. Until then, check <code>/api/health</code> to confirm the actual port.</p>
+<h2 id="multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)<a class="headerlink" href="#multi-connection-fanout-integration-36" title="Permanent link">&para;</a></h2>
+<p>The kernel ships the <code>SessionContext</code> / <code>SessionManager</code> primitive
+in <code>src/yaya/kernel/session_context.py</code>. The web adapter will
+consume it directly — one <code>SessionManager</code> per process; each
+WebSocket connection maps to one <code>Connection</code> handle.</p>
+<p>Forward-compat wire format (finalised by the follow-up PR that
+wires the adapter in):</p>
+<ul>
+<li><strong>Attach</strong>: client opens a WebSocket, sends
+  <code>{"op": "attach", "session_id": "&lt;id&gt;", "since_entry": &lt;int|null&gt;}</code>.</li>
+<li><strong>Server ack</strong>: kernel replies with
+  <code>{"op": "attached", "connection_id": "&lt;uuid&gt;"}</code>. Client stores
+  the <code>connection_id</code> in <code>sessionStorage</code> so a tab reload can
+  reattach.</li>
+<li><strong>Replay</strong>: server pushes each <code>session.replay.entry</code> envelope
+  as <code>{"op":"event", ...envelope}</code>, closed by a
+  <code>session.replay.done</code> frame.</li>
+<li><strong>Live</strong>: server pushes every subsequent event through the same
+  <code>{"op":"event", ...envelope}</code> frame.</li>
+<li><strong>Heartbeat</strong>: client sends <code>{"op": "heartbeat"}</code> every 20 s;
+  the kernel refreshes <code>last_seen</code>.</li>
+<li><strong>Detach</strong>: client sends <code>{"op": "detach"}</code> or simply closes
+  the socket; the adapter calls <code>SessionManager.detach</code> either
+  way.</li>
+</ul>
+<p>The adapter is NOT modified in this PR — only the kernel
+primitive and CLI validation land here. The follow-up that plumbs
+the WebSocket handler to <code>SessionManager</code> reuses the exact shape
+above so no fresh protocol freeze is required.</p>
 <h2 id="what-not-to-do">What NOT To Do<a class="headerlink" href="#what-not-to-do" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Do NOT special-case the web plugin in kernel code.</li>

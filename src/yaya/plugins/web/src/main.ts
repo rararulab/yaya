@@ -1,10 +1,11 @@
 /**
- * Entry point — just pulls in the chat shell and styles.
+ * Entry point — registers the top-level `<yaya-app>` custom element.
  *
- * Everything else happens via `<yaya-chat>` declared in index.html;
- * side-effectful imports in `chat-shell.ts` register the pi-web-ui
- * custom elements the shell depends on.
+ * The app shell owns routing (hash-based between /chat and /settings)
+ * and sidebar state. The chat shell and settings view register their
+ * own tags via side-effectful imports inside `app-shell.ts` (chat) and
+ * a dynamic import (settings, lazy-loaded).
  */
 
 import "./app.css";
-import "./chat-shell.js";
+import "./app-shell.js";

@@ -327,6 +327,57 @@ def test_static_bundle_is_real_vite_build(tmp_path: Path) -> None:
     assert "preview" not in lowered
 
 
+def test_ui_sidebar_present() -> None:
+    """The shipped shell mounts ``<yaya-app>`` — the kimi-style root element.
+
+    Regression guard for issue #108: the ``<yaya-chat>``-only shell has
+    been wrapped in a sidebar+main layout. The entry element in
+    ``static/index.html`` is now the app shell; if a future refactor
+    drops it, the sidebar surfaces in the new UI vanish silently.
+    """
+    from importlib.resources import files as _files
+
+    static_root = _files("yaya.plugins.web") / "static"
+    idx_text = (static_root / "index.html").read_text(encoding="utf-8")
+    assert "<yaya-app>" in idx_text, "index.html must mount the <yaya-app> shell element; got: " + idx_text[:500]
+
+
+def test_ui_settings_chunk_present() -> None:
+    """Vite emits the settings view as a dedicated chunk.
+
+    Code-splitting keeps the chat-only code path small. This test
+    asserts the chunk exists so a future config change that bundles
+    the settings view back into the entry chunk fails loudly.
+    """
+    from importlib.resources import files as _files
+
+    static_root = Path(str(_files("yaya.plugins.web") / "static"))
+    assets = static_root / "assets"
+    assert assets.is_dir(), "static/assets must exist in the shipped bundle"
+    names = [p.name for p in assets.iterdir()]
+    entry = [n for n in names if n.startswith("index-") and n.endswith(".js")]
+    settings = [n for n in names if n.startswith("settings-view-") and n.endswith(".js")]
+    assert entry, f"expected an entry chunk; found {names}"
+    assert settings, f"expected a settings-view chunk; found {names}"
+
+
+def test_ui_theme_tokens_present() -> None:
+    """The CSS bundle declares kimi-style theme tokens + dark override.
+
+    A theme-token regression would silently collapse the UI to
+    unthemed defaults — the bundle-level assertion catches it.
+    """
+    from importlib.resources import files as _files
+
+    static_root = Path(str(_files("yaya.plugins.web") / "static"))
+    assets = static_root / "assets"
+    css_files = [p for p in assets.iterdir() if p.suffix == ".css"]
+    assert css_files, "expected at least one CSS bundle under static/assets"
+    combined = "\n".join(p.read_text(encoding="utf-8") for p in css_files)
+    assert "prefers-color-scheme" in combined, "CSS must declare a prefers-color-scheme rule"
+    assert "--yaya-sidebar-bg" in combined, "CSS must expose the sidebar theme token"
+
+
 # Silence pytest warnings about an unused async fixture pattern in this
 # module-level helper. The helpers above are awaited in tests; this
 # sentinel keeps the module importable under ``--strict``.

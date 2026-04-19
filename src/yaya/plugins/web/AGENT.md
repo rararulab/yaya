@@ -33,8 +33,31 @@ Bundled `web` adapter plugin. Loads through `yaya.plugins.v1` like any third-par
 - Do NOT import from `vendor/pi-mono/` — reference-only mirror for humans, not a build-time dep.
 - Do NOT special-case the web plugin in kernel code. Anything that feels like a special case is a protocol gap — raise an issue instead.
 
+## Surface (kimi-style, issue #108)
+
+Entry element: `<yaya-app>`. Hash-based routing:
+
+| Route | Component | Purpose |
+|---|---|---|
+| `#/chat` (default) | `<yaya-chat>` | chat transcript + empty-state hero (wordmark + quick-start chips) + prompt input. |
+| `#/settings` | `<yaya-settings>` (lazy chunk) | Settings tabs: LLM Providers · Plugins · Advanced. |
+
+Sidebar (≤240 px, collapsible to 56 px): logo · New chat · Chat/Settings nav · recent-chat list · theme toggle · version footer. Theme palette driven by CSS custom properties with a `prefers-color-scheme: dark` media-query override and an explicit `.dark` toggle on `<html>`.
+
+Settings tabs consume PR B's HTTP config surface:
+
+| Tab | Endpoints | Notes |
+|---|---|---|
+| LLM Providers | `GET/PATCH /api/llm-providers`, `POST /api/llm-providers/<name>/test` | radio-switch active provider; per-provider schema-driven config; test-connection button. |
+| Plugins | `GET/PATCH/DELETE /api/plugins`, `POST /api/plugins/install` | enabled toggle + schema-driven config; install modal. |
+| Advanced | `GET/PATCH/DELETE /api/config`, `GET /api/config/<key>?show=1` | raw config grid; prefix filter; secret reveal toggle. |
+
+The schema-driven form (`src/schema-form.ts`) handles shallow JSON Schema (string / integer / number / boolean / array / object) and auto-detects secret fields by suffix (`_key`, `_token`, `_secret`, `_password`) — password input + reveal toggle. Missing schema falls back to a generic key-value grid.
+
+State management: `src/store.ts` — a tiny `createStore<T>()` with `{get, set, patch, subscribe}`. No framework; no Redux; no Vue/React.
+
 ## UI bundle
-The `static/` directory is the output of `vite build` inside this folder, a Vite-built integration of `@mariozechner/pi-web-ui@0.67.6`. End users still install via `pip` — Node is a contributor-only dependency. CI rebuilds `static/` and fails if the fresh output differs from the tracked bundle, keeping the wheel reproducible.
+The `static/` directory is the output of `vite build` inside this folder, a Vite-built integration of `@mariozechner/pi-web-ui@0.67.6`. End users still install via `pip` — Node is a contributor-only dependency. CI rebuilds `static/` and fails if the fresh output differs from the tracked bundle, keeping the wheel reproducible. Vite splits the settings view into a separate chunk (`settings-view-<hash>.js`) so chat-only users do not pay for its bundle.
 
 ### pi-web-ui whitelist / blacklist (lesson 27)
 
@@ -78,15 +101,23 @@ src/yaya/plugins/web/
 ├── index.html          # /
 ├── src/
 │   ├── main.ts         # bootstrap
-│   ├── app.css         # imports @mariozechner/pi-web-ui/app.css
+│   ├── app.css         # kimi theme tokens + pi-web-ui base
+│   ├── app-shell.ts    # <yaya-app> sidebar + hash router (kimi layout)
+│   ├── chat-shell.ts   # <yaya-chat> chat transcript + empty-state hero
+│   ├── settings-view.ts# <yaya-settings> tabs (lazy chunk)
+│   ├── schema-form.ts  # JSON-Schema-driven form (depth 1)
+│   ├── store.ts        # createStore<T>() reactive primitive
+│   ├── api.ts          # HTTP client for /api/{plugins,config,llm-providers}
 │   ├── types.ts        # discriminated-union WS frame types (mirror events.py)
 │   ├── ws-client.ts    # reconnect + send queue
-│   ├── chat-shell.ts   # <yaya-chat> Lit component
 │   ├── stubs/
 │   │   └── tools-index.ts  # pi-web-ui tool-register stub
 │   └── __tests__/
-│       └── ws-client.test.ts
-└── static/             # vite build output — git-tracked
+│       ├── ws-client.test.ts
+│       ├── chat-shell.test.ts
+│       ├── store.test.ts
+│       └── schema-form.test.ts
+└── static/             # vite build output — git-tracked, chunk-split
 ```
 
 Scripts: `npm run check` (tsc --noEmit), `npm run test` (vitest), `npm run build` (vite). CI runs all three plus `git diff --exit-code static/`.

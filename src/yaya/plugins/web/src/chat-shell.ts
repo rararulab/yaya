@@ -109,18 +109,33 @@ export class YayaChat extends LitElement {
 		return this;
 	}
 
+	private onNewChat = (): void => {
+		this.messages = [];
+		this.streamingMessage = null;
+		this.inFlight = false;
+		this.toolCallsById = new Map();
+		this.pendingToolCalls = new Set();
+		this.inputValue = "";
+	};
+
 	override connectedCallback(): void {
 		super.connectedCallback();
 		applyTheme(loadTheme());
 		this.ws = new WsClient({ url: defaultWsUrl() });
 		this.ws.onFrame((f) => this.onFrame(f));
 		this.ws.connect();
+		window.addEventListener("yaya:new-chat", this.onNewChat);
 	}
 
 	override disconnectedCallback(): void {
 		super.disconnectedCallback();
 		this.ws?.close();
 		this.ws = null;
+		window.removeEventListener("yaya:new-chat", this.onNewChat);
+	}
+
+	private fillPrompt(text: string): void {
+		this.inputValue = text;
 	}
 
 	// -- frame handler ----------------------------------------------------
@@ -322,23 +337,29 @@ export class YayaChat extends LitElement {
 		const statusLabel = this.status === "connected" ? "connected" : this.status === "reconnecting" ? "reconnecting…" : "connecting…";
 		const statusColor = this.status === "connected" ? "bg-green-500" : "bg-yellow-500";
 
+		const empty = this.messages.length === 0 && this.streamingMessage === null;
+		const quickStart = ["Summarize a file", "Generate a plan", "Review code diff"];
+
 		return html`
-			<div class="mx-auto flex max-w-3xl flex-col gap-3 p-4">
+			<div class="yaya-chat mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
 				<header class="flex items-center justify-between">
-					<h1 class="text-lg font-semibold">yaya</h1>
-					<div class="flex items-center gap-3">
-						<span class="flex items-center gap-1 text-xs text-muted-foreground">
-							<span class="inline-block h-2 w-2 rounded-full ${statusColor}"></span>
-							${statusLabel}
-						</span>
-						<button
-							class="rounded border border-input px-2 py-1 text-xs hover:bg-accent"
-							@click=${() => this.toggleTheme()}
-						>
-							toggle theme
-						</button>
-					</div>
+					<span class="flex items-center gap-1 text-xs text-muted-foreground">
+						<span class="inline-block h-2 w-2 rounded-full ${statusColor}"></span>
+						${statusLabel}
+					</span>
 				</header>
+
+				${empty
+					? html`<section class="yaya-hero">
+							<h1 class="yaya-hero-title">yaya</h1>
+							<p class="yaya-hero-sub">A kernel-style agent that grows itself.</p>
+							<div class="yaya-chips">
+								${quickStart.map(
+									(q) => html`<button class="yaya-chip" @click=${() => this.fillPrompt(q)}>${q}</button>`,
+								)}
+							</div>
+						</section>`
+					: nothing}
 
 				<section class="flex flex-col gap-2">
 					${this.messages.map((m) => {

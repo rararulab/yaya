@@ -59,21 +59,104 @@ src/yaya/plugins/web/
 ├── package.json          # vite + vitest + pi-web-ui + mini-lit + lit + lucide
 ├── tsconfig.json         # strict TS
 ├── vite.config.ts        # outDir=static; tools/index.js stub plugin
-├── index.html            # /
+├── index.html            # /   — mounts <yaya-app> shell
 ├── src/
 │   ├── main.ts
-│   ├── app.css           # imports @mariozechner/pi-web-ui/app.css
+│   ├── app.css           # kimi-style theme tokens + pi-web-ui base
+│   ├── app-shell.ts      # <yaya-app> sidebar + hash router
+│   ├── chat-shell.ts     # <yaya-chat> chat transcript + empty-state hero
+│   ├── settings-view.ts  # <yaya-settings> — LLM / Plugins / Advanced tabs
+│   ├── schema-form.ts    # JSON-Schema-driven form (depth 1)
+│   ├── store.ts          # createStore<T>() reactive primitive
+│   ├── api.ts            # HTTP client for /api/{plugins,config,llm-providers}
 │   ├── types.ts          # discriminated-union WS frame types
 │   ├── ws-client.ts      # reconnect + send queue
-│   ├── chat-shell.ts     # <yaya-chat> component
 │   ├── stubs/
 │   │   └── tools-index.ts
 │   └── __tests__/
-│       └── ws-client.test.ts
+│       ├── ws-client.test.ts
+│       ├── chat-shell.test.ts
+│       ├── store.test.ts
+│       └── schema-form.test.ts
 └── static/               # *build output* — git-tracked, shipped in the wheel
     ├── index.html
-    └── assets/*.{js,css}
+    └── assets/
+        ├── index-<hash>.js          # entry chunk
+        ├── settings-view-<hash>.js  # lazy-loaded settings chunk
+        └── index-<hash>.css
 ```
+
+## Browser routes (kimi-style redesign, issue #108)
+
+The UI is a two-column layout: a collapsible sidebar on the left and
+the active route in the main area.
+
+```
+┌────────────┬───────────────────────────────────┐
+│  SIDEBAR   │            MAIN AREA              │
+│            │                                   │
+│  ▸ logo    │  #/chat      → <yaya-chat>        │
+│  ▸ New chat│    · empty-state hero (wordmark   │
+│  ▸ Chat    │      + quick-start chips)         │
+│  ▸ Settings│    · streaming bubbles            │
+│  ▸ history │    · prompt input pinned bottom   │
+│  ▸ theme   │                                   │
+│  ▸ version │  #/settings  → <yaya-settings>    │
+│            │    tabs:                          │
+│            │    · LLM Providers                │
+│            │    · Plugins                      │
+│            │    · Advanced (raw config)        │
+└────────────┴───────────────────────────────────┘
+```
+
+Routing is hash-based: `#/chat` (default) and `#/settings`. The
+settings module is a dynamic import so chat-only users do not pay
+for its bundle — Vite emits it as a separate chunk.
+
+### Extending Settings with a new tab
+
+1. Add a `Tab` variant in `settings-view.ts`
+   (e.g. `type Tab = "llm" | "plugins" | "advanced" | "mytab"`).
+2. Add a `loaded.mytab = false` field and a `loadTab()` branch that
+   fetches from the relevant endpoint, tolerating `404`/`501`.
+3. Add a render method (`renderMytab()`) that re-uses
+   `renderSchemaForm` for any JSON-Schema-driven fields and the
+   shared `.yaya-row` / `.yaya-list` / `.yaya-banner` CSS classes.
+4. Append a `renderTab("mytab", "My Tab")` button to the tab bar.
+5. If the tab owns a new resource, extend `api.ts` with a typed
+   client and add a `vitest` case under `src/__tests__/`.
+
+### Theme
+
+The palette is driven by CSS custom properties (`--yaya-sidebar-bg`,
+`--yaya-main-bg`, `--yaya-accent`, `--yaya-text-primary`,
+`--yaya-text-secondary`, `--yaya-border`, `--yaya-hover`,
+`--yaya-active`). A `prefers-color-scheme: dark` media query flips
+them; the footer toggle persists an explicit `.dark` class on
+`<html>` in `localStorage` under `yaya.theme`.
+
+### HTTP config API
+
+The settings view consumes the adapter-side HTTP config surface:
+
+| Verb   | Path                              | Purpose                            |
+|--------|-----------------------------------|------------------------------------|
+| GET    | `/api/plugins`                    | list rows (name, category, status, version, enabled, config_schema, current_config) |
+| PATCH  | `/api/plugins/<name>`             | toggle `{enabled}` or patch config |
+| POST   | `/api/plugins/install`            | `{source, editable?}` → `{job_id}` |
+| DELETE | `/api/plugins/<name>`             | uninstall                          |
+| GET    | `/api/config`                     | masked map of all config keys      |
+| GET    | `/api/config/<key>?show=1`        | reveal one key                     |
+| PATCH  | `/api/config/<key>`               | `{value}`                          |
+| DELETE | `/api/config/<key>`               | drop one key                       |
+| GET    | `/api/llm-providers`              | provider rows with active flag     |
+| PATCH  | `/api/llm-providers/active`       | `{name}` → list                    |
+| POST   | `/api/llm-providers/<name>/test`  | `{ok, latency_ms, error?}`         |
+
+The client in `src/api.ts` returns `ApiError { status }` on non-2xx
+responses. Tabs render an informational banner when the backend
+reports 404/501 so a partial rollout degrades gracefully rather than
+breaking the UI.
 
 `static/` is git-tracked so end users who install the wheel get the
 UI without Node. CI verifies `static/` matches a fresh Vite build.

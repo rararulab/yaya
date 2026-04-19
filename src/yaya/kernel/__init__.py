@@ -78,6 +78,12 @@ from yaya.kernel.llm import (
 from yaya.kernel.logging import configure_logging, get_plugin_logger
 from yaya.kernel.loop import AgentLoop, LoopConfig
 from yaya.kernel.plugin import Category, KernelContext, Plugin
+from yaya.kernel.providers import (
+    PROVIDERS_PREFIX,
+    PROVIDERS_SEEDED_MARKER,
+    InstanceRow,
+    ProvidersView,
+)
 from yaya.kernel.registry import PluginRegistry, PluginStatus, validate_install_source
 from yaya.kernel.session import (
     MemoryTapeStore,
@@ -129,6 +135,8 @@ __all__ = [
     "DEFAULT_HANDLER_TIMEOUT_S",
     "DEFAULT_HEARTBEAT_TIMEOUT_S",
     "DEFAULT_MAX_CONNECTIONS",
+    "PROVIDERS_PREFIX",
+    "PROVIDERS_SEEDED_MARKER",
     "PUBLIC_EVENT_KINDS",
     "APIConnectionError",
     "APIEmptyResponseError",
@@ -154,6 +162,7 @@ __all__ = [
     "Event",
     "EventBus",
     "EventHandler",
+    "InstanceRow",
     "JsonBlock",
     "KernelConfig",
     "KernelContext",
@@ -167,6 +176,7 @@ __all__ = [
     "PluginError",
     "PluginRegistry",
     "PluginStatus",
+    "ProvidersView",
     "PublicEventKind",
     "RetryableChatProvider",
     "Session",

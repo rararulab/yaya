@@ -22,6 +22,27 @@ hook for staged `specs/*.spec` changes, and the CI `check` job.
 and pre-commit for staged `.spec` / `.feature` changes so executable
 Gherkin cannot drift from the task contract.
 
+### Why `lifecycle` and not raw `agent-spec guard`?
+
+Upstream ships two CI-oriented entry points. `agent-spec guard` lints
+every spec and runs the full verify layer against a git change scope
+in one shot. It is attractive on paper but currently unusable as a
+merge gate for this repo: the `verify` layer needs an AI backend, and
+without one it emits `skip` verdicts on every scenario — `guard` exits
+non-zero on those skips, so a raw `guard` invocation would block
+every PR even when nothing is wrong.
+
+`agent-spec lifecycle` exposes the same pipeline (lint → boundary →
+verify → report) per spec and returns structured JSON we can
+classify. `scripts/check_specs.sh` + `scripts/_parse_spec_result.py`
+implement the guard semantics the harness promises (lint and quality
+hard-gated, owning-spec boundary hard-gated, non-owning boundary and
+verify skips soft-reported) on top of that JSON. When an AI backend
+lands and `verify` starts emitting real verdicts, we will switch the
+wrapper to raw `guard` and drop the parser. Until then, the wrapper
+IS the guard for this repo. Regression coverage for the decision
+logic lives in `tests/scripts/test_check_spec_result.py`.
+
 **Hard-fail (blocks merge):**
 
 - Parse error — bad frontmatter, unresolved `inherits:`, malformed

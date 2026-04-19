@@ -35,7 +35,7 @@ Accountability is to the **artifact**, not to the user's approval.
 
 - `just check` (ruff + mypy) and `just test` (pytest + coverage) are ground truth.
 - CI is the final gate — `gh pr checks --watch` green before reporting done.
-- Every non-trivial feature PR is backed by a `specs/<slug>.spec` contract verified with [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec). Run `agent-spec lifecycle` through `scripts/check_specs.sh`; CI runs the same wrapper.
+- Every non-trivial feature PR is backed by a `specs/<slug>.spec` contract verified with [`ZhangHanDong/agent-spec`](https://github.com/ZhangHanDong/agent-spec). `scripts/check_specs.sh` runs `agent-spec lifecycle` with the guard semantics (lint + quality + owning-spec boundary hard-gated) from `just check`, pre-commit (on staged `.spec` changes), and CI; see [docs/dev/agent-spec.md](docs/dev/agent-spec.md) for why we wrap `lifecycle` instead of calling `agent-spec guard` directly.
 - Folder-local `AGENT.md` is ground truth for that folder. If code contradicts it, one of them is wrong — fix before merging.
 
 ## 4. Constraints

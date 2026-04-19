@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#plugin-protocol-v0-10">Plugin Protocol (v0 → 1.0)</a></li>
-        <li><a href="#plugin-categories-closed-set">Plugin categories (closed set)</a></li><li><a href="#event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)</a></li><li><a href="#plugin-discovery-and-loading">Plugin discovery and loading</a></li><li><a href="#plugin-abi">Plugin ABI</a></li><li><a href="#agent-loop-kernel-owned">Agent loop (kernel-owned)</a></li><li><a href="#plugin-failure-model">Plugin failure model</a></li><li><a href="#sessions-and-tape">Sessions and tape</a></li><li><a href="#security-posture-10">Security posture (1.0)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#plugin-categories-closed-set">Plugin categories (closed set)</a></li><li><a href="#event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)</a></li><li><a href="#plugin-discovery-and-loading">Plugin discovery and loading</a></li><li><a href="#plugin-abi">Plugin ABI</a></li><li><a href="#agent-loop-kernel-owned">Agent loop (kernel-owned)</a></li><li><a href="#plugin-failure-model">Plugin failure model</a></li><li><a href="#sessions-and-tape">Sessions and tape</a></li><li><a href="#sub-agents-via-the-agent-tool-34">Sub-agents via the agent tool (#34)</a></li><li><a href="#security-posture-10">Security posture (1.0)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -853,6 +853,30 @@ plugin-private namespace; user / adapter sessions MUST NOT start with
 <td><code>mcp_bridge</code></td>
 <td><code>{ server: str, kind: "config_invalid" \| "boot_failed", message: str }</code></td>
 <td>One emit per MCP server that failed config validation or exhausted boot retries. The bridge keeps running.</td>
+</tr>
+<tr>
+<td><code>x.agent.subagent.started</code></td>
+<td><code>agent_tool</code></td>
+<td><code>{ parent_id: str, child_id: str, goal: str, strategy: str, tools: list[str] \| null }</code></td>
+<td>One emit when <code>AgentTool.run</code> has forked the parent session and published <code>user.message.received</code> on the child.</td>
+</tr>
+<tr>
+<td><code>x.agent.subagent.completed</code></td>
+<td><code>agent_tool</code></td>
+<td><code>{ child_id: str, final_text: str, steps_used: int, forbidden_tool_hits: list[str] }</code></td>
+<td>One emit when the sub-agent's <code>assistant.message.done</code> resolves the run.</td>
+</tr>
+<tr>
+<td><code>x.agent.subagent.failed</code></td>
+<td><code>agent_tool</code></td>
+<td><code>{ child_id: str, reason: "timeout" \| "cancelled" }</code></td>
+<td>One emit when the sub-agent exhausts <code>max_wall_seconds</code> or the parent turn is cancelled.</td>
+</tr>
+<tr>
+<td><code>x.agent.allowlist.narrowed</code></td>
+<td><code>agent_tool</code></td>
+<td><code>{ child_id: str, attempted: list[str], allowed: list[str] }</code></td>
+<td>Emitted once at run end if the child issued any <code>tool.call.request</code> outside the observational allowlist.</td>
 </tr>
 </tbody>
 </table>
@@ -1333,6 +1357,39 @@ collision-tolerant identifier — not a security primitive — hence
   (approval prompts, plugin lifecycle, kernel errors, etc.) do not
   land on any tape. Those events belong to the control plane; if
   an adapter needs to render them it subscribes to them directly.</li>
+</ul>
+<h2 id="sub-agents-via-the-agent-tool-34">Sub-agents via the <code>agent</code> tool (#34)<a class="headerlink" href="#sub-agents-via-the-agent-tool-34" title="Permanent link">&para;</a></h2>
+<p>Multi-agent in yaya is <strong>not</strong> a new plugin category. Spawning a
+sub-agent is done through one bundled <code>tool</code> plugin — <code>agent-tool</code> —
+that reuses the kernel primitives already in place:
+<code>Session.fork()</code> (tape overlay from #32), the running <code>AgentLoop</code> on
+the shared event bus, the v1 tool contract with approval runtime.</p>
+<p><strong>Child session id.</strong> The tool generates the child id as
+<code>&lt;parent&gt;::agent::&lt;uuid8&gt;</code>. The <code>::agent::</code> separator is the depth
+counter: a root session has depth 0, a first-generation sub-agent
+depth 1, and so on. Depth <code>≥ max_depth</code> (default 5, overridable via
+<code>[agent_tool] max_depth</code> in TOML) refuses the spawn with
+<code>ToolError(kind="rejected")</code> before any fork.</p>
+<p><strong>Approval.</strong> <code>AgentTool.requires_approval = True</code> is mandatory — the
+user sees one prompt per spawn. Tool calls <em>within</em> the sub-agent go
+through the same approval runtime; <code>approve_for_session</code> entries
+granted on the parent are visible to the child through the runtime's
+session cache.</p>
+<p><strong>Parent tape isolation.</strong> Child writes land only on the overlay
+store owned by the forked manager; the parent's tape is untouched.
+Operators who want the full child log use <code>yaya session show
+&lt;child_id&gt;</code> against the forked manager.</p>
+<p><strong>Events.</strong> Plugin-private extension events, routed on a stable
+bridge session id <code>_bridge:agent-tool</code> (lesson #2 — never interleave
+with a conversation FIFO):</p>
+<ul>
+<li><code>x.agent.subagent.started(parent_id, child_id, goal, strategy, tools)</code></li>
+<li><code>x.agent.subagent.completed(child_id, final_text, steps_used, forbidden_tool_hits)</code></li>
+<li><code>x.agent.subagent.failed(child_id, reason)</code> — <code>reason ∈ {"timeout", "cancelled"}</code></li>
+<li><code>x.agent.allowlist.narrowed(child_id, attempted, allowed)</code> — one
+  event per run when an allowlist was supplied and a child call fell
+  outside it. At 0.2 this is observational only; hard kernel-side
+  enforcement is future work.</li>
 </ul>
 <h2 id="security-posture-10">Security posture (1.0)<a class="headerlink" href="#security-posture-10" title="Permanent link">&para;</a></h2>
 <ul>

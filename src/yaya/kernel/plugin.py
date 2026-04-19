@@ -18,6 +18,7 @@ from yaya.kernel.events import Event, new_event
 if TYPE_CHECKING:  # pragma: no cover - type-only import, breaks an import cycle.
     from yaya.kernel.bus import EventBus
     from yaya.kernel.config_store import ConfigStore
+    from yaya.kernel.providers import ProvidersView
     from yaya.kernel.registry import PluginRegistry
     from yaya.kernel.session import Session
 
@@ -197,6 +198,30 @@ class KernelContext:
         registry (tests, ``yaya plugin list`` transient stack).
         """
         return self._registry
+
+    @property
+    def providers(self) -> ProvidersView | None:
+        """Read-only grouped view over ``providers.<id>.*`` instances.
+
+        Returns a fresh :class:`~yaya.kernel.providers.ProvidersView`
+        bound to the live :attr:`config_store` on each access — the
+        view is cheap (no caching of its own) and re-parses keys each
+        call, so a subsequent :meth:`~yaya.kernel.config_store.ConfigStore.set`
+        is visible without cache invalidation. Returns ``None`` when
+        the context was built without a store (tests that inject
+        :class:`KernelConfig` directly).
+
+        D4a (#116) landed the namespace + bootstrap; D4b flips bundled
+        ``llm-provider`` plugins to read via this surface.
+        """
+        if self._config_store is None:
+            return None
+        # Lazy import to keep the plugin module free of the
+        # config-store dependency at import time — the ABI should
+        # load cleanly in contexts where the store is optional.
+        from yaya.kernel.providers import ProvidersView
+
+        return ProvidersView(self._config_store)
 
     @property
     def config_store(self) -> ConfigStore | None:

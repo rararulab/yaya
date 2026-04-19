@@ -165,6 +165,67 @@ typically match `key.startswith("plugin.<name>.")`:
 per decision so the next `strategy.decide.response` reflects a new
 provider without restart.
 
+#### Provider instances (kernel → llm-provider plugins)
+
+The kernel reserves a flat `providers.<id>.*` namespace inside the
+config store so one `llm-provider` plugin can back many configured
+*instances* — e.g. one `llm-openai` plugin powering separate
+"OpenAI prod", "Azure OpenAI", and "local-LM-Studio" records with
+distinct `base_url` / `api_key` / `model` fields. The schema:
+
+```
+providers.<instance_id>.plugin    = "<plugin-name>"
+providers.<instance_id>.label     = "<human label>"
+providers.<instance_id>.<field>   = <value>          # free-form plugin schema
+provider                          = "<instance_id>"  # active instance
+```
+
+`<instance_id>` is any dotted-safe string. `plugin` and `label` are
+reserved meta fields — everything else lands in the plugin's schema.
+Writes ride the normal `config.updated` event so hot-reload subscribers
+just need to match `key.startswith("providers.")`.
+
+**Read surface.** `KernelContext.providers` exposes a read-only
+`ProvidersView` over the live store:
+
+```python
+rows = ctx.providers.list_instances()
+mine = ctx.providers.instances_for_plugin("llm-openai")
+active = ctx.providers.active_id            # the current `provider` key value
+one = ctx.providers.get_instance("prod")    # returns None when absent
+```
+
+The view re-parses the store cache on every call, so subsequent writes
+via `ConfigStore.set` are visible without cache invalidation. Writes
+go through `ConfigStore.set` — this namespace layer is read-only.
+
+**Bootstrap.** `PluginRegistry.start` runs a one-time pass guarded by
+the `_meta.providers_seeded_at` marker. For every currently-loaded
+`llm-provider` plugin it:
+
+1. writes `providers.<plugin.name>.plugin = <plugin.name>`
+2. writes `providers.<plugin.name>.label = "<plugin.name> (default)"`
+3. lifts every `plugin.<ns>.<field>` legacy row (where `ns =
+   plugin.name.replace("-", "_")`) into
+   `providers.<plugin.name>.<field>`
+4. when `provider` is unset, defaults it to the first seeded id
+
+Legacy `plugin.<ns>.*` rows stay in place so pre-migration plugins
+keep working; a follow-up garbage-collects them once every bundled
+`llm-provider` reads instance-scoped config. The marker is stamped
+last so a crash mid-bootstrap re-runs cleanly on next boot.
+
+**Plugin iteration pattern** (for the coming D4b migration):
+
+```python
+async def on_load(self, ctx: KernelContext) -> None:
+    view = ctx.providers
+    if view is None:
+        return  # test/transient context — fall back to ctx.config
+    for instance in view.instances_for_plugin(self.name):
+        self._instances[instance.id] = _Client.from_config(instance.config)
+```
+
 ### Extension namespace
 
 Plugins may emit and subscribe to events named `x.<plugin>.<kind>`.

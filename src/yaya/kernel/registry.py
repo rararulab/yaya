@@ -67,6 +67,7 @@ from yaya.kernel.config_store import ConfigStore
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.logging import get_plugin_logger
 from yaya.kernel.plugin import Category, KernelContext, Plugin
+from yaya.kernel.providers import PROVIDERS_PREFIX, PROVIDERS_SEEDED_MARKER
 from yaya.kernel.session import Session
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import, breaks an import cycle.
@@ -277,6 +278,14 @@ class PluginRegistry:
         )
 
         await self._discover_and_load()
+
+        # Seed the ``providers.<id>.*`` namespace on the first boot
+        # that reaches a non-empty set of llm-provider plugins. Runs
+        # AFTER discovery so we can enumerate live providers; runs
+        # BEFORE ``kernel.ready`` so adapters that read
+        # ``ctx.providers`` on boot see the seeded rows. The marker
+        # makes this idempotent across restarts.
+        await self._bootstrap_providers_namespace()
 
         # The approval runtime sits between the dispatcher and adapters.
         # Install it AFTER plugins (so adapters are already subscribed
@@ -511,6 +520,70 @@ class PluginRegistry:
 
         for ep in (*bundled, *third_party):
             await self._load_entry_point(ep, bundled=self._is_ep_bundled(ep))
+
+    async def _bootstrap_providers_namespace(self) -> None:
+        """Seed ``providers.<id>.*`` from loaded llm-provider plugins.
+
+        Runs once per install — guarded by :data:`PROVIDERS_SEEDED_MARKER`.
+        For every currently-loaded ``llm-provider`` plugin:
+
+        * writes ``providers.<plugin.name>.plugin = <plugin.name>``
+        * writes ``providers.<plugin.name>.label = "<plugin.name> (default)"``
+        * lifts every ``plugin.<ns>.<field>`` row into
+          ``providers.<plugin.name>.<field>`` (leaves the originals in
+          place so in-flight plugins keep working until D4b switches
+          them to ``ctx.providers``).
+
+        After seeding, if the ``provider`` config key is unset we
+        default it to the first seeded instance id so
+        ``strategy_react`` and friends resolve an active provider
+        without operator intervention.
+
+        The marker write is last so a crash mid-bootstrap re-runs on
+        next boot. Skips quietly when no config store is attached or
+        no llm-provider plugins are loaded.
+        """
+        store = self._config_store
+        if store is None:
+            return
+        if PROVIDERS_SEEDED_MARKER in await store.list_prefix(""):
+            return
+        providers = self.loaded_plugins(Category.LLM_PROVIDER)
+        if not providers:
+            # Nothing to seed; do NOT stamp the marker so a later boot
+            # with a provider plugin attached still seeds normally.
+            return
+
+        first_id: str | None = None
+        for plugin in providers:
+            instance_id = plugin.name
+            await store.set(f"{PROVIDERS_PREFIX}{instance_id}.plugin", instance_id)
+            await store.set(
+                f"{PROVIDERS_PREFIX}{instance_id}.label",
+                f"{instance_id} (default)",
+            )
+            # Lift legacy plugin.<ns>.* rows. The registry hands
+            # plugins a scoped view keyed by ns = name.replace("-",
+            # "_"), so we mirror that normalisation here.
+            ns = instance_id.replace("-", "_")
+            legacy_prefix = f"plugin.{ns}."
+            legacy_rows = await store.list_prefix(legacy_prefix)
+            for legacy_key, legacy_value in legacy_rows.items():
+                field = legacy_key[len(legacy_prefix) :]
+                if not field:
+                    continue
+                await store.set(
+                    f"{PROVIDERS_PREFIX}{instance_id}.{field}",
+                    legacy_value,
+                )
+            if first_id is None:
+                first_id = instance_id
+
+        if first_id is not None and not await store.get("provider"):
+            await store.set("provider", first_id)
+
+        # Marker last so partial-seed re-runs next boot.
+        await store.set(PROVIDERS_SEEDED_MARKER, int(_now_seconds()))
 
     def _refresh_bundled_names(self) -> None:
         """Populate :attr:`_bundled_names` from current entry-point metadata.
@@ -789,6 +862,18 @@ class PluginRegistry:
 # ---------------------------------------------------------------------------
 # Module-level helpers.
 # ---------------------------------------------------------------------------
+
+
+def _now_seconds() -> int:
+    """Return current epoch seconds as an int.
+
+    Wrapped in a helper so tests can monkey-patch the wall clock when
+    asserting the providers-seeded marker value — and so future moves
+    to a monotonic clock touch one place.
+    """
+    import time
+
+    return int(time.time())
 
 
 def _default_state_dir() -> Path:

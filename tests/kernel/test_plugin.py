@@ -78,6 +78,49 @@ async def test_kernel_context_emit_stamps_source_and_routes(tmp_path: Path) -> N
     assert ctx.logger.name == "plugin.web"
 
 
+async def test_kernel_context_providers_returns_view_when_store_attached(tmp_path: Path) -> None:
+    """``ctx.providers`` returns a ProvidersView when a ConfigStore is wired.
+
+    Mirrors how :class:`PluginRegistry` builds its context — binds a
+    real store so the live-parse contract is exercised end to end.
+    """
+    from yaya.kernel.config_store import ConfigStore
+    from yaya.kernel.providers import ProvidersView
+
+    bus = EventBus()
+    store = await ConfigStore.open(bus=bus, path=tmp_path / "config.db")
+    try:
+        await store.set("providers.only.plugin", "llm-openai")
+        await store.set("providers.only.label", "Only")
+        ctx = KernelContext(
+            bus=bus,
+            logger=logging.getLogger("plugin.stub"),
+            config=store.view(),
+            state_dir=tmp_path,
+            plugin_name="stub",
+            config_store=store,
+        )
+        view = ctx.providers
+        assert isinstance(view, ProvidersView)
+        assert [r.id for r in view.list_instances()] == ["only"]
+    finally:
+        await store.close()
+        await bus.close()
+
+
+def test_kernel_context_providers_is_none_without_store(tmp_path: Path) -> None:
+    """``ctx.providers`` gracefully returns ``None`` in the no-store fallback."""
+    bus = EventBus()
+    ctx = KernelContext(
+        bus=bus,
+        logger=logging.getLogger("plugin.nostore"),
+        config={},
+        state_dir=tmp_path,
+        plugin_name="nostore",
+    )
+    assert ctx.providers is None
+
+
 async def test_kernel_context_emit_rejects_unknown_public_kind(tmp_path: Path) -> None:
     """Emitting a non-catalog, non-extension kind surfaces ValueError to the caller."""
     bus = EventBus()

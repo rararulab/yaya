@@ -165,6 +165,15 @@ shape of the build. PR authors should still rebuild locally and
 commit the result; reviewers can eyeball bundle sizes for
 regressions from the build step's `stdout`.
 
+## HTTP admin API
+
+The adapter mounts an HTTP admin API under `/api/` for the browser
+UI's control plane (config, plugin, and LLM-provider management).
+Full endpoint reference + request / response schemas live in
+[`plugin-protocol.md § Web HTTP API`](plugin-protocol.md#web-http-api).
+The API is **unauthenticated** — 127.0.0.1-only binding is the
+sole authorization through 1.0.
+
 ## WebSocket schema
 
 The WS schema is a thin serialization of the public event set. The

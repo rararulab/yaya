@@ -17,6 +17,8 @@ from yaya.kernel.events import Event, new_event
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import, breaks an import cycle.
     from yaya.kernel.bus import EventBus
+    from yaya.kernel.config_store import ConfigStore
+    from yaya.kernel.registry import PluginRegistry
     from yaya.kernel.session import Session
 
 
@@ -100,6 +102,8 @@ class KernelContext:
         state_dir: Path,
         plugin_name: str,
         session: Session | None = None,
+        registry: PluginRegistry | None = None,
+        config_store: ConfigStore | None = None,
     ) -> None:
         """Bind the context to a specific plugin.
 
@@ -121,6 +125,8 @@ class KernelContext:
         self._state_dir = state_dir
         self._plugin_name = plugin_name
         self._session = session
+        self._registry = registry
+        self._config_store = config_store
 
     @property
     def bus(self) -> EventBus:
@@ -175,6 +181,37 @@ class KernelContext:
         handle that gracefully.
         """
         return self._session
+
+    @property
+    def registry(self) -> PluginRegistry | None:
+        """The owning :class:`~yaya.kernel.registry.PluginRegistry`, if any.
+
+        Kernel-side escape hatch used by the bundled ``web`` adapter
+        to expose ``install`` / ``remove`` / ``loaded_plugins`` over
+        the local HTTP API. Third-party plugins SHOULD NOT rely on
+        this surface — cross-plugin orchestration is expected to go
+        through the bus, and a future hardening pass may gate this
+        behind an explicit capability flag.
+
+        Returns ``None`` when the context was built outside a running
+        registry (tests, ``yaya plugin list`` transient stack).
+        """
+        return self._registry
+
+    @property
+    def config_store(self) -> ConfigStore | None:
+        """The live :class:`~yaya.kernel.config_store.ConfigStore`, if any.
+
+        Same escape-hatch caveat as :attr:`registry`: the bundled
+        ``web`` adapter consults this surface to implement
+        ``GET/PATCH/DELETE /api/config``. Normal plugin config reads
+        still go through :attr:`config`, which already reflects live
+        cache updates.
+
+        Returns ``None`` when the registry was started without a
+        store (tests injecting a ``KernelConfig`` directly).
+        """
+        return self._config_store
 
     async def emit(
         self,

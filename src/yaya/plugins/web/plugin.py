@@ -65,6 +65,7 @@ from fastapi.staticfiles import StaticFiles
 
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
+from yaya.plugins.web.api import build_admin_router
 
 if TYPE_CHECKING:  # pragma: no cover - type-only imports.
     import uvicorn
@@ -294,16 +295,48 @@ class WebAdapter:
 
         static_root = self._static_root()
 
-        @app.get("/api/plugins")
-        async def _plugins() -> JSONResponse:
-            """Return the adapter's cached plugin snapshot."""
-            rows = list(self._plugin_rows.values())
-            return JSONResponse({"plugins": rows})
-
         @app.get("/api/health")
         async def _health() -> JSONResponse:
             """Tiny ok-probe for test harnesses."""
             return JSONResponse({"ok": True, "adapter": _ADAPTER_ID})
+
+        # Resolve admin-side references from the kernel context.
+        # When the adapter boots without a registry (tests, transient
+        # ``yaya plugin list`` stack), admin endpoints degrade to 503
+        # and the legacy cached ``_plugin_rows`` snapshot wins at
+        # ``GET /api/plugins``.
+        ctx = self._ctx
+        registry_ref = ctx.registry if ctx is not None else None
+        store_ref = ctx.config_store if ctx is not None else None
+        bus_ref = ctx.bus if ctx is not None else None
+
+        # FastAPI matches in registration order. Register the legacy
+        # ``/api/plugins`` fallback FIRST when no registry is wired so
+        # tests that mount the ASGI app without a live registry still
+        # see the pre-API-layer behaviour. The admin router registers
+        # its own ``/api/plugins`` handler too; with a live registry
+        # it is registered first and takes precedence.
+        if registry_ref is None:
+
+            @app.get("/api/plugins")
+            async def _plugins_fallback() -> JSONResponse:
+                """Legacy cached snapshot used when no registry is wired."""
+                rows = list(self._plugin_rows.values())
+                return JSONResponse({"plugins": rows})
+
+        app.include_router(
+            build_admin_router(
+                registry=registry_ref,
+                config_store=store_ref,
+                bus=bus_ref,
+            )
+        )
+
+        @app.get("/api/plugins/snapshot")
+        async def _plugins_snapshot() -> JSONResponse:
+            """Return the adapter's cached plugin snapshot (legacy diag)."""
+            rows = list(self._plugin_rows.values())
+            return JSONResponse({"plugins": rows})
 
         @app.websocket("/ws")
         async def _ws(ws: WebSocket) -> None:

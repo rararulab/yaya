@@ -14,6 +14,13 @@ Bundled `web` adapter plugin. Loads through `yaya.plugins.v1` like any third-par
 - Subscribes to: `assistant.message.delta`, `assistant.message.done`, `tool.call.start`, `tool.call.result`, `plugin.loaded`, `plugin.removed`, `plugin.error`, `kernel.ready`, `kernel.shutdown`, `kernel.error`.
 - Emits: `user.message.received`, `user.interrupt`.
 - Session model: each WS connection gets `session_id = ws-<uuid4[:8]>` at `accept()`. The same id flows into every `user.message.received` the adapter publishes; `loop.py` propagates it through every downstream event; `_deliver()` routes by `ev.session_id` lookup in `_clients: dict[str, set[WebSocket]]`. Unmatched session ids broadcast (kernel-origin events use `session_id="kernel"`).
+- HTTP admin API (factored into `api.py`, mounted inside `_build_app`):
+  - `GET /api/health` — liveness probe.
+  - `GET /api/config`, `GET/PATCH/DELETE /api/config/{key}` — live `ConfigStore` CRUD. Secret-suffix keys (`api_key`, `token`, `secret`, `password`) mask by default; `?show=1` reveals on a single-key read.
+  - `GET /api/plugins` — name, category, status, version, `enabled`, `config_schema`, `current_config`. `PATCH /api/plugins/{name}` toggles `enabled` (reload-gated). `POST /api/plugins/install` + `DELETE /api/plugins/{name}` wrap `registry.install` / `registry.remove`.
+  - `GET /api/llm-providers` — loaded llm-provider plugins with an `active` flag derived from config key `provider`. `PATCH /api/llm-providers/active` writes that key. `POST /api/llm-providers/{name}/test` fires a one-shot `llm.call.request` for UI "test connection".
+  - **Unauthenticated, local-only.** `127.0.0.1` bind is the only authorization through 1.0 (GOAL.md non-goal). Operators fronting yaya with a reverse proxy accept the risk.
+  - Kernel-side escape hatches: `ctx.registry` + `ctx.config_store` (mirrors `ctx.bus` / `ctx.session`). Third-party plugins SHOULD NOT rely on these — they exist for the bundled admin UI.
 - Self-clean on disconnect (lesson #6): `discard(ws)` then `del self._clients[sid]` if empty.
 - Static assets ship in the wheel via `importlib.resources.files("yaya.plugins.web") / "static"` — never `__file__` relative paths.
 - `uvicorn.Server.should_exit = True` + `await asyncio.wait_for(task, 3.0)` on `on_unload`; cancel on timeout.

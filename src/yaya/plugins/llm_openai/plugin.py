@@ -141,15 +141,15 @@ class OpenAIProvider:
             cfg_base_url if isinstance(cfg_base_url, str) and cfg_base_url else os.environ.get("OPENAI_BASE_URL")
         )
 
-        # Tear down any live client before swapping so an old pool does
-        # not outlive the config it was built from.
-        existing, self._client = self._client, None
+        # Swap the client without closing the old pool: a previous
+        # client may still be servicing an in-flight ``_dispatch`` call
+        # when a ``config.updated`` event preempts it via ``await``.
+        # Closing the pool here would surface a spurious
+        # ``llm.call.error`` on that in-flight turn (PR #105 follow-up
+        # #106, F1). ``AsyncOpenAI`` reclaims its ``httpx`` pool on GC
+        # and the leak is bounded by rotations-per-process.
+        self._client = None
         self._configured = False
-        if existing is not None:
-            try:
-                await existing.close()
-            except Exception as exc:
-                ctx.logger.warning("llm-openai: stale client close failed: %s", exc)
 
         if not api_key:
             ctx.logger.warning("llm-openai: OPENAI_API_KEY not set; calls will error")

@@ -354,8 +354,16 @@ async def test_base_url_env_lands_on_client(tmp_path: Path, monkeypatch: pytest.
     await plugin.on_unload(ctx)
 
 
-async def test_rebuild_swallows_stale_client_close_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A stale client's ``close()`` raising is logged, not re-raised."""
+async def test_llm_openai_hot_reload_preserves_in_flight_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A rebuild must NOT close the previous client's pool.
+
+    Regression guard for PR #105 follow-up #106 (F1): closing the
+    existing :class:`AsyncOpenAI` instance inside ``_rebuild_client``
+    tears down the ``httpx`` pool out from under any ``_dispatch``
+    currently awaiting ``chat.completions.create``. Dropping the
+    ``await existing.close()`` keeps the in-flight call healthy; the
+    pool is reclaimed on GC.
+    """
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
@@ -373,11 +381,12 @@ async def test_rebuild_swallows_stale_client_close_error(tmp_path: Path, monkeyp
     ctx = _make_ctx(bus, tmp_path, plugin)
     await plugin.on_load(ctx)
 
-    # Swap the live client for one whose close() raises so the
-    # stale-close ``except Exception`` branch in ``_rebuild_client`` runs.
-    bad_client = MagicMock()
-    bad_client.close = AsyncMock(side_effect=RuntimeError("close failed"))
-    plugin._client = bad_client
+    # Swap the live client for a mock whose ``close()`` must never be
+    # awaited — if it were, the in-flight ``_dispatch`` would observe
+    # a dead pool.
+    never_close = MagicMock()
+    never_close.close = AsyncMock()
+    plugin._client = never_close
 
     ev = new_event(
         "config.updated",
@@ -385,9 +394,11 @@ async def test_rebuild_swallows_stale_client_close_error(tmp_path: Path, monkeyp
         session_id="kernel",
         source="kernel-config-store",
     )
-    # Should not raise — the failure is swallowed + logged.
     await plugin.on_event(ev, ctx)
-    bad_client.close.assert_awaited_once()
+    never_close.close.assert_not_awaited()
+    # A rebuild still produces a working new client.
+    assert plugin._client is not None
+    assert plugin._client is not never_close
     await plugin.on_unload(ctx)
 
 

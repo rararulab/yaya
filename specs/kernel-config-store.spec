@@ -71,8 +71,10 @@ boots skip migration.
 - src/yaya/plugins/strategy_react/plugin.py
 - tests/kernel/test_config_store.py
 - tests/kernel/test_strategy_hot_provider.py
+- tests/kernel/test_events.py
 - tests/cli/test_config.py
 - tests/cli/__snapshots__/test_help_snapshot.ambr
+- tests/plugins/llm_openai/test_llm_openai.py
 - tests/bdd/features/kernel-config-store.feature
 - specs/kernel-config-store.spec
 - docs/dev/plugin-protocol.md

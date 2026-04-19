@@ -251,7 +251,16 @@ def test_default_config_db_path_honours_xdg_state_home(monkeypatch: pytest.Monke
 
 
 def test_default_config_db_path_home_fallback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """With neither env var set, the resolver lands under ~/.local/state/yaya."""
+    """With neither env var set, the resolver lands under ~/.local/state/yaya.
+
+    POSIX-only — on Windows the resolver deliberately lands under
+    ``%LOCALAPPDATA%`` because ``~/.local/state`` is meaningless there
+    (see :func:`yaya.kernel.config_store.default_config_db_path`).
+    """
+    import sys
+
+    if sys.platform == "win32":
+        pytest.skip("POSIX-only fallback; Windows uses LOCALAPPDATA")
     monkeypatch.delenv("YAYA_STATE_DIR", raising=False)
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))

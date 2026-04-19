@@ -263,9 +263,7 @@ async def test_rate_limit_error_emits_error_event(tmp_path: Path, monkeypatch: p
     await plugin.on_unload(ctx)
 
 
-async def test_config_updated_rebuilds_on_matching_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_config_updated_rebuilds_on_matching_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A ``config.updated`` for ``plugin.llm_openai.base_url`` rebuilds the client."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
@@ -356,9 +354,7 @@ async def test_base_url_env_lands_on_client(tmp_path: Path, monkeypatch: pytest.
     await plugin.on_unload(ctx)
 
 
-async def test_rebuild_swallows_stale_client_close_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_rebuild_swallows_stale_client_close_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A stale client's ``close()`` raising is logged, not re-raised."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)

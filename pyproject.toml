@@ -151,6 +151,7 @@ enable_error_code = [
 # these overrides. See issue #32 rationale in the PR body.
 [[tool.mypy.overrides]]
 module = [
+    "yaya.kernel.compaction",
     "yaya.kernel.session",
     "yaya.kernel.session_persister",
     "yaya.kernel.tape_context",

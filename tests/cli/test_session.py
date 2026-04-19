@@ -107,6 +107,45 @@ def test_session_archive_requires_yes_under_json(runner: CliRunner, cli_app: Any
     assert payload["error"] == "confirmation_required"
 
 
+def test_session_compact_happy_path(runner: CliRunner, cli_app: Any, tmp_path: Path) -> None:
+    tapes_dir = tmp_path / "tapes"
+    _seed_session(tmp_path, "default", tapes_dir)
+    result = runner.invoke(cli_app, ["--json", "session", "compact", "default"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["action"] == "session.compact"
+    assert payload["session_id"] == "default"
+    assert payload["tokens_before"] >= 0
+    assert isinstance(payload["summary"], str)
+
+
+def test_session_compact_empty_errors(runner: CliRunner, cli_app: Any, tmp_path: Path) -> None:
+    # No tape exists yet for 'fresh'; opening it seeds only the bootstrap anchor
+    # and thus post-anchor window is empty → compact must error.
+    result = runner.invoke(cli_app, ["--json", "session", "compact", "fresh"])
+    assert result.exit_code == 1, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert "no entries" in payload["error"]
+
+
+def test_session_show_since_compact(runner: CliRunner, cli_app: Any, tmp_path: Path) -> None:
+    tapes_dir = tmp_path / "tapes"
+    _seed_session(tmp_path, "default", tapes_dir)
+    # Compact once so the post-anchor window is empty; --since-compact should
+    # return 0 entries (entries=[]).
+    runner.invoke(cli_app, ["--json", "session", "compact", "default"])
+    result = runner.invoke(
+        cli_app,
+        ["--json", "session", "show", "default", "--since-compact"],
+    )
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["entries"] == []
+
+
 def test_session_archive_happy_path(runner: CliRunner, cli_app: Any, tmp_path: Path) -> None:
     tapes_dir = tmp_path / "tapes"
     _seed_session(tmp_path, "default", tapes_dir)

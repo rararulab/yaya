@@ -72,6 +72,10 @@ PublicEventKind = Literal[
     "session.reset",
     "session.archived",
     "session.forked",
+    # Conversation compaction (kernel → all; issue #29).
+    "session.compaction.started",
+    "session.compaction.completed",
+    "session.compaction.failed",
 ]
 
 PUBLIC_EVENT_KINDS: frozenset[str] = frozenset(get_args(PublicEventKind))
@@ -591,6 +595,55 @@ class SessionForkedPayload(TypedDict):
     request_id: NotRequired[str]
 
 
+class SessionCompactionStartedPayload(TypedDict):
+    """``session.compaction.started`` — compaction kicked off for a session.
+
+    Routed on ``session_id="kernel"`` (lesson #2). The originating
+    tape is identified by ``target_session_id`` so adapters can surface
+    a "compacting…" banner against the right conversation.
+
+    Fields:
+        target_session_id: Logical id of the session being compacted.
+        tokens_before: Approximate token count for the window since the
+            previous anchor, per
+            :func:`yaya.kernel.compaction.estimate_text_tokens`.
+    """
+
+    target_session_id: str
+    tokens_before: int
+
+
+class SessionCompactionCompletedPayload(TypedDict):
+    """``session.compaction.completed`` — compaction finished successfully.
+
+    Emitted after the compaction anchor has been persisted. The
+    ``tokens_after`` field reflects the window *following* the new
+    anchor (empty in the common case).
+
+    Fields:
+        target_session_id: Logical id of the session that was compacted.
+        tokens_before: Approximate pre-compaction window size.
+        tokens_after: Approximate post-compaction window size.
+    """
+
+    target_session_id: str
+    tokens_before: int
+    tokens_after: int
+
+
+class SessionCompactionFailedPayload(TypedDict):
+    """``session.compaction.failed`` — the summariser raised.
+
+    Fields:
+        target_session_id: Logical id of the session that failed.
+        error: ``str(exc)`` (or the exception class name when the
+            message is empty).
+    """
+
+    target_session_id: str
+    error: str
+
+
 class KernelErrorPayload(TypedDict):
     """``kernel.error`` — the kernel itself failed; ``yaya serve`` exits non-zero.
 
@@ -707,6 +760,9 @@ __all__ = [
     "PluginRemovedPayload",
     "PublicEventKind",
     "SessionArchivedPayload",
+    "SessionCompactionCompletedPayload",
+    "SessionCompactionFailedPayload",
+    "SessionCompactionStartedPayload",
     "SessionForkedPayload",
     "SessionHandoffPayload",
     "SessionResetPayload",

@@ -87,8 +87,57 @@ def select_messages(
             pending_calls = []
         elif kind == "event" and bool(entry.meta.get("include_in_context")):
             _append_event(messages, entry)
-        # anchor / error / anything else: intentionally skipped.
+        elif kind == "anchor" and _is_compaction_anchor(entry):
+            # Elide everything accumulated so far: the compaction
+            # summary REPLACES the pre-anchor prefix. The surviving
+            # messages are the summary (as a system message) plus
+            # whatever comes after the anchor.
+            messages = []
+            pending_calls = []
+            _append_compaction_summary(messages, entry)
+        # other anchor / error / anything else: intentionally skipped.
     return messages
+
+
+def _is_compaction_anchor(entry: TapeEntry) -> bool:
+    """True when ``entry`` is an anchor emitted by the compaction runtime.
+
+    Compaction anchors carry ``state={"kind": "compaction", ...}`` per
+    the contract in :mod:`yaya.kernel.compaction`. All other anchors
+    (``session/start``, fork markers, user-authored handoffs) are
+    skipped by :func:`select_messages` so their boundary role does not
+    leak into the LLM prompt.
+    """
+    if entry.kind != "anchor":
+        return False
+    state = entry.payload.get("state")
+    if not isinstance(state, dict):
+        return False
+    return cast("dict[str, Any]", state).get("kind") == "compaction"
+
+
+def _append_compaction_summary(
+    messages: list[dict[str, Any]],
+    entry: TapeEntry,
+) -> None:
+    """Inject the compaction summary as a ``role="system"`` message.
+
+    Preserves the "summary replaces the elided prefix" contract: when a
+    context is rebuilt from entries that cross a compaction anchor, the
+    reader sees the summary in-place, not the raw pre-compaction log.
+    The summary text is whatever the :class:`~yaya.kernel.compaction.Summarizer`
+    returned — rendered verbatim so providers can decide how to frame
+    it.
+    """
+    state = entry.payload.get("state")
+    if not isinstance(state, dict):
+        return
+    summary_value: Any = cast("dict[str, Any]", state).get("summary", "")
+    summary = summary_value if isinstance(summary_value, str) else str(summary_value)
+    messages.append({
+        "role": "system",
+        "content": f"[compacted history]\n{summary}" if summary else "[compacted history]",
+    })
 
 
 async def after_last_anchor(
@@ -111,7 +160,17 @@ async def after_last_anchor(
         has no anchors yet.
     """
     entries = await manager.query_tape(tape_name).last_anchor().all()
-    return list(cast("list[TapeEntry]", entries))
+    # Republic emits a synthetic ``event(name="handoff")`` after each
+    # anchor so observers without anchor support still see the
+    # boundary. It never represents user-authored context, so strip it
+    # out of the post-anchor view — otherwise compaction re-summarises
+    # its own marker on every pass.
+    return [e for e in cast("list[TapeEntry]", entries) if not _is_handoff_event(e)]
+
+
+def _is_handoff_event(entry: TapeEntry) -> bool:
+    """True when ``entry`` is republic's synthetic post-anchor handoff event."""
+    return entry.kind == "event" and entry.payload.get("name") == "handoff"
 
 
 def _append_message(messages: list[dict[str, Any]], entry: TapeEntry) -> None:

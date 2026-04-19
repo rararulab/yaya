@@ -24,7 +24,15 @@ from rich.table import Table
 
 from yaya.cli import CLIState
 from yaya.cli.output import emit_error, emit_ok
-from yaya.kernel import SessionInfo, SessionStore, load_config, tape_name_for
+from yaya.kernel import (
+    Session,
+    SessionInfo,
+    SessionStore,
+    after_last_anchor,
+    load_config,
+    tape_name_for,
+)
+from yaya.kernel.compaction import Summarizer, compact_session
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import
     pass
@@ -52,6 +60,12 @@ EXAMPLES_ARCHIVE = """
 Examples:
   yaya session archive default
   yaya --json session archive default --yes
+"""
+
+EXAMPLES_COMPACT = """
+Examples:
+  yaya session compact default
+  yaya --json session compact default
 """
 
 _stdout = Console()
@@ -87,10 +101,17 @@ def register(app: typer.Typer) -> None:  # noqa: C901 — four sibling Typer com
             max=10_000,
             help="Show the last N tape entries.",
         ),
+        since_compact: bool = typer.Option(
+            False,
+            "--since-compact",
+            help="Only show entries appended after the most recent compaction anchor.",
+        ),
     ) -> None:
         """Tail the tape for ``session_id`` in the current workspace."""
         state: CLIState = ctx.obj
-        entries = asyncio.run(_show_session(session_id, tail=tail))
+        entries = asyncio.run(
+            _show_session(session_id, tail=tail, since_compact=since_compact),
+        )
         if state.json_output:
             emit_ok(
                 state,
@@ -167,6 +188,40 @@ def register(app: typer.Typer) -> None:  # noqa: C901 — four sibling Typer com
             archive_path=str(archive_path),
         )
 
+    @session_app.command("compact", epilog=EXAMPLES_COMPACT)
+    def session_compact(
+        ctx: typer.Context,
+        session_id: str = typer.Argument(..., help="Session id to compact."),
+    ) -> None:
+        """Manually trigger compaction for ``session_id``.
+
+        Uses the fallback heuristic summariser so the CLI stays useful
+        without a running kernel. Operators that want LLM-generated
+        summaries should trigger compaction from inside ``yaya serve``
+        where an :class:`~yaya.kernel.compaction.Summarizer` is wired.
+        """
+        state: CLIState = ctx.obj
+        result = asyncio.run(_compact_session_cli(session_id))
+        if result is None:
+            emit_error(
+                state,
+                error=f"session {session_id!r} has no entries to compact",
+                suggestion="add messages first, then retry `yaya session compact`",
+            )
+            raise typer.Exit(1)
+        tokens_before, summary = result
+        emit_ok(
+            state,
+            text=(
+                f"[green]compacted[/] session {session_id} "
+                f"(tokens_before={tokens_before}, summary_chars={len(summary)})"
+            ),
+            action="session.compact",
+            session_id=session_id,
+            tokens_before=tokens_before,
+            summary=summary,
+        )
+
     app.add_typer(session_app, name="session")
 
 
@@ -201,14 +256,26 @@ async def _list_sessions() -> list[dict[str, Any]]:
     return [_info_dict(info) for info in infos]
 
 
-async def _show_session(session_id: str, *, tail: int) -> list[dict[str, Any]]:
+async def _show_session(
+    session_id: str,
+    *,
+    tail: int,
+    since_compact: bool = False,
+) -> list[dict[str, Any]]:
     store = _make_store()
     try:
         session = await store.open(_workspace(), session_id)
-        # ``Session.tail`` streams the jsonl file through a bounded deque
-        # on the file store, so ``--tail 5`` on a 10 MB tape is O(n)-tail-memory
-        # instead of buffering every entry via ``entries()``.
-        sliced = await session.tail(tail) if tail > 0 else await session.entries()
+        if since_compact:
+            # Post-last-anchor slice: mirrors what the context selector sees
+            # for post-compaction turns. We still honour --tail so operators
+            # can cap very long post-compaction windows.
+            raw = await after_last_anchor(session.manager, session.tape_name)
+            sliced = raw[-tail:] if tail > 0 else raw
+        else:
+            # ``Session.tail`` streams the jsonl file through a bounded deque
+            # on the file store, so ``--tail 5`` on a 10 MB tape is O(n)-tail-memory
+            # instead of buffering every entry via ``entries()``.
+            sliced = await session.tail(tail) if tail > 0 else await session.entries()
     finally:
         await store.close()
     return [
@@ -221,6 +288,58 @@ async def _show_session(session_id: str, *, tail: int) -> list[dict[str, Any]]:
         }
         for e in sliced
     ]
+
+
+class _HeuristicSummarizer:
+    """Deterministic fallback summariser used by the CLI manual path.
+
+    Produces a short bullet-style digest so operators see *something*
+    meaningful without needing a live LLM. The summary is capped to
+    ``target_tokens * 4`` characters to keep the output bounded.
+    """
+
+    async def summarize(
+        self,
+        entries: list[Any],
+        target_tokens: int,
+    ) -> str:
+        """Return a char-bounded digest of ``entries``."""
+        max_chars = max(200, target_tokens * 4)
+        lines: list[str] = []
+        for entry in entries:
+            if entry.kind != "message":
+                continue
+            role = str(entry.payload.get("role", "?"))
+            content = str(entry.payload.get("content", ""))
+            snippet = content.strip().replace("\n", " ")
+            if len(snippet) > 120:
+                snippet = snippet[:117] + "..."
+            lines.append(f"- {role}: {snippet}")
+        text = "\n".join(lines) or "(no messages to summarise)"
+        return text[:max_chars]
+
+
+async def _compact_session_cli(session_id: str) -> tuple[int, str] | None:
+    """Compact ``session_id`` with the heuristic summariser; return (tokens_before, summary).
+
+    Returns ``None`` when the session tape has no post-anchor entries —
+    the CLI surfaces that as an error so the operator knows the call
+    was a no-op instead of silently succeeding (lesson #10).
+    """
+    store = _make_store()
+    try:
+        session: Session = await store.open(_workspace(), session_id)
+        pre = await after_last_anchor(session.manager, session.tape_name)
+        if not pre:
+            return None
+        from yaya.kernel.compaction import estimate_text_tokens
+
+        tokens_before = estimate_text_tokens(pre)
+        summarizer: Summarizer = _HeuristicSummarizer()
+        summary = await compact_session(session, summarizer)
+        return tokens_before, summary
+    finally:
+        await store.close()
 
 
 async def _resume_session(session_id: str) -> SessionInfo | None:

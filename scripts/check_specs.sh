@@ -10,7 +10,9 @@
 # the SKIP total for visibility but do NOT fail the run on them.
 #
 # Locally without the binary: prints an install hint and exits 0 so a
-# commit is not blocked. CI always has it, so CI enforces.
+# commit is not blocked (set SKIP_AGENT_SPEC=1 to opt out explicitly).
+# Under $CI or $GITHUB_ACTIONS a missing binary hard-fails — a cargo
+# install step or cache-key drift must never let spec drift land silently.
 #
 # See docs/dev/agent-spec.md for install and semantics.
 set -euo pipefail
@@ -36,8 +38,21 @@ fi
 echo
 
 if ! command -v agent-spec >/dev/null 2>&1; then
-  echo "⚠️  agent-spec not installed; skipping spec enforcement."
+  if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+    echo "❌ agent-spec not installed but running under CI."
+    echo "   Install: cargo install agent-spec --version 0.2.7 --locked"
+    echo "   This is a CI configuration bug — specs cannot be enforced."
+    echo "   See docs/dev/agent-spec.md"
+    exit 1
+  fi
+  if [ -n "${SKIP_AGENT_SPEC:-}" ]; then
+    echo "ℹ️  agent-spec not installed; SKIP_AGENT_SPEC=1 set, skipping."
+    exit 0
+  fi
+  echo "⚠️  agent-spec not installed; spec enforcement skipped locally."
   echo "    Install: cargo install agent-spec --version 0.2.7 --locked"
+  echo "    Or set SKIP_AGENT_SPEC=1 to explicitly skip."
+  echo "    Local default will switch to hard-fail in a future release."
   echo "    See docs/dev/agent-spec.md"
   exit 0
 fi

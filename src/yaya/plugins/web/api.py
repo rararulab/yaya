@@ -80,17 +80,32 @@ def is_secret_key(key: str) -> bool:
     return last in SECRET_SUFFIXES
 
 
-def mask_value(value: Any) -> str:
-    """Render a secret value as ``****<last4>`` or ``****``.
+def mask_value(value: Any) -> Any:
+    """Render a secret value, preserving container structure.
 
-    Only strings get the last-4-chars reveal; non-strings always
-    collapse to ``****`` so no structure leaks through.
+    Leaf strings collapse to ``****<last4>`` (or ``****`` when shorter
+    than five chars). Dicts and lists are walked recursively so the
+    UI can render a nested config value (e.g. ``{primary: ...,
+    fallback: ...}``) with each leaf masked independently. Non-string,
+    non-container scalars collapse to ``****`` so their type does not
+    leak.
     """
-    if not isinstance(value, str):
-        return "****"
-    if len(value) <= 4:
-        return "****"
-    return f"****{value[-4:]}"
+    if isinstance(value, str):
+        if len(value) <= 4:
+            return "****"
+        return f"****{value[-4:]}"
+    if isinstance(value, dict):
+        walked = cast("dict[str, Any]", value)
+        return {k: mask_value(v) for k, v in walked.items()}
+    if isinstance(value, list):
+        # mypy infers ``list[Any]`` after the isinstance narrow, so the
+        # cast would be redundant; pyright needs the explicit annotation
+        # to drop the partially-unknown-list warning. A bare
+        # ``list[Any]`` local satisfies both — the ignore pins the
+        # single cross-checker skew on this one line.
+        items: list[Any] = value  # pyright: ignore[reportUnknownVariableType]
+        return [mask_value(v) for v in items]
+    return "****"
 
 
 class _ConfigPatchBody(BaseModel):
@@ -255,7 +270,10 @@ def _register_config_routes(
             await store.set(key, body.value)
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return JSONResponse({"key": key, "ok": True})
+        # Echo ``{key, value}`` per the TypeScript client contract in
+        # ``src/yaya/plugins/web/src/api.ts``. ``ok`` is kept for
+        # pre-existing clients; the new field is ``value``.
+        return JSONResponse({"key": key, "value": body.value, "ok": True})
 
     @router.delete("/api/config/{key:path}")
     async def _config_delete(key: str) -> JSONResponse:
@@ -265,16 +283,43 @@ def _register_config_routes(
         return JSONResponse({"key": key, "removed": bool(removed)})
 
 
+async def _read_enabled_by_name(name: str, store: ConfigStore | None) -> bool:
+    """Read ``plugin.<ns>.enabled`` by name, defaulting to ``True``.
+
+    Variant of :func:`_plugin_enabled` that does not require a live
+    Plugin object — used on the unloaded branch of
+    :func:`_build_plugin_row` so failed-load plugins do not show as
+    ``enabled=True`` when the config says otherwise.
+    """
+    if store is None:
+        return True
+    ns = name.replace("-", "_")
+    raw = await store.get(f"plugin.{ns}.enabled", True)
+    return bool(raw)
+
+
 async def _build_plugin_row(
     row: dict[str, str],
     by_name: dict[str, Plugin],
     config_store: ConfigStore | None,
 ) -> dict[str, Any]:
-    """Assemble one ``/api/plugins`` row with live metadata."""
+    """Assemble one ``/api/plugins`` row with live metadata.
+
+    ``reload_required`` defaults to ``False`` — it is the row's
+    pristine state. :func:`_mark_reload_required` flips it to ``True``
+    on the row returned by ``PATCH /api/plugins/<name>`` so the UI can
+    surface a "reload to apply" hint without a separate round trip.
+    """
     name = row["name"]
     plugin = by_name.get(name)
     if plugin is None:
-        return {**row, "enabled": True, "config_schema": None, "current_config": {}}
+        return {
+            **row,
+            "enabled": await _read_enabled_by_name(name, config_store),
+            "config_schema": None,
+            "current_config": {},
+            "reload_required": False,
+        }
     return {
         "name": name,
         "category": row["category"],
@@ -283,7 +328,42 @@ async def _build_plugin_row(
         "enabled": await _plugin_enabled(plugin, config_store),
         "config_schema": _plugin_config_schema(plugin),
         "current_config": _plugin_current_config(plugin, config_store),
+        "reload_required": False,
     }
+
+
+async def _apply_plugin_patch(
+    reg: PluginRegistry,
+    store: ConfigStore,
+    name: str,
+    enabled: bool,
+) -> JSONResponse:
+    """Persist the enabled flip and return the refreshed row.
+
+    Extracted from the ``PATCH /api/plugins/{name}`` handler to keep
+    the route body under the cyclomatic-complexity budget.
+    """
+    by_name: dict[str, Plugin] = {p.name: p for p in reg.loaded_plugins()}
+    snap_row = next((r for r in reg.snapshot() if r["name"] == name), None)
+    if name not in by_name and snap_row is None:
+        raise HTTPException(status_code=404, detail=f"plugin not found: {name}")
+    ns = name.replace("-", "_")
+    await store.set(f"plugin.{ns}.enabled", enabled)
+    if snap_row is None:
+        # Defensive — snap_row is None only when the plugin is loaded
+        # but not in the snapshot, which the registry invariants
+        # prevent. Synthesize the minimal row so the response shape
+        # stays consistent.
+        loaded = by_name[name]
+        snap_row = {
+            "name": loaded.name,
+            "version": loaded.version,
+            "category": loaded.category.value,
+            "status": "loaded",
+        }
+    refreshed = await _build_plugin_row(snap_row, by_name, store)
+    refreshed["reload_required"] = True
+    return JSONResponse(refreshed)
 
 
 def _register_plugin_routes(
@@ -303,23 +383,28 @@ def _register_plugin_routes(
 
     @router.patch("/api/plugins/{name}")
     async def _plugins_patch(name: str, body: _PluginPatchBody) -> JSONResponse:
-        """Toggle a plugin's ``enabled`` flag; reload required to take effect."""
+        """Toggle a plugin's ``enabled`` flag and return the refreshed row.
+
+        ``reload_required=True`` on the returned row is a UI hint —
+        ephemeral per-process state, NOT persisted to the config
+        store. The kernel must be reloaded for the enabled flip to
+        take effect.
+        """
         reg = cast("PluginRegistry", _require(registry, "plugin registry"))
         store = cast("ConfigStore", _require(config_store, "config store"))
-        loaded_names = {p.name for p in reg.loaded_plugins()}
-        if name not in loaded_names and not any(r["name"] == name for r in reg.snapshot()):
-            raise HTTPException(status_code=404, detail=f"plugin not found: {name}")
-        ns = name.replace("-", "_")
-        await store.set(f"plugin.{ns}.enabled", body.enabled)
-        return JSONResponse({
-            "name": name,
-            "enabled": body.enabled,
-            "reload_required": True,
-        })
+        return await _apply_plugin_patch(reg, store, name, body.enabled)
 
     @router.post("/api/plugins/install")
     async def _plugins_install(body: _PluginInstallBody) -> JSONResponse:
-        """Install a plugin package via the registry's install path."""
+        """Install a plugin package via the registry's install path.
+
+        The install is **synchronous** today — the handler blocks until
+        ``registry.install`` returns. The ``job_id`` in the response is
+        a correlation id the UI can pin to a progress row; when a
+        future PR moves installs to a background queue the same field
+        will carry a pollable job handle and the response will become
+        ``202 Accepted`` instead of ``200``.
+        """
         reg = cast("PluginRegistry", _require(registry, "plugin registry"))
         _validate_install_source_guard(body.source)
         try:
@@ -328,7 +413,11 @@ def _register_plugin_routes(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
-        return JSONResponse({"source": body.source, "ok": True})
+        return JSONResponse({
+            "job_id": str(uuid.uuid4()),
+            "source": body.source,
+            "ok": True,
+        })
 
     @router.delete("/api/plugins/{name}")
     async def _plugins_delete(name: str) -> JSONResponse:
@@ -343,6 +432,35 @@ def _register_plugin_routes(
         return JSONResponse({"name": name, "removed": True})
 
 
+async def _collect_provider_rows(
+    registry: PluginRegistry,
+    config_store: ConfigStore | None,
+) -> list[dict[str, Any]]:
+    """Build the list of LLM-provider rows served by the API.
+
+    Extracted from the ``GET /api/llm-providers`` handler so the
+    ``PATCH /api/llm-providers/active`` handler can return the
+    refreshed list in the same round trip — the UI atomically
+    re-renders from one response body.
+    """
+    providers = registry.loaded_plugins(Category.LLM_PROVIDER)
+    active_name: str | None = None
+    if config_store is not None:
+        raw = await config_store.get(_PROVIDER_CONFIG_KEY)
+        if isinstance(raw, str) and raw:
+            active_name = raw
+    return [
+        {
+            "name": plugin.name,
+            "version": plugin.version,
+            "active": plugin.name == active_name,
+            "config_schema": _plugin_config_schema(plugin),
+            "current_config": _plugin_current_config(plugin, config_store),
+        }
+        for plugin in providers
+    ]
+
+
 def _register_provider_routes(
     router: APIRouter,
     registry: PluginRegistry | None,
@@ -353,41 +471,42 @@ def _register_provider_routes(
 
     @router.get("/api/llm-providers")
     async def _providers_list() -> JSONResponse:
-        """List every loaded LLM-provider plugin with the active flag."""
+        """List every loaded LLM-provider plugin with the active flag.
+
+        Returns a bare JSON array (``LlmProviderRow[]``) to match the
+        TypeScript client contract in
+        ``src/yaya/plugins/web/src/api.ts``.
+        """
         reg = cast("PluginRegistry", _require(registry, "plugin registry"))
-        providers = reg.loaded_plugins(Category.LLM_PROVIDER)
-        active_name: str | None = None
-        if config_store is not None:
-            raw = await config_store.get(_PROVIDER_CONFIG_KEY)
-            if isinstance(raw, str) and raw:
-                active_name = raw
-        rows = [
-            {
-                "name": plugin.name,
-                "version": plugin.version,
-                "active": plugin.name == active_name,
-                "config_schema": _plugin_config_schema(plugin),
-                "current_config": _plugin_current_config(plugin, config_store),
-            }
-            for plugin in providers
-        ]
-        return JSONResponse({"providers": rows})
+        rows = await _collect_provider_rows(reg, config_store)
+        return JSONResponse(rows)
 
     @router.patch("/api/llm-providers/active")
     async def _providers_set_active(body: _ProviderActiveBody) -> JSONResponse:
-        """Switch the active provider by writing the ``provider`` config key."""
+        """Switch the active provider and return the refreshed list.
+
+        Validation uses :meth:`loaded_plugins` (not ``snapshot``) so
+        only currently-loaded providers are selectable — a plugin that
+        is installed but failed to load cannot be made active.
+        """
         reg = cast("PluginRegistry", _require(registry, "plugin registry"))
         store = cast("ConfigStore", _require(config_store, "config store"))
-        match = next((r for r in reg.snapshot() if r["name"] == body.name), None)
-        if match is None:
-            raise HTTPException(status_code=404, detail=f"plugin not found: {body.name}")
-        if match["category"] != Category.LLM_PROVIDER.value:
+        loaded_providers = reg.loaded_plugins(Category.LLM_PROVIDER)
+        loaded_provider_names = {p.name for p in loaded_providers}
+        if body.name not in loaded_provider_names:
+            # Distinguish "not a provider (present elsewhere in the
+            # snapshot)" from "unknown plugin" so the UI can render a
+            # useful error.
+            snap_match = next((r for r in reg.snapshot() if r["name"] == body.name), None)
+            if snap_match is None:
+                raise HTTPException(status_code=404, detail=f"plugin not found: {body.name}")
             raise HTTPException(
                 status_code=400,
-                detail=f"{body.name!r} is not an llm-provider plugin",
+                detail=f"{body.name!r} is not a loaded llm-provider plugin",
             )
         await store.set(_PROVIDER_CONFIG_KEY, body.name)
-        return JSONResponse({"active": body.name, "ok": True})
+        rows = await _collect_provider_rows(reg, store)
+        return JSONResponse(rows)
 
     @router.post("/api/llm-providers/{name}/test")
     async def _providers_test(name: str) -> JSONResponse:

@@ -157,10 +157,10 @@ async def test_config_crud_cycle(store: ConfigStore, registry: _StubRegistry) ->
     """PATCH / GET / DELETE / GET round-trip a key end-to-end."""
     app = _build_app(store=store, registry=registry)
     async with _client(app) as client:
-        # PATCH writes.
+        # PATCH writes and echoes {key, value}.
         resp = await client.patch("/api/config/provider", json={"value": "openai"})
         assert resp.status_code == 200
-        assert resp.json() == {"key": "provider", "ok": True}
+        assert resp.json() == {"key": "provider", "value": "openai", "ok": True}
 
         # GET reads back.
         resp = await client.get("/api/config/provider")
@@ -208,15 +208,10 @@ async def test_config_secret_masking_honours_show_flag(store: ConfigStore, regis
         assert resp.json()["value"] == "sk-supersecretvalue"
 
 
-async def test_config_patch_rejects_non_json(store: ConfigStore, registry: _StubRegistry) -> None:
-    """Non-JSON-encodable values surface as 400."""
+async def test_config_patch_rejects_missing_value(store: ConfigStore, registry: _StubRegistry) -> None:
+    """A body without the required ``value`` field is rejected with 422."""
     app = _build_app(store=store, registry=registry)
     async with _client(app) as client:
-        # A set payload cannot round-trip through json.dumps; FastAPI will
-        # fail to parse the body → 422. Use a dict with a non-JSON value
-        # by posting a valid body then overriding the stored type below.
-        # Plain content: we trigger the TypeError path by posting missing
-        # body key, which pydantic rejects as 422.
         resp = await client.patch("/api/config/x", json={"wrong": 1})
         assert resp.status_code == 422
 
@@ -249,15 +244,20 @@ async def test_plugins_list_exposes_metadata(store: ConfigStore, registry: _Stub
         assert openai_row["enabled"] is True  # default when unset
         assert openai_row["config_schema"] is None
         assert openai_row["current_config"] == {"model": "gpt-4o-mini"}
+        assert openai_row["reload_required"] is False
 
 
 async def test_plugin_patch_writes_enabled_flag(store: ConfigStore, registry: _StubRegistry) -> None:
-    """PATCH /api/plugins/<name> writes ``plugin.<ns>.enabled`` in store."""
+    """PATCH /api/plugins/<name> writes ``plugin.<ns>.enabled`` and returns the row."""
     app = _build_app(store=store, registry=registry)
     async with _client(app) as client:
         resp = await client.patch("/api/plugins/llm-openai", json={"enabled": False})
         assert resp.status_code == 200
         body = resp.json()
+        # Response is the refreshed PluginRow with the reload hint flipped.
+        assert body["name"] == "llm-openai"
+        assert body["category"] == "llm-provider"
+        assert body["status"] == "loaded"
         assert body["enabled"] is False
         assert body["reload_required"] is True
 
@@ -284,6 +284,12 @@ async def test_plugin_install_delegates_to_registry(store: ConfigStore, registry
             json={"source": "some-dist", "editable": False},
         )
         assert resp.status_code == 200
+        body = resp.json()
+        assert body["source"] == "some-dist"
+        assert body["ok"] is True
+        # ``job_id`` is a fresh UUID4 per install — assert shape, not value.
+        assert isinstance(body["job_id"], str)
+        assert len(body["job_id"]) >= 32
         assert registry.installed == [("some-dist", False)]
 
 
@@ -337,12 +343,14 @@ async def test_llm_provider_list_flags_active(store: ConfigStore, registry: _Stu
     async with _client(app) as client:
         resp = await client.get("/api/llm-providers")
         body = resp.json()
-        actives = {row["name"]: row["active"] for row in body["providers"]}
+        # Bare array per the TS client contract.
+        assert isinstance(body, list)
+        actives = {row["name"]: row["active"] for row in body}
         assert actives == {"llm-openai": False, "llm-echo": True}
 
 
 async def test_llm_provider_active_switch(store: ConfigStore, registry: _StubRegistry) -> None:
-    """PATCH /api/llm-providers/active writes the ``provider`` config key."""
+    """PATCH /api/llm-providers/active writes ``provider`` and returns the refreshed list."""
     app = _build_app(store=store, registry=registry)
     async with _client(app) as client:
         resp = await client.patch(
@@ -350,7 +358,10 @@ async def test_llm_provider_active_switch(store: ConfigStore, registry: _StubReg
             json={"name": "llm-openai"},
         )
         assert resp.status_code == 200
-        assert resp.json() == {"active": "llm-openai", "ok": True}
+        body = resp.json()
+        assert isinstance(body, list)
+        actives = {row["name"]: row["active"] for row in body}
+        assert actives == {"llm-openai": True, "llm-echo": False}
         assert await store.get("provider") == "llm-openai"
 
 
@@ -522,11 +533,30 @@ def test_is_secret_key_matches_last_segment() -> None:
 
 
 def test_mask_value_shapes() -> None:
-    """Short / non-string values collapse to ``****``."""
+    """Short / non-string scalars collapse to ``****``; long strings keep the tail."""
     assert mask_value("abc") == "****"
     assert mask_value("supersecret") == "****cret"
     assert mask_value(12345) == "****"
     assert mask_value(None) == "****"
+
+
+def test_mask_value_walks_nested_dict_and_list() -> None:
+    """Containers are walked; only leaf strings mask, structure is preserved."""
+    nested = {
+        "primary": "sk-abc123",
+        "fallback": "sk-xyz789",
+        "meta": {"label": "prod-key", "count": 42},
+        "history": ["sk-first-one", "sk-second-one", 7],
+    }
+    masked = mask_value(nested)
+    assert masked == {
+        "primary": "****c123",
+        "fallback": "****z789",
+        "meta": {"label": "****-key", "count": "****"},
+        "history": ["****-one", "****-one", "****"],
+    }
+    # Top-level list also walks.
+    assert mask_value(["supersecret", "x"]) == ["****cret", "****"]
 
 
 # Unused helper surface kept for future parametric cases.

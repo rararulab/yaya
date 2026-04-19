@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#plugin-protocol-v0-10">Plugin Protocol (v0 → 1.0)</a></li>
-        <li><a href="#plugin-categories-closed-set">Plugin categories (closed set)</a></li><li><a href="#event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)</a></li><li><a href="#plugin-discovery-and-loading">Plugin discovery and loading</a></li><li><a href="#plugin-abi">Plugin ABI</a></li><li><a href="#agent-loop-kernel-owned">Agent loop (kernel-owned)</a></li><li><a href="#plugin-failure-model">Plugin failure model</a></li><li><a href="#sessions-and-tape">Sessions and tape</a></li><li><a href="#multi-connection-fanout-36">Multi-connection fanout (#36)</a></li><li><a href="#sub-agents-via-the-agent-tool-34">Sub-agents via the agent tool (#34)</a></li><li><a href="#security-posture-10">Security posture (1.0)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#plugin-categories-closed-set">Plugin categories (closed set)</a></li><li><a href="#event-taxonomy-v0-frozen-at-10">Event taxonomy (v0 — frozen at 1.0)</a></li><li><a href="#plugin-discovery-and-loading">Plugin discovery and loading</a></li><li><a href="#plugin-abi">Plugin ABI</a></li><li><a href="#agent-loop-kernel-owned">Agent loop (kernel-owned)</a></li><li><a href="#plugin-failure-model">Plugin failure model</a></li><li><a href="#sessions-and-tape">Sessions and tape</a></li><li><a href="#multi-connection-fanout-36">Multi-connection fanout (#36)</a></li><li><a href="#sub-agents-via-the-agent-tool-34">Sub-agents via the agent tool (#34)</a></li><li><a href="#web-http-api">Web HTTP API</a></li><li><a href="#security-posture-10">Security posture (1.0)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -1522,6 +1522,145 @@ with a conversation FIFO):</p>
   outside it. At 0.2 this is observational only; hard kernel-side
   enforcement is future work.</li>
 </ul>
+<h2 id="web-http-api">Web HTTP API<a class="headerlink" href="#web-http-api" title="Permanent link">&para;</a></h2>
+<p>The bundled <code>web</code> adapter plugin exposes an HTTP admin surface on
+top of the kernel's <code>ConfigStore</code> and <code>PluginRegistry</code>. The API is
+the browser UI's control plane. It is <strong>unauthenticated</strong> — <code>yaya
+serve</code> binds <code>127.0.0.1</code> only through 1.0, so local-only is the
+sole authorization. Operators fronting yaya with a reverse proxy
+accept the risk.</p>
+<p>All routes live under <code>/api/</code>. JSON in, JSON out. <code>text/plain</code> error
+responses carry a <code>detail</code> field per FastAPI's default shape.</p>
+<h3 id="config-endpoints">Config endpoints<a class="headerlink" href="#config-endpoints" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Body</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/config</code></td>
+<td>—</td>
+<td><code>{&lt;key&gt;: &lt;value-or-mask&gt;, ...}</code></td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/config/{key}</code></td>
+<td>—</td>
+<td><code>{"key": str, "value": any}</code> (masked unless <code>?show=1</code>)</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/api/config/{key}</code></td>
+<td><code>{"value": any}</code></td>
+<td><code>{"key": str, "ok": true}</code></td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/api/config/{key}</code></td>
+<td>—</td>
+<td><code>{"key": str, "removed": bool}</code></td>
+</tr>
+</tbody>
+</table>
+<p>Masking rule (mirrors <code>yaya config list</code>): keys whose last dotted
+segment is one of <code>api_key</code>, <code>token</code>, <code>secret</code>, <code>password</code> collapse
+to <code>****&lt;last4&gt;</code> (strings) or <code>****</code> (non-strings / ≤4-char values).
+<code>?show=1</code> on <code>GET /api/config/{key}</code> bypasses the mask for a
+deliberate single-key read.</p>
+<h3 id="plugin-endpoints">Plugin endpoints<a class="headerlink" href="#plugin-endpoints" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Body</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/plugins</code></td>
+<td>—</td>
+<td><code>{"plugins": [{name, category, status, version, enabled, config_schema, current_config}, ...]}</code></td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/api/plugins/{name}</code></td>
+<td><code>{"enabled": bool}</code></td>
+<td><code>{"name": str, "enabled": bool, "reload_required": true}</code></td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/plugins/install</code></td>
+<td><code>{"source": str, "editable": bool}</code></td>
+<td><code>{"source": str, "ok": true}</code></td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/api/plugins/{name}</code></td>
+<td>—</td>
+<td><code>{"name": str, "removed": true}</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>config_schema</code> is the plugin's pydantic <code>ConfigModel</code> JSON Schema
+(or <code>null</code> when the plugin does not declare one). <code>current_config</code>
+is a nested dict of the plugin's <code>plugin.&lt;ns&gt;.*</code> keys from
+ConfigStore. <code>enabled</code> reads <code>plugin.&lt;ns&gt;.enabled</code> (default <code>true</code>)
+and takes effect on the next kernel reload — the admin API does NOT
+mutate a running plugin's subscription set.</p>
+<p>Install forwards the <code>source</code> string through
+<code>yaya.kernel.registry.validate_install_source</code> before calling
+<code>registry.install</code>. Disallowed characters / schemes → 400; pip
+failures → 500. Removing a bundled plugin → 400 (registry raises
+<code>ValueError</code>).</p>
+<h3 id="llm-provider-endpoints">LLM-provider endpoints<a class="headerlink" href="#llm-provider-endpoints" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Body</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/llm-providers</code></td>
+<td>—</td>
+<td><code>{"providers": [{name, version, active, config_schema, current_config}, ...]}</code></td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/api/llm-providers/active</code></td>
+<td><code>{"name": str}</code></td>
+<td><code>{"active": str, "ok": true}</code></td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/llm-providers/{name}/test</code></td>
+<td>—</td>
+<td><code>{"ok": bool, "latency_ms": int, "error"?: str}</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>active</code> is derived from config key <code>provider</code>; the PATCH endpoint
+writes that key and the running strategy picks it up on the next
+turn. The target must be a loaded <code>llm-provider</code> plugin; category
+mismatch → 400, unknown plugin → 404.</p>
+<p><code>POST /api/llm-providers/{name}/test</code> fires one <code>llm.call.request</code>
+with a trivial prompt and a fresh session id, subscribes to both
+<code>llm.call.response</code> and <code>llm.call.error</code>, and waits up to 5 s. The
+response carries <code>ok</code>, <code>latency_ms</code>, and (on failure) the provider's
+error string — <code>"timeout"</code> when no reply arrived.</p>
 <h2 id="security-posture-10">Security posture (1.0)<a class="headerlink" href="#security-posture-10" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Plugins run in-process as trusted code. There is no sandbox in 1.0.</li>

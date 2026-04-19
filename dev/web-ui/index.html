@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#web-adapter-plugin">Web Adapter Plugin</a></li>
-        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#http-admin-api">HTTP admin API</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -612,6 +612,13 @@ between macOS and Linux on the runners), so CI only enforces the
 shape of the build. PR authors should still rebuild locally and
 commit the result; reviewers can eyeball bundle sizes for
 regressions from the build step's <code>stdout</code>.</p>
+<h2 id="http-admin-api">HTTP admin API<a class="headerlink" href="#http-admin-api" title="Permanent link">&para;</a></h2>
+<p>The adapter mounts an HTTP admin API under <code>/api/</code> for the browser
+UI's control plane (config, plugin, and LLM-provider management).
+Full endpoint reference + request / response schemas live in
+<a href="../plugin-protocol/#web-http-api"><code>plugin-protocol.md § Web HTTP API</code></a>.
+The API is <strong>unauthenticated</strong> — 127.0.0.1-only binding is the
+sole authorization through 1.0.</p>
 <h2 id="websocket-schema">WebSocket schema<a class="headerlink" href="#websocket-schema" title="Permanent link">&para;</a></h2>
 <p>The WS schema is a thin serialization of the public event set. The
 authoritative catalog lives in <code>src/yaya/kernel/events.py</code>; the TS

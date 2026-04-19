@@ -171,3 +171,18 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install dist/*.whl pytest pytest-timeout pytest-bdd pytest-asyncio websockets
           python -m pytest tests/e2e -v
+      # Ubuntu-only sdist smoke. Source builds surface MANIFEST /
+      # hatch `only-include` gaps that the wheel hides — the cheapest
+      # guard against "sdist is missing bundled files" regressions
+      # without tripling the OS matrix. See issue #41.
+      - name: Install sdist in a fresh venv and run smoke
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .sdist-smoke-venv
+          # shellcheck disable=SC1091
+          . .sdist-smoke-venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.tar.gz pytest pytest-timeout pytest-bdd pytest-asyncio websockets
+          python -m pytest tests/e2e -v

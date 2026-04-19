@@ -663,6 +663,8 @@ class PluginRegistry:
             state_dir=plugin_state,
             plugin_name=plugin.name,
             session=self._session,
+            registry=self,
+            config_store=self._config_store,
         )
 
     # -- failure accounting -----------------------------------------------------

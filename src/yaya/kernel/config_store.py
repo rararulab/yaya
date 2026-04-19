@@ -34,6 +34,7 @@ import asyncio
 import concurrent.futures
 import functools
 import json
+import logging
 import os
 import sqlite3
 import sys
@@ -77,6 +78,8 @@ _KERNEL_SESSION = "kernel"
 """Routing key for ``config.updated`` events (lesson #2)."""
 
 _CONFIG_SOURCE = "kernel-config-store"
+
+_logger = logging.getLogger(__name__)
 
 
 def default_config_db_path() -> Path:
@@ -170,23 +173,30 @@ class ConfigView(Mapping[str, Any]):
     def _full_key(self, key: str) -> str:
         return f"{self._prefix}{key}" if self._prefix else key
 
+    def _scoped_keys(self) -> list[str]:
+        """Snapshot cache keys, stripping ``self._prefix`` for scoped views.
+
+        Centralises the prefix filter + strip so ``__iter__`` /
+        ``__len__`` stay in lock-step; a fix in one is a fix in both.
+        Snapshots the key list so iteration does not observe a
+        concurrent :meth:`ConfigStore.set` mid-traversal.
+        """
+        if not self._prefix:
+            return list(self._cache.keys())
+        plen = len(self._prefix)
+        return [k[plen:] for k in list(self._cache.keys()) if k.startswith(self._prefix)]
+
     @override
     def __getitem__(self, key: str) -> Any:
         return self._cache[self._full_key(key)]
 
     @override
     def __iter__(self) -> Iterator[str]:
-        # Snapshot keys so iteration does not observe concurrent set()
-        # mid-iteration (the store's writes mutate the dict in place).
-        if not self._prefix:
-            return iter(list(self._cache.keys()))
-        return iter([k[len(self._prefix) :] for k in list(self._cache.keys()) if k.startswith(self._prefix)])
+        return iter(self._scoped_keys())
 
     @override
     def __len__(self) -> int:
-        if not self._prefix:
-            return len(self._cache)
-        return sum(1 for k in self._cache if k.startswith(self._prefix))
+        return len(self._scoped_keys())
 
     @override
     def __contains__(self, key: object) -> bool:
@@ -398,10 +408,18 @@ class ConfigStore:
                 continue
             try:
                 _validate_json_value(value)
-            except TypeError:
-                # Skip non-JSON entries silently; they were unreachable
-                # via the old config anyway (KernelConfig fields are
-                # already JSON-safe).
+            except TypeError as exc:
+                # Skip non-JSON entries but make the skip observable:
+                # silent drops hide bugs in the flattener (#106, S2).
+                # ``KernelConfig`` fields are already JSON-safe, so a
+                # skip here points at a future migration source that
+                # widened the type set.
+                _logger.warning(
+                    "config migration: skipping non-JSON key %r (%s): %s",
+                    key,
+                    type(value).__name__,
+                    exc,
+                )
                 continue
             encoded = json.dumps(value, ensure_ascii=False, sort_keys=True)
             now = int(time.time())

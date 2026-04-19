@@ -805,6 +805,74 @@ with a conversation FIFO):
   outside it. At 0.2 this is observational only; hard kernel-side
   enforcement is future work.
 
+## Web HTTP API
+
+The bundled `web` adapter plugin exposes an HTTP admin surface on
+top of the kernel's `ConfigStore` and `PluginRegistry`. The API is
+the browser UI's control plane. It is **unauthenticated** — `yaya
+serve` binds `127.0.0.1` only through 1.0, so local-only is the
+sole authorization. Operators fronting yaya with a reverse proxy
+accept the risk.
+
+All routes live under `/api/`. JSON in, JSON out. `text/plain` error
+responses carry a `detail` field per FastAPI's default shape.
+
+### Config endpoints
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `GET` | `/api/config` | — | `{<key>: <value-or-mask>, ...}` |
+| `GET` | `/api/config/{key}` | — | `{"key": str, "value": any}` (masked unless `?show=1`) |
+| `PATCH` | `/api/config/{key}` | `{"value": any}` | `{"key": str, "ok": true}` |
+| `DELETE` | `/api/config/{key}` | — | `{"key": str, "removed": bool}` |
+
+Masking rule (mirrors `yaya config list`): keys whose last dotted
+segment is one of `api_key`, `token`, `secret`, `password` collapse
+to `****<last4>` (strings) or `****` (non-strings / ≤4-char values).
+`?show=1` on `GET /api/config/{key}` bypasses the mask for a
+deliberate single-key read.
+
+### Plugin endpoints
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `GET` | `/api/plugins` | — | `{"plugins": [{name, category, status, version, enabled, config_schema, current_config}, ...]}` |
+| `PATCH` | `/api/plugins/{name}` | `{"enabled": bool}` | `{"name": str, "enabled": bool, "reload_required": true}` |
+| `POST` | `/api/plugins/install` | `{"source": str, "editable": bool}` | `{"source": str, "ok": true}` |
+| `DELETE` | `/api/plugins/{name}` | — | `{"name": str, "removed": true}` |
+
+`config_schema` is the plugin's pydantic `ConfigModel` JSON Schema
+(or `null` when the plugin does not declare one). `current_config`
+is a nested dict of the plugin's `plugin.<ns>.*` keys from
+ConfigStore. `enabled` reads `plugin.<ns>.enabled` (default `true`)
+and takes effect on the next kernel reload — the admin API does NOT
+mutate a running plugin's subscription set.
+
+Install forwards the `source` string through
+`yaya.kernel.registry.validate_install_source` before calling
+`registry.install`. Disallowed characters / schemes → 400; pip
+failures → 500. Removing a bundled plugin → 400 (registry raises
+`ValueError`).
+
+### LLM-provider endpoints
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `GET` | `/api/llm-providers` | — | `{"providers": [{name, version, active, config_schema, current_config}, ...]}` |
+| `PATCH` | `/api/llm-providers/active` | `{"name": str}` | `{"active": str, "ok": true}` |
+| `POST` | `/api/llm-providers/{name}/test` | — | `{"ok": bool, "latency_ms": int, "error"?: str}` |
+
+`active` is derived from config key `provider`; the PATCH endpoint
+writes that key and the running strategy picks it up on the next
+turn. The target must be a loaded `llm-provider` plugin; category
+mismatch → 400, unknown plugin → 404.
+
+`POST /api/llm-providers/{name}/test` fires one `llm.call.request`
+with a trivial prompt and a fresh session id, subscribes to both
+`llm.call.response` and `llm.call.error`, and waits up to 5 s. The
+response carries `ok`, `latency_ms`, and (on failure) the provider's
+error string — `"timeout"` when no reply arrived.
+
 ## Security posture (1.0)
 
 - Plugins run in-process as trusted code. There is no sandbox in 1.0.

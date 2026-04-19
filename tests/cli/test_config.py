@@ -1,9 +1,8 @@
-"""Tests for ``yaya config show`` CLI surface.
+"""Tests for the ``yaya config`` CLI surface (get / set / unset / list).
 
-AC-bindings from ``specs/kernel-config.spec``:
-
-* AC-02 redaction → ``test_json_redacts_openai_api_key`` and the
-  variant-coverage parametrised case.
+AC-bindings from ``specs/kernel-config-store.spec`` cover the CLI
+commands (AC-07 / AC-08 / AC-09). The store itself is covered by
+``tests/kernel/test_config_store.py``.
 """
 
 from __future__ import annotations
@@ -14,133 +13,153 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from yaya.cli.commands.config import _is_secret_key, redact
-from yaya.kernel import config as cfg_mod
-
 
 @pytest.fixture(autouse=True)
-def _isolate_yaya_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Strip ``YAYA_*`` and point CONFIG_PATH at an empty tmp file."""
-    import os
+def _isolate_config_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Redirect ``config.db`` under ``tmp_path`` via ``YAYA_STATE_DIR``.
 
-    for key in list(os.environ):
-        if key.startswith("YAYA_"):
-            monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", tmp_path / "config.toml")
-
-
-# `cli_app` is a fixture returning a `typer.Typer` app; pytest fixture
-# resolution doesn't carry the type through here. Tests are out of scope
-# for `[tool.mypy] files = ["src"]`, but the per-arg ignore documents
-# intent if a future PR widens the mypy file set.
-def test_config_show_text_mode(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
-    result = runner.invoke(cli_app, ["config", "show"])
-    assert result.exit_code == 0, result.stdout
-    # The rich table renders these column headers / kernel field names.
-    assert "bind_host" in result.stdout
-    assert "127.0.0.1" in result.stdout
-    assert "port" in result.stdout
+    Without this, every test would land the CLI writes in the real
+    ``~/.local/state/yaya/config.db`` — the exact data-loss bug the
+    autouse state-dir fixture protects other tests from.
+    """
+    monkeypatch.setenv("YAYA_STATE_DIR", str(tmp_path / "state"))
 
 
-def test_config_show_json_shape(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]  # see fixture note above
-    result = runner.invoke(cli_app, ["--json", "config", "show"])
-    assert result.exit_code == 0, result.stdout
+def test_config_set_get_roundtrip(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """AC-07: ``set`` followed by ``get`` returns the stored value."""
+    set_result = runner.invoke(cli_app, ["config", "set", "provider", "openai"])
+    assert set_result.exit_code == 0, set_result.stdout + set_result.stderr
+    get_result = runner.invoke(cli_app, ["config", "get", "provider"])
+    assert get_result.exit_code == 0, get_result.stdout + get_result.stderr
+    assert "openai" in get_result.stdout
+
+
+def test_config_get_missing_key_exits_one(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    result = runner.invoke(cli_app, ["config", "get", "nope"])
+    assert result.exit_code == 1
+
+
+def test_config_set_json_value(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """A JSON-shaped ``value`` is stored as a typed primitive."""
+    assert runner.invoke(cli_app, ["config", "set", "session.default_id", '"demo"']).exit_code == 0
+    result = runner.invoke(cli_app, ["--json", "config", "get", "session.default_id"])
+    assert result.exit_code == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
-    assert payload["action"] == "config.show"
-    config = payload["config"]
-    assert config["bind_host"] == "127.0.0.1"
-    assert config["port"] == 0
-    assert config["log_level"] == "INFO"
+    assert payload["value"] == "demo"
 
 
-def test_json_redacts_openai_api_key(
-    runner: CliRunner,
-    cli_app,  # type: ignore[no-untyped-def]  # see fixture note above
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """AC-02: env-supplied secret never appears in stdout under --json."""
-    monkeypatch.setenv("YAYA_LLM_OPENAI__API_KEY", "sk-abc123")
-    result = runner.invoke(cli_app, ["--json", "config", "show"])
-    assert result.exit_code == 0, result.stdout
-    assert "sk-abc123" not in result.stdout
+def test_config_unset_idempotent(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """AC-09: unsetting twice returns `removed=True` once, `False` next."""
+    assert runner.invoke(cli_app, ["config", "set", "k", "v"]).exit_code == 0
+    first = runner.invoke(cli_app, ["--json", "config", "unset", "k"])
+    assert first.exit_code == 0, first.stdout + first.stderr
+    assert json.loads(first.stdout)["removed"] is True
+    second = runner.invoke(cli_app, ["--json", "config", "unset", "k"])
+    assert second.exit_code == 0
+    assert json.loads(second.stdout)["removed"] is False
 
+
+def test_config_list_prefix(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """AC-08: ``list <prefix>`` returns only matching keys."""
+    runner.invoke(cli_app, ["config", "set", "plugin.a.x", "1"])
+    runner.invoke(cli_app, ["config", "set", "plugin.a.y", "2"])
+    runner.invoke(cli_app, ["config", "set", "plugin.b.x", "3"])
+    result = runner.invoke(cli_app, ["--json", "config", "list", "plugin.a."])
+    assert result.exit_code == 0, result.stdout + result.stderr
+    entries = json.loads(result.stdout)["entries"]
+    assert set(entries.keys()) == {"plugin.a.x", "plugin.a.y"}
+
+
+def test_config_list_masks_secrets_by_default(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """AC-10: ``list -v`` masks secret-suffix keys unless ``--show-secrets``."""
+    runner.invoke(cli_app, ["config", "set", "plugin.llm_openai.api_key", '"sk-abcdef1234"'])
+    masked = runner.invoke(cli_app, ["--json", "config", "list", "plugin.llm_openai.", "-v"])
+    entries = json.loads(masked.stdout)["entries"]
+    assert entries["plugin.llm_openai.api_key"] == "****1234"
+
+    revealed = runner.invoke(
+        cli_app,
+        ["--json", "config", "list", "plugin.llm_openai.", "-v", "--show-secrets"],
+    )
+    entries_revealed = json.loads(revealed.stdout)["entries"]
+    assert entries_revealed["plugin.llm_openai.api_key"] == "sk-abcdef1234"
+
+
+def test_config_list_keys_only(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """Without ``-v`` the list is keys only, no values."""
+    runner.invoke(cli_app, ["config", "set", "k", "v"])
+    result = runner.invoke(cli_app, ["config", "list"])
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert "k" in result.stdout
+    assert '"v"' not in result.stdout
+
+
+def test_is_secret_key() -> None:
+    """The CLI-level secret predicate matches dotted suffixes exactly."""
+    from yaya.cli.commands.config import _is_secret_key
+
+    assert _is_secret_key("plugin.llm_openai.api_key")
+    assert _is_secret_key("api_key")
+    assert _is_secret_key("plugin.x.token")
+    assert _is_secret_key("plugin.y.secret")
+    assert _is_secret_key("plugin.z.password")
+    assert not _is_secret_key("plugin.x.model")
+    # Substring match must NOT trigger — ``apikeys`` is not ``api_key``.
+    assert not _is_secret_key("plugin.x.apikeys")
+
+
+def test_mask_secret_short_and_long() -> None:
+    """Short secrets collapse fully; longer ones reveal last-4 chars."""
+    from yaya.cli.commands.config import _mask_secret
+
+    assert _mask_secret("abcd") == "****"
+    assert _mask_secret("abcdef") == "****cdef"
+    assert _mask_secret(12345) == "****"
+
+
+def test_config_set_list_human_output(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """Human-mode ``list -v`` also masks secrets without ``--show-secrets``."""
+    runner.invoke(cli_app, ["config", "set", "plugin.llm_openai.api_key", '"sk-abcdef1234"'])
+    result = runner.invoke(cli_app, ["config", "list", "-v"])
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert "sk-abcdef" not in result.stdout
+    assert "****" in result.stdout
+
+
+def test_config_unset_human_output(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """Human-mode ``unset`` prints a terminal-friendly line."""
+    runner.invoke(cli_app, ["config", "set", "k", "v"])
+    result = runner.invoke(cli_app, ["config", "unset", "k"])
+    assert result.exit_code == 0
+    assert "k" in result.stdout
+
+
+def test_config_set_not_json_falls_back_to_string(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """Bare ``openai`` parses as raw string, not rejected."""
+    result = runner.invoke(cli_app, ["config", "set", "p", "openai"])
+    assert result.exit_code == 0
+    get_result = runner.invoke(cli_app, ["--json", "config", "get", "p"])
+    assert json.loads(get_result.stdout)["value"] == "openai"
+
+
+def test_config_list_empty_store(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """Empty store produces a ``(no keys)`` line, not a crash."""
+    result = runner.invoke(cli_app, ["config", "list", "nonexistent."])
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert "no keys" in result.stdout
+
+
+def test_config_set_missing_value_errors(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """Typer flags the missing required positional argument with exit 2."""
+    result = runner.invoke(cli_app, ["config", "set", "only-key"])
+    assert result.exit_code != 0
+
+
+def test_config_get_json_missing_key(runner: CliRunner, cli_app) -> None:  # type: ignore[no-untyped-def]
+    """JSON mode still prints a structured error body on missing key."""
+    result = runner.invoke(cli_app, ["--json", "config", "get", "absent"])
+    assert result.exit_code == 1
     payload = json.loads(result.stdout)
-    assert payload["config"]["llm_openai"]["api_key"] == "***"
-
-
-def test_text_mode_redacts_secrets(
-    runner: CliRunner,
-    cli_app,  # type: ignore[no-untyped-def]  # see fixture note above
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Redaction also applies in human-readable rendering."""
-    monkeypatch.setenv("YAYA_LLM_OPENAI__API_KEY", "sk-abc123")
-    result = runner.invoke(cli_app, ["config", "show"])
-    assert result.exit_code == 0, result.stdout
-    assert "sk-abc123" not in result.stdout
-    assert "***" in result.stdout
-
-
-@pytest.mark.parametrize(
-    "key",
-    [
-        "api_key",
-        "API-KEY",
-        "x_token",
-        "secret_passphrase",
-        "SECRET_PASSPHRASE",
-        "openai_api_key",
-        "github_token",
-        "user_password",
-        "PASSWORD",
-    ],
-)
-def test_secret_regex_catches_variants(key: str) -> None:
-    assert _is_secret_key(key), f"expected {key!r} to be flagged as secret"
-
-
-@pytest.mark.parametrize(
-    "key",
-    [
-        "model",
-        "host",
-        "port",
-        "log_level",
-        "timeout_s",
-        "endpoint",
-    ],
-)
-def test_non_secret_keys_pass_through(key: str) -> None:
-    """Plain config keys must NOT be redacted.
-
-    Note: the regex is intentionally over-broad (substring match), so
-    rare false-positives like ``monkey`` (matches ``key``) get redacted —
-    that's a deliberate "fail-safe" trade.
-    """
-    assert not _is_secret_key(key), f"did not expect {key!r} to be flagged"
-
-
-def test_redact_walks_nested_structures() -> None:
-    raw = {
-        "llm": {
-            "model": "gpt-4o",
-            "api_key": "sk-leak",
-            "nested": {"secret": "x", "ok": "y"},
-        },
-        "list": [{"token": "leak"}, {"name": "ok"}],
-    }
-    out = redact(raw)
-    redacted = "***"
-    assert out["llm"]["model"] == "gpt-4o"
-    assert out["llm"]["api_key"] == redacted
-    assert out["llm"]["nested"]["secret"] == redacted
-    assert out["llm"]["nested"]["ok"] == "y"
-    assert out["list"][0]["token"] == redacted
-    assert out["list"][1]["name"] == "ok"
-
-
-def test_redact_does_not_mutate_input() -> None:
-    raw = {"api_key": "sk-leak"}
-    _ = redact(raw)
-    assert raw["api_key"] == "sk-leak"
+    assert payload["ok"] is False
+    assert payload["error"] == "key_not_found"

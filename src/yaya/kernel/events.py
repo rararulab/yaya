@@ -82,6 +82,8 @@ PublicEventKind = Literal[
     "session.context.evicted",
     "session.replay.entry",
     "session.replay.done",
+    # Live config store (kernel → all; issue #104).
+    "config.updated",
 ]
 
 PUBLIC_EVENT_KINDS: frozenset[str] = frozenset(get_args(PublicEventKind))
@@ -758,6 +760,29 @@ class SessionReplayDonePayload(TypedDict):
     replayed: int
 
 
+class ConfigUpdatedPayload(TypedDict):
+    """``config.updated`` — one key was written, deleted, or migrated.
+
+    Emitted by :class:`~yaya.kernel.config_store.ConfigStore` on the
+    reserved ``"kernel"`` session (lesson #2) so the originating
+    caller's session worker does not re-enter the bus while the write
+    is still unwinding. Plugins subscribe on ``config.updated`` and
+    filter by ``key`` / ``prefix_match_hint`` to trigger their own
+    hot-reload logic.
+
+    Fields:
+        key: Full dotted key that was written / deleted. Plugins
+            typically filter by ``key.startswith("plugin.<name>.")``.
+        prefix_match_hint: The key up to and including the final dot
+            (``"plugin.llm_openai."``), or the empty string when the
+            key has no dots. Cheap filter for subscribers that want
+            to early-exit without splitting the key themselves.
+    """
+
+    key: str
+    prefix_match_hint: str
+
+
 class KernelErrorPayload(TypedDict):
     """``kernel.error`` — the kernel itself failed; ``yaya serve`` exits non-zero.
 
@@ -855,6 +880,7 @@ __all__ = [
     "AssistantMessageDeltaPayload",
     "AssistantMessageDonePayload",
     "Attachment",
+    "ConfigUpdatedPayload",
     "Event",
     "KernelErrorPayload",
     "KernelReadyPayload",

@@ -92,6 +92,7 @@ def test_public_catalog_matches_protocol_document() -> None:
         "session.context.evicted",
         "session.replay.entry",
         "session.replay.done",
+        "config.updated",
     }
     assert expected == PUBLIC_EVENT_KINDS
 

@@ -53,7 +53,7 @@ import contextvars
 import logging
 import os
 import shutil
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from importlib.metadata import EntryPoint, PackageNotFoundError, distribution, entry_points
@@ -62,7 +62,8 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from yaya.kernel.approval import install_approval_runtime, uninstall_approval_runtime
-from yaya.kernel.config import KernelConfig, load_config
+from yaya.kernel.config import KernelConfig, flatten_kernel_config, load_config
+from yaya.kernel.config_store import ConfigStore
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.logging import get_plugin_logger
 from yaya.kernel.plugin import Category, KernelContext, Plugin
@@ -177,6 +178,8 @@ class PluginRegistry:
         entry_point_group: str = _ENTRY_POINT_GROUP,
         kernel_config: KernelConfig | None = None,
         session: Session | None = None,
+        config_store: ConfigStore | None = None,
+        config_db_path: Path | None = None,
     ) -> None:
         """Bind the registry to ``bus``.
 
@@ -197,6 +200,14 @@ class PluginRegistry:
                 ``load_config()`` so production callers (``yaya serve``)
                 pick up env + TOML automatically; tests can inject a
                 hand-built instance to pin per-plugin sub-trees.
+            config_store: Pre-opened :class:`ConfigStore`. Production
+                callers leave this unset — :meth:`start` opens one
+                under :func:`yaya.kernel.config_store.default_config_db_path`
+                and the registry owns its lifetime. Tests inject a
+                store wired to an in-tmp path.
+            config_db_path: Override for the config DB location when
+                ``config_store`` is not supplied. Defaults to
+                :func:`yaya.kernel.config_store.default_config_db_path`.
         """
         self._bus = bus
         self._state_dir = state_dir or _default_state_dir()
@@ -204,6 +215,12 @@ class PluginRegistry:
         self._entry_point_group = entry_point_group
         self._kernel_config = kernel_config or load_config()
         self._session = session
+        # When a caller supplies a ConfigStore, the registry does not
+        # open/close it — the caller owns lifetime. When absent,
+        # :meth:`start` opens one and :meth:`stop` closes it.
+        self._config_store: ConfigStore | None = config_store
+        self._config_db_path = config_db_path
+        self._owns_config_store = config_store is None
 
         # Name → record. Bounded by the install set (not user input), so
         # there is no leak risk even across many discovery cycles.
@@ -239,6 +256,19 @@ class PluginRegistry:
         if self._started:
             return
         self._started = True
+
+        # Open the live config store BEFORE plugin discovery so every
+        # ``on_load`` sees a populated :class:`ConfigView`. On first
+        # boot of a fresh install the DB is empty and we seed it from
+        # the legacy TOML + env config; after migration the DB is
+        # source of truth and subsequent boots skip this step.
+        if self._config_store is None:
+            self._config_store = await ConfigStore.open(
+                bus=self._bus,
+                path=self._config_db_path,
+            )
+            flat = flatten_kernel_config(self._kernel_config)
+            await self._config_store.migrate_from_kernel_config(flat)
 
         self._error_sub = self._bus.subscribe(
             "plugin.error",
@@ -314,6 +344,15 @@ class PluginRegistry:
                 source="kernel",
             )
         )
+
+        # Close the ConfigStore AFTER every plugin's ``on_unload`` and
+        # after ``kernel.shutdown`` fans out, so adapters observing
+        # teardown events still see ``ctx.config`` — some rely on it
+        # during their own shutdown rendering. Only close stores the
+        # registry owns; caller-supplied stores stay open.
+        if self._owns_config_store and self._config_store is not None:
+            await self._config_store.close()
+            self._config_store = None
 
     # -- introspection ----------------------------------------------------------
 
@@ -604,10 +643,23 @@ class PluginRegistry:
         """Build the :class:`KernelContext` handed to ``plugin``'s lifecycle hooks."""
         plugin_state = self._state_dir / plugin.name
         plugin_state.mkdir(parents=True, exist_ok=True)
+        config: Mapping[str, Any]
+        if self._config_store is not None:
+            # Per-plugin scoped view over the live store. Plugin name
+            # is normalised to underscores so the legacy ``extras``
+            # namespace (``llm_openai``) and the kebab-case plugin
+            # name (``llm-openai``) both land on the same flattened
+            # prefix ``plugin.llm_openai.``.
+            ns = plugin.name.replace("-", "_")
+            config = self._config_store.view(prefix=f"plugin.{ns}.")
+        else:
+            # Fallback for callers that skip :meth:`start` (tests,
+            # ``yaya plugin list`` transient path).
+            config = self._kernel_config.plugin_config(plugin.name)
         return KernelContext(
             bus=self._bus,
             logger=get_plugin_logger(plugin.name),
-            config=self._kernel_config.plugin_config(plugin.name),
+            config=config,
             state_dir=plugin_state,
             plugin_name=plugin.name,
             session=self._session,

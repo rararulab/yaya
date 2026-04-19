@@ -142,6 +142,29 @@ the handler that triggered the compaction check is still draining it
 | `session.compaction.completed` | `{ target_session_id: str, tokens_before: int, tokens_after: int }` |
 | `session.compaction.failed` | `{ target_session_id: str, error: str }` |
 
+#### Live config store (kernel → all)
+
+The live KV config store (`yaya.kernel.config_store`) emits one
+`config.updated` per `set` / `unset` / migration write. Every event
+routes on the reserved `session_id="kernel"` session (same rule as
+`approval.*` and compaction): the originating session worker may be
+mid-drain when a plugin calls into the config CLI, so the write
+cannot fan out on that session without deadlocking its FIFO.
+
+| kind | payload |
+|---|---|
+| `config.updated` | `{ key: str, prefix_match_hint: str }` |
+
+`prefix_match_hint` is the key up to and including the final dot
+(e.g. `"plugin.llm_openai."`) or the empty string when the key has
+no dots — plugins can early-exit a subscription filter without
+splitting the key themselves. Plugins that need to hot-reload
+typically match `key.startswith("plugin.<name>.")`:
+`llm_openai` rebuilds its `AsyncOpenAI` client on `api_key` /
+`base_url` change, `strategy_react` reads `ctx.config["provider"]`
+per decision so the next `strategy.decide.response` reflects a new
+provider without restart.
+
 ### Extension namespace
 
 Plugins may emit and subscribe to events named `x.<plugin>.<kind>`.

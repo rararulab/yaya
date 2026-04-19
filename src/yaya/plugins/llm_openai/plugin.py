@@ -53,40 +53,43 @@ class OpenAIProvider:
         self._configured: bool = False
 
     def subscriptions(self) -> list[str]:
-        """Only ``llm.call.request`` — the single request kind for this category."""
-        return ["llm.call.request"]
+        """Subscribe to llm requests and live-config updates.
+
+        ``config.updated`` drives the hot-reload path: when a
+        ``plugin.llm_openai.*`` key changes (api_key, base_url) the
+        plugin rebuilds its :class:`AsyncOpenAI` client without a
+        kernel restart. Non-matching prefixes are filtered in
+        :meth:`on_event` so the bus's exact-kind routing stays cheap.
+        """
+        return ["llm.call.request", "config.updated"]
 
     async def on_load(self, ctx: KernelContext) -> None:
-        """Read env, build an ``AsyncOpenAI`` client, or log + degrade.
+        """Build an ``AsyncOpenAI`` client from live config + env.
 
         A missing ``OPENAI_API_KEY`` is NOT a hard failure — the
         kernel keeps loading so users with other providers installed
         still get a working bus. Every incoming ``llm.call.request``
         for ``provider == "openai"`` then emits ``llm.call.error``.
-        """
-        api_key = os.environ.get("OPENAI_API_KEY")
-        base_url = os.environ.get("OPENAI_BASE_URL")
-        if not api_key:
-            ctx.logger.warning("llm-openai: OPENAI_API_KEY not set; calls will error")
-            self._configured = False
-            return
-        # Import lazily so a missing openai install surfaces here, not at
-        # kernel boot for users who do not use this plugin.
-        from openai import AsyncOpenAI
 
-        kwargs: dict[str, Any] = {"api_key": api_key}
-        if base_url:
-            kwargs["base_url"] = base_url
-        self._client = AsyncOpenAI(**kwargs)
-        self._configured = True
-        ctx.logger.debug("llm-openai loaded (base_url=%s)", base_url or "<default>")
+        Live config (``ctx.config["api_key"]`` / ``["base_url"]``)
+        wins over the ``OPENAI_API_KEY`` / ``OPENAI_BASE_URL`` env
+        vars. The env fallback keeps zero-config `yaya serve` working
+        for developers before they wire a ConfigStore value.
+        """
+        await self._rebuild_client(ctx)
 
     async def on_event(self, ev: Event, ctx: KernelContext) -> None:
         """Route ``llm.call.request`` for ``provider == "openai"``.
 
-        Non-matching providers are ignored so sibling LLM plugins can
-        coexist under the same bus subscription.
+        ``config.updated`` triggers a client rebuild when the touched
+        key lives under this plugin's namespace; other prefixes are
+        ignored. Non-matching providers on ``llm.call.request`` are
+        ignored so sibling LLM plugins can coexist under the same
+        bus subscription.
         """
+        if ev.kind == "config.updated":
+            await self._maybe_hot_reload(ev, ctx)
+            return
         if ev.kind != "llm.call.request":
             return
         if ev.payload.get("provider") != _PROVIDER_ID:
@@ -120,6 +123,69 @@ class OpenAIProvider:
             ctx.logger.warning("llm-openai: client close failed: %s", exc)
 
     # -- internals ------------------------------------------------------------
+
+    async def _rebuild_client(self, ctx: KernelContext) -> None:
+        """(Re)build the ``AsyncOpenAI`` client from live config + env.
+
+        Closes a previous client (if any) before opening a new one so
+        a hot-reload swap does not leak a connection pool. Live
+        ``ConfigStore`` values win over the legacy env vars; the env
+        fallback keeps zero-config boots working.
+        """
+        cfg = ctx.config
+        cfg_api_key = cfg.get("api_key") if cfg else None
+        cfg_base_url = cfg.get("base_url") if cfg else None
+
+        api_key = cfg_api_key if isinstance(cfg_api_key, str) and cfg_api_key else os.environ.get("OPENAI_API_KEY")
+        base_url_val = (
+            cfg_base_url if isinstance(cfg_base_url, str) and cfg_base_url else os.environ.get("OPENAI_BASE_URL")
+        )
+
+        # Tear down any live client before swapping so an old pool does
+        # not outlive the config it was built from.
+        existing, self._client = self._client, None
+        self._configured = False
+        if existing is not None:
+            try:
+                await existing.close()
+            except Exception as exc:
+                ctx.logger.warning("llm-openai: stale client close failed: %s", exc)
+
+        if not api_key:
+            ctx.logger.warning("llm-openai: OPENAI_API_KEY not set; calls will error")
+            return
+        # Import lazily so a missing openai install surfaces here, not at
+        # kernel boot for users who do not use this plugin.
+        from openai import AsyncOpenAI
+
+        kwargs: dict[str, Any] = {"api_key": api_key}
+        if base_url_val:
+            kwargs["base_url"] = base_url_val
+        self._client = AsyncOpenAI(**kwargs)
+        self._configured = True
+        ctx.logger.debug("llm-openai client built (base_url=%s)", base_url_val or "<default>")
+
+    async def _maybe_hot_reload(self, ev: Event, ctx: KernelContext) -> None:
+        """Rebuild the client when a ``plugin.llm_openai.*`` key changed.
+
+        The scoped :class:`~yaya.kernel.config_store.ConfigView` handed
+        to this plugin already reflects the new value by the time this
+        handler runs (the store updates its cache before emitting);
+        this method just forces a client re-spin for keys that affect
+        connection identity (``api_key``, ``base_url``).
+        """
+        key_raw = ev.payload.get("key")
+        if not isinstance(key_raw, str):
+            return
+        # The registry scopes each plugin's config view to
+        # ``plugin.llm_openai.`` — hot-reload when the touched key
+        # lives inside that namespace.
+        if not key_raw.startswith("plugin.llm_openai."):
+            return
+        suffix = key_raw[len("plugin.llm_openai.") :]
+        if suffix not in {"api_key", "base_url"}:
+            return
+        await self._rebuild_client(ctx)
 
     async def _dispatch(self, ev: Event, ctx: KernelContext) -> None:
         """Invoke chat completions and emit ``llm.call.response``."""

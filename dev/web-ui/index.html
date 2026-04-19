@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#web-adapter-plugin">Web Adapter Plugin</a></li>
-        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#http-admin-api">HTTP admin API</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#browser-routes-kimi-style-redesign-issue-108">Browser routes (kimi-style redesign, issue #108)</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#http-admin-api">HTTP admin API</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -520,21 +520,146 @@ frames back into <code>user.message.received</code> events on the bus.</p>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>├── package.json          # vite + vitest + pi-web-ui + mini-lit + lit + lucide
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>├── tsconfig.json         # strict TS
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>├── vite.config.ts        # outDir=static; tools/index.js stub plugin
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>├── index.html            # /
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>├── index.html            # /   — mounts &lt;yaya-app&gt; shell
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>├── src/
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>│   ├── main.ts
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>│   ├── app.css           # imports @mariozechner/pi-web-ui/app.css
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>│   ├── types.ts          # discriminated-union WS frame types
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>│   ├── ws-client.ts      # reconnect + send queue
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>│   ├── chat-shell.ts     # &lt;yaya-chat&gt; component
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>│   ├── stubs/
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>│   │   └── tools-index.ts
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>│   └── __tests__/
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>│       └── ws-client.test.ts
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>└── static/               # *build output* — git-tracked, shipped in the wheel
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>    ├── index.html
-<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    └── assets/*.{js,css}
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>│   ├── app.css           # kimi-style theme tokens + pi-web-ui base
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>│   ├── app-shell.ts      # &lt;yaya-app&gt; sidebar + hash router
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>│   ├── chat-shell.ts     # &lt;yaya-chat&gt; chat transcript + empty-state hero
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>│   ├── settings-view.ts  # &lt;yaya-settings&gt; — LLM / Plugins / Advanced tabs
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>│   ├── schema-form.ts    # JSON-Schema-driven form (depth 1)
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>│   ├── store.ts          # createStore&lt;T&gt;() reactive primitive
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>│   ├── api.ts            # HTTP client for /api/{plugins,config,llm-providers}
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>│   ├── types.ts          # discriminated-union WS frame types
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>│   ├── ws-client.ts      # reconnect + send queue
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>│   ├── stubs/
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>│   │   └── tools-index.ts
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>│   └── __tests__/
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>│       ├── ws-client.test.ts
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>│       ├── chat-shell.test.ts
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>│       ├── store.test.ts
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>│       └── schema-form.test.ts
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>└── static/               # *build output* — git-tracked, shipped in the wheel
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>    ├── index.html
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>    └── assets/
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>        ├── index-&lt;hash&gt;.js          # entry chunk
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>        ├── settings-view-&lt;hash&gt;.js  # lazy-loaded settings chunk
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>        └── index-&lt;hash&gt;.css
 </code></pre></div>
+<h2 id="browser-routes-kimi-style-redesign-issue-108">Browser routes (kimi-style redesign, issue #108)<a class="headerlink" href="#browser-routes-kimi-style-redesign-issue-108" title="Permanent link">&para;</a></h2>
+<p>The UI is a two-column layout: a collapsible sidebar on the left and
+the active route in the main area.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>┌────────────┬───────────────────────────────────┐
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>│  SIDEBAR   │            MAIN AREA              │
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>│            │                                   │
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>│  ▸ logo    │  #/chat      → &lt;yaya-chat&gt;        │
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>│  ▸ New chat│    · empty-state hero (wordmark   │
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>│  ▸ Chat    │      + quick-start chips)         │
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│  ▸ Settings│    · streaming bubbles            │
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│  ▸ history │    · prompt input pinned bottom   │
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│  ▸ theme   │                                   │
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>│  ▸ version │  #/settings  → &lt;yaya-settings&gt;    │
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>│            │    tabs:                          │
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>│            │    · LLM Providers                │
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>│            │    · Plugins                      │
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>│            │    · Advanced (raw config)        │
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>└────────────┴───────────────────────────────────┘
+</code></pre></div>
+<p>Routing is hash-based: <code>#/chat</code> (default) and <code>#/settings</code>. The
+settings module is a dynamic import so chat-only users do not pay
+for its bundle — Vite emits it as a separate chunk.</p>
+<h3 id="extending-settings-with-a-new-tab">Extending Settings with a new tab<a class="headerlink" href="#extending-settings-with-a-new-tab" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Add a <code>Tab</code> variant in <code>settings-view.ts</code>
+   (e.g. <code>type Tab = "llm" | "plugins" | "advanced" | "mytab"</code>).</li>
+<li>Add a <code>loaded.mytab = false</code> field and a <code>loadTab()</code> branch that
+   fetches from the relevant endpoint, tolerating <code>404</code>/<code>501</code>.</li>
+<li>Add a render method (<code>renderMytab()</code>) that re-uses
+   <code>renderSchemaForm</code> for any JSON-Schema-driven fields and the
+   shared <code>.yaya-row</code> / <code>.yaya-list</code> / <code>.yaya-banner</code> CSS classes.</li>
+<li>Append a <code>renderTab("mytab", "My Tab")</code> button to the tab bar.</li>
+<li>If the tab owns a new resource, extend <code>api.ts</code> with a typed
+   client and add a <code>vitest</code> case under <code>src/__tests__/</code>.</li>
+</ol>
+<h3 id="theme">Theme<a class="headerlink" href="#theme" title="Permanent link">&para;</a></h3>
+<p>The palette is driven by CSS custom properties (<code>--yaya-sidebar-bg</code>,
+<code>--yaya-main-bg</code>, <code>--yaya-accent</code>, <code>--yaya-text-primary</code>,
+<code>--yaya-text-secondary</code>, <code>--yaya-border</code>, <code>--yaya-hover</code>,
+<code>--yaya-active</code>). A <code>prefers-color-scheme: dark</code> media query flips
+them; the footer toggle persists an explicit <code>.dark</code> class on
+<code>&lt;html&gt;</code> in <code>localStorage</code> under <code>yaya.theme</code>.</p>
+<h3 id="http-config-api">HTTP config API<a class="headerlink" href="#http-config-api" title="Permanent link">&para;</a></h3>
+<p>The settings view consumes the adapter-side HTTP config surface:</p>
+<table>
+<thead>
+<tr>
+<th>Verb</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/plugins</code></td>
+<td>list rows (name, category, status, version, enabled, config_schema, current_config)</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/plugins/&lt;name&gt;</code></td>
+<td>toggle <code>{enabled}</code> or patch config</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/plugins/install</code></td>
+<td><code>{source, editable?}</code> → <code>{job_id}</code></td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/plugins/&lt;name&gt;</code></td>
+<td>uninstall</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/config</code></td>
+<td>masked map of all config keys</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/config/&lt;key&gt;?show=1</code></td>
+<td>reveal one key</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/config/&lt;key&gt;</code></td>
+<td><code>{value}</code></td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/config/&lt;key&gt;</code></td>
+<td>drop one key</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/llm-providers</code></td>
+<td>provider rows with active flag</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/llm-providers/active</code></td>
+<td><code>{name}</code> → list</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/llm-providers/&lt;name&gt;/test</code></td>
+<td><code>{ok, latency_ms, error?}</code></td>
+</tr>
+</tbody>
+</table>
+<p>The client in <code>src/api.ts</code> returns <code>ApiError { status }</code> on non-2xx
+responses. Tabs render an informational banner when the backend
+reports 404/501 so a partial rollout degrades gracefully rather than
+breaking the UI.</p>
 <p><code>static/</code> is git-tracked so end users who install the wheel get the
 UI without Node. CI verifies <code>static/</code> matches a fresh Vite build.</p>
 <h2 id="pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)<a class="headerlink" href="#pi-web-ui-whitelist-blacklist-dependency-rule" title="Permanent link">&para;</a></h2>
@@ -588,10 +713,10 @@ install time.</p>
   The wheel already contains <code>src/yaya/plugins/web/static/</code>.</li>
 <li><strong>Build time (contributor)</strong>: Node 20+ and npm. Inside
   <code>src/yaya/plugins/web/</code>:
-  <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>npm<span class="w"> </span>ci<span class="w">          </span><span class="c1"># install</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>npm<span class="w"> </span>run<span class="w"> </span>check<span class="w">   </span><span class="c1"># tsc --noEmit</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>npm<span class="w"> </span>run<span class="w"> </span><span class="nb">test</span><span class="w">    </span><span class="c1"># vitest</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w">   </span><span class="c1"># vite build → static/</span>
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>npm<span class="w"> </span>ci<span class="w">          </span><span class="c1"># install</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>npm<span class="w"> </span>run<span class="w"> </span>check<span class="w">   </span><span class="c1"># tsc --noEmit</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>npm<span class="w"> </span>run<span class="w"> </span><span class="nb">test</span><span class="w">    </span><span class="c1"># vitest</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w">   </span><span class="c1"># vite build → static/</span>
 </code></pre></div></li>
 </ul>
 <h2 id="ci-rules">CI rules<a class="headerlink" href="#ci-rules" title="Permanent link">&para;</a></h2>
@@ -685,7 +810,7 @@ kernel involvement.</p>
 <p><code>yaya serve --port &lt;P&gt;</code> tells the kernel to use port <code>&lt;P&gt;</code>, but the
 web adapter plugin picks its own port from <code>YAYA_WEB_PORT</code> (default:
 auto). If you want them aligned, set the env var:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">YAYA_WEB_PORT</span><span class="o">=</span><span class="m">7456</span><span class="w"> </span>yaya<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">7456</span><span class="w"> </span>--no-open
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nv">YAYA_WEB_PORT</span><span class="o">=</span><span class="m">7456</span><span class="w"> </span>yaya<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">7456</span><span class="w"> </span>--no-open
 </code></pre></div>
 <p>A follow-up issue will have <code>serve</code> pass its port to the adapter via
 config. Until then, check <code>/api/health</code> to confirm the actual port.</p>

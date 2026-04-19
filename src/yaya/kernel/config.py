@@ -50,6 +50,7 @@ __all__ = [
     "KernelConfig",
     "SessionConfig",
     "default_config_path",
+    "flatten_kernel_config",
     "load_config",
 ]
 
@@ -277,3 +278,77 @@ def load_config() -> KernelConfig:
     if a future revision needs to inject extra sources.
     """
     return KernelConfig()
+
+
+def flatten_kernel_config(cfg: KernelConfig) -> dict[str, Any]:
+    """Flatten a :class:`KernelConfig` into dotted-key → value pairs.
+
+    Used by :meth:`yaya.kernel.config_store.ConfigStore.migrate_from_kernel_config`
+    to seed a fresh DB from the legacy TOML / env layering. Plugin
+    sub-trees live under ``plugin.<name>.<key>`` so the live store's
+    prefix queries (``plugin.<name>.``) match what
+    :meth:`yaya.kernel.registry.PluginRegistry._make_context` needs to
+    expose per-plugin views.
+
+    Top-level kernel scalars (``port``, ``bind_host``, ``log_level``,
+    ``plugins_enabled``, ``plugins_disabled``) map to their direct
+    names so strategy-react's existing ``ctx.config["provider"]``
+    reads keep working after migration.
+
+    Nested kernel sub-models (``session.*``, ``compaction.*``)
+    flatten through their attribute names.
+
+    Args:
+        cfg: Resolved :class:`KernelConfig` from :func:`load_config`.
+
+    Returns:
+        A flat dict ready to hand to
+        :meth:`yaya.kernel.config_store.ConfigStore.migrate_from_kernel_config`.
+    """
+    out: dict[str, Any] = {}
+
+    # Declared scalar / simple fields.
+    out["bind_host"] = cfg.bind_host
+    out["port"] = cfg.port
+    out["log_level"] = cfg.log_level
+    if cfg.plugins_enabled is not None:
+        out["plugins_enabled"] = list(cfg.plugins_enabled)
+    if cfg.plugins_disabled:
+        out["plugins_disabled"] = list(cfg.plugins_disabled)
+
+    # Nested kernel sub-models — only persist non-default fields so a
+    # fresh install does not wake up with every knob enumerated.
+    session_dump: dict[str, Any] = cfg.session.model_dump(exclude_none=True)
+    for k, v in session_dump.items():
+        out[f"session.{k}"] = _jsonify(v)
+
+    compaction_dump: dict[str, Any] = cfg.compaction.model_dump(exclude_none=True)
+    for k, v in compaction_dump.items():
+        out[f"compaction.{k}"] = _jsonify(v)
+
+    # Plugin sub-trees under model_extra — key each leaf as
+    # ``plugin.<namespace>.<dotted-path>`` so downstream prefix
+    # queries match the plugin the leaf belongs to.
+    extras = cfg.model_extra or {}
+    for namespace, value in extras.items():
+        _flatten_into(f"plugin.{namespace}", value, out)
+
+    return out
+
+
+def _jsonify(value: Any) -> Any:
+    """Coerce non-JSON primitives (``Path``, ``PosixPath``) into strings."""
+    if isinstance(value, Path):
+        return str(value)
+    return value
+
+
+def _flatten_into(prefix: str, value: Any, out: dict[str, Any]) -> None:
+    """Recursively flatten a nested config sub-tree into dotted keys."""
+    if isinstance(value, Mapping):
+        for k, v in cast("Mapping[str, Any]", value).items():
+            _flatten_into(f"{prefix}.{k}", v, out)
+        return
+    # Lists, scalars, and None pass through verbatim; migration target
+    # accepts any JSON-safe value.
+    out[prefix] = _jsonify(value)

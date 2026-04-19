@@ -263,5 +263,144 @@ async def test_rate_limit_error_emits_error_event(tmp_path: Path, monkeypatch: p
     await plugin.on_unload(ctx)
 
 
+async def test_config_updated_rebuilds_on_matching_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``config.updated`` for ``plugin.llm_openai.base_url`` rebuilds the client."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    calls: list[dict[str, Any]] = []
+
+    class _StubSDK:
+        def __init__(self, **kwargs: Any) -> None:
+            calls.append(kwargs)
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("openai.AsyncOpenAI", _StubSDK)
+
+    plugin = OpenAIProvider()
+    bus = EventBus()
+    ctx = _make_ctx(bus, tmp_path, plugin)
+    await plugin.on_load(ctx)
+    built_once = len(calls)
+    assert built_once == 1
+
+    ev = new_event(
+        "config.updated",
+        {"key": "plugin.llm_openai.base_url", "prefix_match_hint": "plugin.llm_openai."},
+        session_id="kernel",
+        source="kernel-config-store",
+    )
+    await plugin.on_event(ev, ctx)
+    assert len(calls) == built_once + 1
+
+    # Non-matching suffix — e.g. a sibling key like ``plugin.llm_openai.model`` —
+    # does NOT rebuild the client.
+    unrelated = new_event(
+        "config.updated",
+        {"key": "plugin.llm_openai.model", "prefix_match_hint": "plugin.llm_openai."},
+        session_id="kernel",
+        source="kernel-config-store",
+    )
+    await plugin.on_event(unrelated, ctx)
+    assert len(calls) == built_once + 1
+
+    # Entirely foreign namespace — no rebuild.
+    foreign = new_event(
+        "config.updated",
+        {"key": "plugin.other.base_url", "prefix_match_hint": "plugin.other."},
+        session_id="kernel",
+        source="kernel-config-store",
+    )
+    await plugin.on_event(foreign, ctx)
+    assert len(calls) == built_once + 1
+
+    # Payload without a key — ignored silently.
+    empty = new_event(
+        "config.updated",
+        {"key": 12345, "prefix_match_hint": ""},  # type: ignore[dict-item]
+        session_id="kernel",
+        source="kernel-config-store",
+    )
+    await plugin.on_event(empty, ctx)
+    assert len(calls) == built_once + 1
+
+    await plugin.on_unload(ctx)
+
+
+async def test_base_url_env_lands_on_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``OPENAI_BASE_URL`` is threaded into the SDK constructor when ctx.config is empty."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://env.example")
+
+    calls: list[dict[str, Any]] = []
+
+    class _StubSDK:
+        def __init__(self, **kwargs: Any) -> None:
+            calls.append(kwargs)
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("openai.AsyncOpenAI", _StubSDK)
+
+    plugin = OpenAIProvider()
+    bus = EventBus()
+    ctx = _make_ctx(bus, tmp_path, plugin)
+    await plugin.on_load(ctx)
+    assert calls
+    assert calls[-1].get("base_url") == "https://env.example"
+    await plugin.on_unload(ctx)
+
+
+async def test_rebuild_swallows_stale_client_close_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale client's ``close()`` raising is logged, not re-raised."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    class _StubSDK:
+        def __init__(self, **_: Any) -> None:
+            return None
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("openai.AsyncOpenAI", _StubSDK)
+
+    plugin = OpenAIProvider()
+    bus = EventBus()
+    ctx = _make_ctx(bus, tmp_path, plugin)
+    await plugin.on_load(ctx)
+
+    # Swap the live client for one whose close() raises so the
+    # stale-close ``except Exception`` branch in ``_rebuild_client`` runs.
+    bad_client = MagicMock()
+    bad_client.close = AsyncMock(side_effect=RuntimeError("close failed"))
+    plugin._client = bad_client
+
+    ev = new_event(
+        "config.updated",
+        {"key": "plugin.llm_openai.base_url", "prefix_match_hint": "plugin.llm_openai."},
+        session_id="kernel",
+        source="kernel-config-store",
+    )
+    # Should not raise — the failure is swallowed + logged.
+    await plugin.on_event(ev, ctx)
+    bad_client.close.assert_awaited_once()
+    await plugin.on_unload(ctx)
+
+
+async def test_subscribes_to_config_updated(tmp_path: Path) -> None:
+    """The plugin declares a subscription to ``config.updated`` for hot reload."""
+    plugin = OpenAIProvider()
+    assert "config.updated" in plugin.subscriptions()
+    assert "llm.call.request" in plugin.subscriptions()
+
+
 def _silence(_: Any) -> None:  # pragma: no cover - placeholder to keep Any imported.
     return None

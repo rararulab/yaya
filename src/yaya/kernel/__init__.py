@@ -36,7 +36,13 @@ from yaya.kernel.config import (
     KernelConfig,
     SessionConfig,
     default_config_path,
+    flatten_kernel_config,
     load_config,
+)
+from yaya.kernel.config_store import (
+    ConfigStore,
+    ConfigView,
+    default_config_db_path,
 )
 from yaya.kernel.errors import (
     ConfigError,
@@ -138,6 +144,8 @@ __all__ = [
     "CompactionConfig",
     "CompactionManager",
     "ConfigError",
+    "ConfigStore",
+    "ConfigView",
     "Connection",
     "ConnectionLimitError",
     "ContentPart",
@@ -189,11 +197,13 @@ __all__ = [
     "compact_session",
     "configure_logging",
     "convert_httpx_error",
+    "default_config_db_path",
     "default_config_path",
     "default_session_dir",
     "default_tape_context",
     "dispatch",
     "estimate_text_tokens",
+    "flatten_kernel_config",
     "get_approval_runtime",
     "get_plugin_logger",
     "get_tool",

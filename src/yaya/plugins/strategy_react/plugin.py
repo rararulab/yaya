@@ -15,9 +15,12 @@ from typing import Any, ClassVar, cast
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
 
-# TODO(#14-followup): read these from ``ctx.config`` once the registry
-# plumbs per-plugin config (the registry currently hands every plugin
-# an empty Mapping; see ``src/yaya/kernel/registry.py::_make_context``).
+# ``ctx.config`` is a live :class:`~yaya.kernel.config_store.ConfigView`
+# scoped to this plugin's namespace (``plugin.strategy_react.``), so
+# ``ctx.config["provider"]`` reflects the current ``ConfigStore``
+# value per decision — switching providers at runtime via
+# ``yaya config set plugin.strategy_react.provider anthropic`` takes
+# effect on the next ``strategy.decide.request`` without a restart.
 _DEFAULT_PROVIDER = "openai"
 _FALLBACK_PROVIDER = "echo"
 _DEFAULT_MODEL = "gpt-4o-mini"

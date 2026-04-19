@@ -72,6 +72,30 @@ yaya plugin remove yaya-tool-bash
 - Removing a bundled plugin is an error — the CLI rejects it with a
   `suggestion` pointing at `yaya plugin disable` (reserved for 0.5+).
 
+## `yaya config` specifics (live KV store, #104)
+
+```bash
+yaya config get <key>                       # print JSON-encoded value; exit 1 when missing
+yaya config set <key> <value>               # JSON first, raw string fallback
+yaya config unset <key>                     # idempotent; exit 0 either way
+yaya config list [prefix] [-v]              # keys (or `key = value` with -v)
+yaya config list -v --show-secrets          # reveal secret-suffixed values
+```
+
+- Backing store: `${XDG_STATE_HOME:-~/.local/state}/yaya/config.db` (SQLite).
+  Honours `YAYA_STATE_DIR` for tests / containers.
+- Every `set` / `unset` emits `config.updated` on `session_id="kernel"`;
+  plugins subscribed to their `plugin.<name>.` prefix hot-reload
+  (e.g. `llm_openai` rebuilds its client; `strategy_react` picks up
+  `provider` on the next decision).
+- Secret redaction: `list -v` masks values for keys whose last dotted
+  segment is `api_key`, `token`, `secret`, or `password`. Rendered as
+  `****<last4>` for strings ≥5 chars, otherwise `****`. Single-key
+  `get` never redacts — lookup is an explicit opt-in.
+- TOML (`config.toml`) + env (`YAYA_*`) remain as **first-run
+  bootstrap** only; the store migrates them into the DB on an empty
+  install and subsequent boots read the DB.
+
 ## JSON mode (`--json`)
 
 - Stdout carries `{"ok": bool, ...}`. Contract enforced by

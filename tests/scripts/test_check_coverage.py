@@ -169,13 +169,13 @@ def test_summary_suggests_ratchet_for_improved_modules(checker: Any, tmp_path: P
     plugin_res = checker.evaluate_gates(files, checker.PLUGIN_GATES)
     text = checker.format_summary(global_res, module_res, plugin_res)
     # Modules with plenty of headroom must surface a ratchet suggestion.
-    assert "ratchet→" in text
-    assert "94.5" in text  # global at 95.33% → ratchet suggestion 94.5
+    assert "ratchet->" in text
+    assert "94.5" in text  # global at 95.33% -> ratchet suggestion 94.5
 
-    # A gate exactly at reality should get the em-dash placeholder.
+    # A gate exactly at reality should get the ASCII placeholder.
     tight = checker.GateResult(
         coverage=checker.ModuleCoverage(prefix="tight/", covered=90, total=100),
         threshold=90.0,
     )
     text2 = checker.format_summary(global_res, [tight], [])
-    assert "—" in text2
+    assert " -- " in text2 or text2.rstrip().endswith("--")

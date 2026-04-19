@@ -227,12 +227,15 @@ def format_summary(
 
     Returns:
         A multi-line string suitable for stdout, with one row per gate.
-        The ``ratchet→`` column names the gate value a future PR could
+        The ``ratchet->`` column names the gate value a future PR could
         raise the threshold to, so maintainers can see regressions and
         ratchet opportunities at a glance.
     """
     lines = ["Coverage gates:", ""]
-    header = f"  {'prefix':<30} {'covered/total':>14} {'actual':>8} {'gate':>7} {'status':>8} {'ratchet→':>10}"
+    # ASCII-only header: Windows' default cp1252 stdout cannot encode
+    # arrow / em-dash glyphs and the CI log loses them. Keep the
+    # summary portable; the docs render the prose version instead.
+    header = f"  {'prefix':<30} {'covered/total':>14} {'actual':>8} {'gate':>7} {'status':>8} {'ratchet->':>10}"
     lines.append(header)
     lines.append("  " + "-" * (len(header) - 2))
 
@@ -242,7 +245,7 @@ def format_summary(
         # Suggested ratchet: actual - 0.5, floored to 0.5 grid. Only
         # emit a ratchet suggestion when it would raise the gate.
         grid = (int(cov.percent * 2) - 1) / 2  # floor(actual) - 0.5
-        suggestion = f"{grid:.1f}" if grid > result.threshold else "—"
+        suggestion = f"{grid:.1f}" if grid > result.threshold else "--"
         return (
             f"  {result.coverage.prefix:<30} "
             f"{cov.covered:>6}/{cov.total:<7} "

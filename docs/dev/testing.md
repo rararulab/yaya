@@ -51,7 +51,7 @@
    `plugins/web/` below 85%), the gate sits at *reality minus 0.5*;
    a follow-up issue raises coverage first, then the gate. Never set
    a gate you cannot meet today.
-4. The `ratchet→` column in `check_coverage.py`'s output names the
+4. The `ratchet->` column in `check_coverage.py`'s output names the
    value a gate could be raised to right now. Watch for it in PR
    logs — free ratchet opportunities are ratchet opportunities missed.
 - **Prefer integration over mocks.** Reach for real objects, `tmp_path`, and

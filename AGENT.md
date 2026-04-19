@@ -40,7 +40,7 @@ Accountability is to the **artifact**, not to the user's approval.
 
 ## 4. Constraints
 
-- Python 3.14+, `uv` envs, `just` tasks, `ruff`, `mypy --strict`, `pytest`, coverage ≥88%.
+- Python 3.14+, `uv` envs, `just` tasks, `ruff`, `mypy --strict`, `pytest`, global coverage ≥90% (`fail_under`), plus per-module gates (kernel ≥93.5% ratcheting to 95%, core ≥90%, cli ≥85%, each bundled plugin ≥ its current floor) enforced by `scripts/check_coverage.py` in `just test` and CI. Ratchet policy in [docs/dev/testing.md](docs/dev/testing.md#ratchet-policy).
 - English-only in code, comments, commits, docs. Chinese only in user-facing chat.
 - Conventional Commits with `(#N)` + `Closes #N`. Never `--no-verify`.
 - Layout: `cli/` depends on `core/`, never the reverse.

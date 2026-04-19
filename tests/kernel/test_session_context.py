@@ -579,3 +579,171 @@ async def test_manager_detach_and_heartbeat_forward(tmp_path: Path) -> None:
             await bus.close()
     finally:
         await store.close()
+
+
+# ---------------------------------------------------------------------------
+# #97 S-3 — attached emit is suppressed when replay fails mid-stream.
+# ---------------------------------------------------------------------------
+
+
+async def test_attach_skips_attached_emit_when_replay_entry_send_fails(
+    tmp_path: Path,
+) -> None:
+    """A send-failure during replay detaches + emits ``detached``; no ``attached``."""
+    store, _, session = await _open_session(tmp_path)
+    try:
+        for i in range(3):
+            await session.append_message("user", f"m-{i}")
+        bus = EventBus()
+        try:
+            ctx = SessionContext(session=session, bus=bus)
+            try:
+                attached: list[Event] = []
+                detached: list[Event] = []
+
+                async def on_attached(ev: Event) -> None:
+                    attached.append(ev)
+
+                async def on_detached(ev: Event) -> None:
+                    detached.append(ev)
+
+                bus.subscribe("session.context.attached", on_attached, source="test")
+                bus.subscribe("session.context.detached", on_detached, source="test")
+
+                async def send(ev: Event) -> None:
+                    # Blow up mid-replay — the first replay.entry triggers it.
+                    if ev.kind == "session.replay.entry":
+                        raise RuntimeError("transport closed")
+
+                await ctx.attach(send, adapter_id="bad", since_entry=0)
+                # Flush kernel-session queue.
+                for _ in range(5):
+                    await asyncio.sleep(0)
+
+                # Exactly one detached(reason="send_failed"); no attached.
+                assert not attached, f"attached leaked on failed replay: {attached}"
+                assert len(detached) == 1
+                assert detached[0].payload["reason"] == "send_failed"
+            finally:
+                await ctx.close()
+        finally:
+            await bus.close()
+    finally:
+        await store.close()
+
+
+async def test_attach_skips_attached_emit_when_replay_done_send_fails(
+    tmp_path: Path,
+) -> None:
+    """The same rule applies when the terminating ``replay.done`` send fails."""
+    store, _, session = await _open_session(tmp_path)
+    try:
+        # No tape entries — replay skips straight to replay.done.
+        bus = EventBus()
+        try:
+            ctx = SessionContext(session=session, bus=bus)
+            try:
+                attached: list[Event] = []
+                detached: list[Event] = []
+
+                async def on_attached(ev: Event) -> None:
+                    attached.append(ev)
+
+                async def on_detached(ev: Event) -> None:
+                    detached.append(ev)
+
+                bus.subscribe("session.context.attached", on_attached, source="test")
+                bus.subscribe("session.context.detached", on_detached, source="test")
+
+                async def send(ev: Event) -> None:
+                    if ev.kind == "session.replay.done":
+                        raise RuntimeError("transport closed")
+
+                await ctx.attach(send, adapter_id="bad", since_entry=0)
+                for _ in range(5):
+                    await asyncio.sleep(0)
+
+                assert not attached
+                assert len(detached) == 1
+                assert detached[0].payload["reason"] == "send_failed"
+            finally:
+                await ctx.close()
+        finally:
+            await bus.close()
+    finally:
+        await store.close()
+
+
+# ---------------------------------------------------------------------------
+# #97 — deterministic replay-vs-live race via asyncio.Event, not sleeps.
+# ---------------------------------------------------------------------------
+
+
+async def test_live_event_buffers_behind_replay_deterministic(tmp_path: Path) -> None:
+    """AC-10 (deterministic) — attach holds the per-conn lock; live fanout waits.
+
+    Replaces a sleep-based race probe with an asyncio.Event handshake so
+    the test is reliable on slow CI workers: the replay ``send_cb``
+    signals once it is inside the lock, the live fanout only fires
+    after that signal, and replay unblocks on a second event only after
+    the live fanout has been dispatched — guaranteeing the lock window
+    strictly contains the live publish.
+    """
+    store, _, session = await _open_session(tmp_path)
+    try:
+        for i in range(3):
+            await session.append_message("user", f"m-{i}")
+
+        bus = EventBus()
+        try:
+            ctx = SessionContext(session=session, bus=bus)
+            try:
+                observed: list[Event] = []
+                in_replay = asyncio.Event()
+                release_replay = asyncio.Event()
+
+                async def send(ev: Event) -> None:
+                    observed.append(ev)
+                    if ev.kind == "session.replay.entry" and not in_replay.is_set():
+                        # First entry — signal attach is inside the lock.
+                        in_replay.set()
+                        # Block until the test confirms the live fanout
+                        # has been published (so it is queued behind us).
+                        await release_replay.wait()
+
+                live = new_event(
+                    "user.message.received",
+                    {"text": "LIVE"},
+                    session_id=session.session_id,
+                    source="test",
+                )
+
+                attach_task = asyncio.create_task(
+                    ctx.attach(send, adapter_id="reconn", since_entry=0),
+                )
+
+                # Wait until the replay send is demonstrably inside the
+                # per-conn lock — not a sleep, a hard synchronisation
+                # point (#97 N2).
+                await asyncio.wait_for(in_replay.wait(), timeout=2.0)
+
+                fanout_task = asyncio.create_task(ctx.fanout(live))
+                # Yield so fanout enqueues on the conn's lock waiters.
+                await asyncio.sleep(0)
+                release_replay.set()
+
+                await attach_task
+                await fanout_task
+
+                kinds = [e.kind for e in observed]
+                done_index = kinds.index("session.replay.done")
+                live_indices = [i for i, e in enumerate(observed) if e.id == live.id]
+                assert live_indices, "live event never observed"
+                # Hard ordering: every live occurrence lands AFTER replay.done.
+                assert min(live_indices) > done_index
+            finally:
+                await ctx.close()
+        finally:
+            await bus.close()
+    finally:
+        await store.close()

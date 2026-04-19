@@ -113,6 +113,7 @@ from yaya.kernel.tool import (
     mark_legacy_tool,
     register_tool,
     registered_tools,
+    unregister_tool,
 )
 
 __all__ = [
@@ -211,5 +212,6 @@ __all__ = [
     "should_auto_compact",
     "tape_name_for",
     "uninstall_approval_runtime",
+    "unregister_tool",
     "validate_install_source",
 ]

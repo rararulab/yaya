@@ -169,6 +169,16 @@ async def _maybe_install_compaction(
         if isinstance(plugin, LLMProvider):
             provider = plugin
             break
+    if provider is not None and len(providers) > 1:
+        # Load order (bundled-first → third-party-alpha) is non-obvious
+        # to users running two llm-providers side by side. Surface the
+        # selected provider name so the choice is not silent (#95 N2).
+        provider_name = getattr(provider, "name", provider.__class__.__name__)
+        warn(
+            f"[yellow]multiple llm-providers loaded; auto-compaction will use "
+            f"{provider_name!r}[/] — pin a specific provider via config if this "
+            "is not what you want."
+        )
     if provider is None:
         warn(
             "[yellow]compaction.auto=true but no llm-provider plugin is loaded;[/] "

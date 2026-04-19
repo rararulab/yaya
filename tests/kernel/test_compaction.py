@@ -682,3 +682,133 @@ async def test_after_last_anchor_filters_handoff_events(tmp_path: Path) -> None:
         assert user_messages[0].payload.get("content") == "after"
     finally:
         await store.close()
+
+
+# ---------------------------------------------------------------------------
+# #95 S1 — LLMSummarizer direct tests.
+# ---------------------------------------------------------------------------
+
+
+class _FakeStream:
+    """Minimal async-iterable stream yielding the recorded parts."""
+
+    def __init__(self, parts: list[Any]) -> None:
+        self._parts = list(parts)
+
+    def __aiter__(self) -> _FakeStream:
+        return self
+
+    async def __anext__(self) -> Any:
+        if not self._parts:
+            raise StopAsyncIteration
+        return self._parts.pop(0)
+
+
+@dataclass
+class _FakePart:
+    """A stand-in for ContentPart with a ``text`` attribute."""
+
+    text: Any
+
+
+@dataclass
+class _CapturingProvider:
+    """Records the generate call and returns a canned stream.
+
+    Tiny structural fake so the :class:`LLMSummarizer` tests exercise
+    the real ``summarize`` body without pulling in a live provider.
+    """
+
+    parts: list[Any] = field(default_factory=list)
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    async def generate(
+        self,
+        *,
+        system_prompt: str,
+        tools: list[Any],
+        history: list[dict[str, Any]],
+    ) -> _FakeStream:
+        self.calls.append(
+            {
+                "system_prompt": system_prompt,
+                "tools": list(tools),
+                "history": list(history),
+            },
+        )
+        return _FakeStream(self.parts)
+
+
+class _RaisingProvider:
+    """Provider whose ``generate`` raises — exercises propagation."""
+
+    async def generate(
+        self,
+        *,
+        system_prompt: str,
+        tools: list[Any],
+        history: list[dict[str, Any]],
+    ) -> _FakeStream:
+        raise RuntimeError("provider down")
+
+
+async def test_llm_summarizer_joins_string_chunks() -> None:
+    """Stream of ``ContentPart``-shaped objects joins into one string."""
+    from yaya.kernel import LLMSummarizer
+
+    provider = _CapturingProvider(parts=[_FakePart(text="Hello, "), _FakePart(text="world.")])
+    summarizer = LLMSummarizer(provider)  # type: ignore[arg-type]
+    out = await summarizer.summarize([], target_tokens=500)
+    assert out == "Hello, world."
+    # One generate call landed — pinning the call path means empty
+    # entries still go through the provider (no short-circuit).
+    assert len(provider.calls) == 1
+    call = provider.calls[0]
+    assert call["tools"] == []
+    assert call["history"] and call["history"][0]["role"] == "user"
+
+
+async def test_llm_summarizer_skips_non_string_text_attr() -> None:
+    """Parts whose ``text`` attribute is not ``str`` are silently skipped."""
+    from yaya.kernel import LLMSummarizer
+
+    parts: list[Any] = [
+        _FakePart(text="keep-me"),
+        _FakePart(text=None),  # non-string → skipped by isinstance guard
+        _FakePart(text=b"bytes"),  # non-string → skipped
+        _FakePart(text=""),  # empty string → skipped by truthy guard
+        _FakePart(text="and-me"),
+    ]
+    provider = _CapturingProvider(parts=parts)
+    summarizer = LLMSummarizer(provider)  # type: ignore[arg-type]
+    out = await summarizer.summarize([], target_tokens=500)
+    assert out == "keep-meand-me"
+
+
+async def test_llm_summarizer_propagates_generate_exception() -> None:
+    """A provider crash during ``generate`` surfaces to the caller cleanly."""
+    from yaya.kernel import LLMSummarizer
+
+    summarizer = LLMSummarizer(_RaisingProvider())  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="provider down"):
+        await summarizer.summarize([], target_tokens=100)
+
+
+async def test_llm_summarizer_empty_entries_still_issues_call() -> None:
+    """Empty entry list still invokes the provider with bare delimiters.
+
+    Pins the current behaviour: :class:`LLMSummarizer` does NOT
+    short-circuit on empty input. If the policy changes, this test
+    updates with the new contract.
+    """
+    from yaya.kernel import LLMSummarizer
+
+    provider = _CapturingProvider(parts=[_FakePart(text="empty-ok")])
+    summarizer = LLMSummarizer(provider)  # type: ignore[arg-type]
+    out = await summarizer.summarize([], target_tokens=42)
+    assert out == "empty-ok"
+    assert len(provider.calls) == 1
+    # The prompt carries the delimiter markers even with no rendered body.
+    prompt = provider.calls[0]["history"][0]["content"]
+    assert "---" in prompt
+    assert "42" in prompt  # target_tokens is echoed into the prompt

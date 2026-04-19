@@ -302,23 +302,29 @@ class SessionContext:
         )
         self._connections[conn_id] = conn
 
+        replay_ok = True
         if since_entry is not None:
             # Hold the connection's per-conn lock for the full replay
             # window so a fanout landing on this conn mid-replay buffers
             # instead of interleaving (race guard; see module docstring).
             async with conn.lock:
-                await self._replay(conn, since_entry)
+                replay_ok = await self._replay(conn, since_entry)
 
         # Emit AFTER replay so adapters observing lifecycle see the
         # connection go "attached" once the catch-up stream is drained.
-        await self._emit_lifecycle(
-            "session.context.attached",
-            {
-                "session_id": self.session_id,
-                "connection_id": conn.id,
-                "adapter_id": conn.adapter_id,
-            },
-        )
+        # If replay itself failed mid-stream, ``_replay`` already
+        # detached the connection and emitted ``detached(
+        # reason="send_failed")``; we MUST NOT follow that with an
+        # ``attached`` event on a dead connection (#97 S-3).
+        if replay_ok:
+            await self._emit_lifecycle(
+                "session.context.attached",
+                {
+                    "session_id": self.session_id,
+                    "connection_id": conn.id,
+                    "adapter_id": conn.adapter_id,
+                },
+            )
         # Start the reap loop lazily so SessionContexts that only ever
         # see one short-lived connection do not leak a background task.
         self._ensure_reap_task()
@@ -475,7 +481,7 @@ class SessionContext:
         for conn_id in stale:
             await self.detach(conn_id, reason="timeout")
 
-    async def _replay(self, conn: Connection, since_entry: int) -> int:
+    async def _replay(self, conn: Connection, since_entry: int) -> bool:
         """Push tape entries strictly after ``since_entry`` to ``conn``.
 
         Wraps each entry in a ``session.replay.entry`` envelope and
@@ -485,8 +491,13 @@ class SessionContext:
         we return.
 
         Returns:
-            Number of entries replayed (excludes the terminating
-            ``session.replay.done`` sentinel).
+            ``True`` when the full replay — including the terminating
+            ``session.replay.done`` — flushed successfully. ``False``
+            when a ``send_cb`` failure forced an internal detach
+            mid-stream; :meth:`attach` uses this to skip the
+            ``session.context.attached`` emit so observers do not see
+            an ``attached`` event on a connection that has already
+            gone ``detached(reason="send_failed")`` (#97 S-3).
         """
         entries = await self._session.entries()
         missed = [e for e in entries if e.id > since_entry]
@@ -524,7 +535,7 @@ class SessionContext:
                         "reason": "send_failed",
                     },
                 )
-                return len(missed)
+                return False
 
         done = new_event(
             "session.replay.done",
@@ -542,8 +553,21 @@ class SessionContext:
             raise
         except Exception as exc:
             _logger.warning("replay.done send failed for conn %s: %s", conn.id, exc)
+            # Mirror the mid-stream failure path: detach + emit so
+            # observers see a single ``detached(reason="send_failed")``
+            # and :meth:`attach` suppresses the follow-up ``attached``
+            # emit (#97 S-3).
             self._connections.pop(conn.id, None)
-        return len(missed)
+            await self._emit_lifecycle(
+                "session.context.detached",
+                {
+                    "session_id": self.session_id,
+                    "connection_id": conn.id,
+                    "reason": "send_failed",
+                },
+            )
+            return False
+        return True
 
     async def _emit_lifecycle(self, kind: str, payload: dict[str, Any]) -> None:
         """Publish a ``session.context.*`` lifecycle event on the kernel bus.

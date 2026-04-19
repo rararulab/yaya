@@ -42,7 +42,7 @@ from yaya.kernel.bus import EventBus, Subscription
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
 from yaya.kernel.session import Session
-from yaya.kernel.tool import TextBlock, Tool, ToolError, ToolOk, ToolReturnValue, register_tool
+from yaya.kernel.tool import TextBlock, Tool, ToolError, ToolOk, ToolReturnValue, register_tool, unregister_tool
 
 _NAME = "agent-tool"
 _VERSION = "0.1.0"
@@ -434,7 +434,14 @@ class AgentPlugin:
         """No-op — see :meth:`subscriptions`."""
 
     async def on_unload(self, ctx: KernelContext) -> None:
-        """Drop the cached kernel bindings. Idempotent."""
+        """Unregister :class:`AgentTool` and drop cached bindings. Idempotent.
+
+        Tool unregistration happens before the runtime pointers are
+        cleared so a dispatch racing the unload finds either the tool
+        (and a still-bound runtime) or no tool at all — never a tool
+        pointing at a ``None`` bus/session (#90).
+        """
+        unregister_tool(_TOOL_NAME)
         _Runtime.session = None
         _Runtime.bus = None
         _Runtime.plugin_ctx = None

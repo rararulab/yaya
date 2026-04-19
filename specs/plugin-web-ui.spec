@@ -69,7 +69,11 @@ without Node.
 - src/yaya/plugins/web/src/__tests__/setup.ts
 - src/yaya/plugins/web/src/__tests__/store.test.ts
 - src/yaya/plugins/web/src/__tests__/schema-form.test.ts
+- src/yaya/plugins/web/src/__tests__/settings-modal.test.ts
 - src/yaya/plugins/web/static/
+- src/yaya/plugins/web/static/**
+- src/yaya/plugins/web/static/index.html
+- src/yaya/plugins/web/static/assets/**
 - src/yaya/plugins/web/AGENT.md
 - specs/plugin-web-ui.spec
 - tests/bdd/features/plugin-web-ui.feature

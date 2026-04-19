@@ -548,18 +548,19 @@ frames back into <code>user.message.received</code> events on the bus.</p>
 </code></pre></div>
 <h2 id="browser-routes-kimi-style-redesign-issue-108">Browser routes (kimi-style redesign, issue #108)<a class="headerlink" href="#browser-routes-kimi-style-redesign-issue-108" title="Permanent link">&para;</a></h2>
 <p>The UI is a two-column layout: a collapsible sidebar on the left and
-the active route in the main area.</p>
+the chat view in the main area. Settings is a float <strong>modal overlay</strong>
+(issue #113) above the chat — not a route swap.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>┌────────────┬───────────────────────────────────┐
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>│  SIDEBAR   │            MAIN AREA              │
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>│            │                                   │
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>│  ▸ logo    │  #/chat      → &lt;yaya-chat&gt;        │
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>│  ▸ New chat│    · empty-state hero (wordmark   │
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>│  ▸ Chat    │      + quick-start chips)         │
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│  ▸ Settings│    · streaming bubbles            │
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│  ▸ history │    · prompt input pinned bottom   │
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│  ▸ theme   │                                   │
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>│  ▸ version │  #/settings  → &lt;yaya-settings&gt;    │
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>│            │    tabs:                          │
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│  ▸ history │    · streaming bubbles            │
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│  ▸ theme   │    · prompt input pinned bottom   │
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│  ▸ ⚙ gear  │                                   │
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>│  ▸ version │  #/settings  → modal opens over   │
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>│            │                chat with tabs:    │
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>│            │    · LLM Providers                │
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>│            │    · Plugins                      │
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>│            │    · Advanced (raw config)        │
@@ -568,6 +569,23 @@ the active route in the main area.</p>
 <p>Routing is hash-based: <code>#/chat</code> (default) and <code>#/settings</code>. The
 settings module is a dynamic import so chat-only users do not pay
 for its bundle — Vite emits it as a separate chunk.</p>
+<h3 id="settings-modal-semantics-issue-113">Settings modal semantics (issue #113)<a class="headerlink" href="#settings-modal-semantics-issue-113" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>&lt;yaya-settings-modal&gt;</code> owns a native <code>&lt;dialog&gt;</code> element and calls
+  <code>showModal()</code> for the built-in focus trap, ESC handling, and inert
+  backdrop. The dialog's <code>::backdrop</code> pseudo-element paints the scrim.</li>
+<li>Backdrop clicks are detected by comparing <code>event.target</code> to the
+  dialog element — clicks inside the card bubble from inner children
+  and never match the dialog itself.</li>
+<li>The modal dispatches a bubbling <code>yaya:settings-close</code> event on
+  <code>close</code> (native dialog close). <code>&lt;yaya-app&gt;</code> listens and rewrites the
+  URL hash back to <code>#/chat</code> via <code>history.replaceState</code> so the modal
+  close does not push a history entry.</li>
+<li>The sidebar gear button in <code>.yaya-sidebar-footer</code> opens the modal;
+  the old <code>Settings</code> nav item is removed. <code>#/settings</code> on page load
+  still deep-links into the modal (queued in a microtask so the modal
+  element is registered first).</li>
+</ul>
 <h3 id="extending-settings-with-a-new-tab">Extending Settings with a new tab<a class="headerlink" href="#extending-settings-with-a-new-tab" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Add a <code>Tab</code> variant in <code>settings-view.ts</code>

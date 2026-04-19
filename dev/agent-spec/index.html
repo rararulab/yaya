@@ -472,6 +472,24 @@ hook for staged <code>specs/*.spec</code> changes, and the CI <code>check</code>
 <code>scripts/check_feature_sync.py</code> runs alongside it in <code>just check</code>, CI,
 and pre-commit for staged <code>.spec</code> / <code>.feature</code> changes so executable
 Gherkin cannot drift from the task contract.</p>
+<h3 id="why-lifecycle-and-not-raw-agent-spec-guard">Why <code>lifecycle</code> and not raw <code>agent-spec guard</code>?<a class="headerlink" href="#why-lifecycle-and-not-raw-agent-spec-guard" title="Permanent link">&para;</a></h3>
+<p>Upstream ships two CI-oriented entry points. <code>agent-spec guard</code> lints
+every spec and runs the full verify layer against a git change scope
+in one shot. It is attractive on paper but currently unusable as a
+merge gate for this repo: the <code>verify</code> layer needs an AI backend, and
+without one it emits <code>skip</code> verdicts on every scenario — <code>guard</code> exits
+non-zero on those skips, so a raw <code>guard</code> invocation would block
+every PR even when nothing is wrong.</p>
+<p><code>agent-spec lifecycle</code> exposes the same pipeline (lint → boundary →
+verify → report) per spec and returns structured JSON we can
+classify. <code>scripts/check_specs.sh</code> + <code>scripts/_parse_spec_result.py</code>
+implement the guard semantics the harness promises (lint and quality
+hard-gated, owning-spec boundary hard-gated, non-owning boundary and
+verify skips soft-reported) on top of that JSON. When an AI backend
+lands and <code>verify</code> starts emitting real verdicts, we will switch the
+wrapper to raw <code>guard</code> and drop the parser. Until then, the wrapper
+IS the guard for this repo. Regression coverage for the decision
+logic lives in <code>tests/scripts/test_check_spec_result.py</code>.</p>
 <p><strong>Hard-fail (blocks merge):</strong></p>
 <ul>
 <li>Parse error — bad frontmatter, unresolved <code>inherits:</code>, malformed

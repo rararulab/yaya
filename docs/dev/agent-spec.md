@@ -122,8 +122,27 @@ Optional: install the corresponding agent skill for your runtime
 Cursor). Not required for CI.
 
 If you do not want to install Rust locally, skip it — the wrapper
-script prints a friendly notice and succeeds, and CI enforces the
-check on every PR.
+script prints a friendly notice and succeeds locally, and CI enforces
+the check on every PR.
+
+### Missing-binary behavior (decision tree)
+
+`scripts/check_specs.sh` resolves the "binary missing" case in this
+order:
+
+1. **Under `$CI` or `$GITHUB_ACTIONS`** — hard-fail (exit 1). A CI
+   run without `agent-spec` is always a CI config bug (cargo install
+   step dropped, cache-key drift, etc.); silently exiting 0 would let
+   spec drift land without enforcement. Fix the workflow, do not
+   route around it.
+2. **`SKIP_AGENT_SPEC=1`** — soft-skip (exit 0) with an info message.
+   Explicit opt-out for contributors who deliberately want to bypass
+   (e.g., doc-only branches, sandbox experiments). Preferred over
+   relying on the binary being absent.
+3. **Local, no opt-out, binary missing** — soft-skip (exit 0) with a
+   warning. Keeps the Rust-free contributor experience intact. This
+   default is scheduled to flip to hard-fail in a future release once
+   the toolchain is universally installed in the team dev shell.
 
 ## Task contract shape (`specs/<slug>.spec`)
 

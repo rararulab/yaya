@@ -22,8 +22,530 @@
 @source "./**/*.{ts,html}";
 @source "../index.html";
 
-/* Local overrides kept deliberately tiny — everything structural
-   should come from pi-web-ui. */
+/* --- Kimi-style theme tokens ---------------------------------------- */
+
+:root {
+	--yaya-sidebar-bg: #fafaf9;
+	--yaya-main-bg: #ffffff;
+	--yaya-accent: #3b82f6;
+	--yaya-text-primary: #111827;
+	--yaya-text-secondary: #6b7280;
+	--yaya-border: #e5e7eb;
+	--yaya-hover: #f3f4f6;
+	--yaya-active: #e0e7ff;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--yaya-sidebar-bg: #0f0f0f;
+		--yaya-main-bg: #1a1a1a;
+		--yaya-accent: #60a5fa;
+		--yaya-text-primary: #f3f4f6;
+		--yaya-text-secondary: #9ca3af;
+		--yaya-border: #262626;
+		--yaya-hover: #262626;
+		--yaya-active: #1e293b;
+	}
+}
+
+html.dark {
+	--yaya-sidebar-bg: #0f0f0f;
+	--yaya-main-bg: #1a1a1a;
+	--yaya-accent: #60a5fa;
+	--yaya-text-primary: #f3f4f6;
+	--yaya-text-secondary: #9ca3af;
+	--yaya-border: #262626;
+	--yaya-hover: #262626;
+	--yaya-active: #1e293b;
+}
+
+body {
+	font-family:
+		-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto,
+		"Helvetica Neue", sans-serif;
+	color: var(--yaya-text-primary);
+	background: var(--yaya-main-bg);
+}
+
+yaya-app {
+	display: block;
+	min-height: 100vh;
+}
+
+.yaya-app {
+	display: grid;
+	grid-template-columns: 240px 1fr;
+	min-height: 100vh;
+}
+
+.yaya-app.is-collapsed {
+	grid-template-columns: 56px 1fr;
+}
+
+.yaya-app.is-collapsed .yaya-sidebar-label {
+	display: none;
+}
+
+.yaya-sidebar {
+	background: var(--yaya-sidebar-bg);
+	border-right: 1px solid var(--yaya-border);
+	padding: 12px 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	overflow: hidden;
+}
+
+.yaya-sidebar-top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 6px 4px;
+}
+
+.yaya-logo {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	background: transparent;
+	border: 0;
+	color: var(--yaya-text-primary);
+	cursor: pointer;
+	font-weight: 600;
+	font-size: 16px;
+}
+
+.yaya-logo-mark {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 8px;
+	background: var(--yaya-accent);
+	color: white;
+	font-weight: 700;
+}
+
+.yaya-sidebar-toggle {
+	background: transparent;
+	border: 0;
+	color: var(--yaya-text-secondary);
+	cursor: pointer;
+	font-size: 14px;
+	padding: 2px 6px;
+}
+
+.yaya-new-chat,
+.yaya-nav-item,
+.yaya-history-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 8px 10px;
+	background: transparent;
+	border: 0;
+	color: var(--yaya-text-primary);
+	font-size: 14px;
+	text-align: left;
+	cursor: pointer;
+	border-radius: 8px;
+}
+
+.yaya-new-chat {
+	border: 1px solid var(--yaya-border);
+	font-weight: 500;
+}
+
+.yaya-new-chat:hover,
+.yaya-nav-item:hover,
+.yaya-history-item:hover {
+	background: var(--yaya-hover);
+}
+
+.yaya-nav-item.is-active {
+	background: var(--yaya-active);
+	color: var(--yaya-accent);
+	font-weight: 500;
+}
+
+.yaya-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin-top: 8px;
+}
+
+.yaya-history {
+	flex: 1;
+	overflow: auto;
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--yaya-border);
+}
+
+.yaya-history-title {
+	font-size: 11px;
+	text-transform: uppercase;
+	color: var(--yaya-text-secondary);
+	padding: 4px 10px;
+	letter-spacing: 0.06em;
+}
+
+.yaya-sidebar-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 8px 10px;
+	border-top: 1px solid var(--yaya-border);
+	font-size: 12px;
+	color: var(--yaya-text-secondary);
+}
+
+.yaya-version {
+	font-variant-numeric: tabular-nums;
+}
+
+.yaya-main {
+	display: flex;
+	flex-direction: column;
+	background: var(--yaya-main-bg);
+	min-height: 100vh;
+}
+
+/* --- Chat hero empty state ----------------------------------------- */
+
+.yaya-hero {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 80px 16px 40px;
+	gap: 16px;
+}
+
+.yaya-hero-title {
+	font-size: 48px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	color: var(--yaya-text-primary);
+}
+
+.yaya-hero-sub {
+	color: var(--yaya-text-secondary);
+	font-size: 15px;
+}
+
+.yaya-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 16px;
+	justify-content: center;
+}
+
+.yaya-chip {
+	background: transparent;
+	border: 1px solid var(--yaya-border);
+	border-radius: 999px;
+	padding: 6px 14px;
+	color: var(--yaya-text-secondary);
+	cursor: pointer;
+	font-size: 13px;
+}
+
+.yaya-chip:hover {
+	border-color: var(--yaya-accent);
+	color: var(--yaya-accent);
+}
+
+/* --- Settings view ------------------------------------------------- */
+
+.yaya-settings {
+	max-width: 960px;
+	margin: 0 auto;
+	padding: 24px;
+	width: 100%;
+}
+
+.yaya-settings-header {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.yaya-tabs {
+	display: flex;
+	gap: 4px;
+	border-bottom: 1px solid var(--yaya-border);
+}
+
+.yaya-tab {
+	background: transparent;
+	border: 0;
+	padding: 8px 14px;
+	cursor: pointer;
+	color: var(--yaya-text-secondary);
+	border-bottom: 2px solid transparent;
+	font-size: 14px;
+}
+
+.yaya-tab.is-active {
+	color: var(--yaya-text-primary);
+	border-bottom-color: var(--yaya-accent);
+}
+
+.yaya-banner {
+	padding: 8px 12px;
+	border-radius: 6px;
+	margin-bottom: 12px;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.yaya-banner-info {
+	background: var(--yaya-active);
+	color: var(--yaya-accent);
+}
+
+.yaya-banner-error {
+	background: #fee2e2;
+	color: #991b1b;
+}
+
+.yaya-list {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.yaya-row {
+	border: 1px solid var(--yaya-border);
+	border-radius: 8px;
+	background: var(--yaya-main-bg);
+}
+
+.yaya-row-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 12px;
+	flex-wrap: wrap;
+}
+
+.yaya-row-name {
+	font-weight: 500;
+}
+
+.yaya-row-meta {
+	color: var(--yaya-text-secondary);
+	font-size: 12px;
+}
+
+.yaya-row-body {
+	padding: 12px;
+	border-top: 1px solid var(--yaya-border);
+}
+
+.yaya-badge {
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: var(--yaya-hover);
+	color: var(--yaya-text-secondary);
+}
+
+.yaya-badge-loaded {
+	background: #d1fae5;
+	color: #065f46;
+}
+
+.yaya-badge-error {
+	background: #fee2e2;
+	color: #991b1b;
+}
+
+.yaya-toggle,
+.yaya-radio {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+	font-size: 13px;
+}
+
+.yaya-link {
+	background: transparent;
+	border: 0;
+	color: var(--yaya-accent);
+	cursor: pointer;
+	font-size: 13px;
+	padding: 4px 6px;
+}
+
+.yaya-btn,
+.yaya-btn-ghost {
+	padding: 6px 12px;
+	border-radius: 6px;
+	font-size: 13px;
+	cursor: pointer;
+	border: 1px solid var(--yaya-border);
+	background: var(--yaya-main-bg);
+	color: var(--yaya-text-primary);
+}
+
+.yaya-btn {
+	background: var(--yaya-accent);
+	color: white;
+	border-color: var(--yaya-accent);
+}
+
+.yaya-btn:hover,
+.yaya-btn-ghost:hover {
+	opacity: 0.9;
+}
+
+.yaya-toolbar {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+
+.yaya-toolbar input[type="text"] {
+	flex: 1;
+	border: 1px solid var(--yaya-border);
+	border-radius: 6px;
+	padding: 6px 10px;
+	background: var(--yaya-main-bg);
+	color: var(--yaya-text-primary);
+}
+
+.yaya-empty {
+	color: var(--yaya-text-secondary);
+	font-size: 13px;
+	padding: 24px;
+	text-align: center;
+}
+
+/* --- Forms --------------------------------------------------------- */
+
+.yaya-form {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.yaya-form-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 13px;
+}
+
+.yaya-form-label {
+	font-weight: 500;
+	color: var(--yaya-text-primary);
+}
+
+.yaya-form-desc {
+	color: var(--yaya-text-secondary);
+	font-size: 11px;
+}
+
+.yaya-form-field input[type="text"],
+.yaya-form-field input[type="password"],
+.yaya-form-field input[type="number"],
+.yaya-form-field textarea {
+	border: 1px solid var(--yaya-border);
+	border-radius: 6px;
+	padding: 6px 10px;
+	font: inherit;
+	background: var(--yaya-main-bg);
+	color: var(--yaya-text-primary);
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.yaya-form-row {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.yaya-form-row input {
+	flex: 1;
+}
+
+.yaya-reveal {
+	border: 1px solid var(--yaya-border);
+	border-radius: 4px;
+	padding: 4px 8px;
+	background: var(--yaya-main-bg);
+	color: var(--yaya-text-secondary);
+	cursor: pointer;
+	font-size: 11px;
+}
+
+/* --- Modal --------------------------------------------------------- */
+
+.yaya-modal {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.35);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 50;
+}
+
+.yaya-modal-card {
+	background: var(--yaya-main-bg);
+	border: 1px solid var(--yaya-border);
+	border-radius: 10px;
+	padding: 20px;
+	min-width: 360px;
+	max-width: 90vw;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.yaya-modal-card label {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 13px;
+}
+
+.yaya-modal-card .yaya-inline {
+	flex-direction: row;
+	align-items: center;
+}
+
+.yaya-modal-card input[type="text"] {
+	border: 1px solid var(--yaya-border);
+	border-radius: 6px;
+	padding: 6px 10px;
+	background: var(--yaya-main-bg);
+	color: var(--yaya-text-primary);
+}
+
+.yaya-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+/* Keep existing chat shell scoped */
 yaya-chat {
 	display: block;
 	min-height: 100vh;

@@ -164,6 +164,10 @@ Currently in use by bundled plugins:
 |---|---|---|---|
 | `x.mcp.server.ready` | `mcp_bridge` | `{ server: str, tools: list[{name, mcp_name, description}] }` | One emit per MCP server the bridge brought up at boot. |
 | `x.mcp.server.error` | `mcp_bridge` | `{ server: str, kind: "config_invalid" \| "boot_failed", message: str }` | One emit per MCP server that failed config validation or exhausted boot retries. The bridge keeps running. |
+| `x.agent.subagent.started` | `agent_tool` | `{ parent_id: str, child_id: str, goal: str, strategy: str, tools: list[str] \| null }` | One emit when `AgentTool.run` has forked the parent session and published `user.message.received` on the child. |
+| `x.agent.subagent.completed` | `agent_tool` | `{ child_id: str, final_text: str, steps_used: int, forbidden_tool_hits: list[str] }` | One emit when the sub-agent's `assistant.message.done` resolves the run. |
+| `x.agent.subagent.failed` | `agent_tool` | `{ child_id: str, reason: "timeout" \| "cancelled" }` | One emit when the sub-agent exhausts `max_wall_seconds` or the parent turn is cancelled. |
+| `x.agent.allowlist.narrowed` | `agent_tool` | `{ child_id: str, attempted: list[str], allowed: list[str] }` | Emitted once at run end if the child issued any `tool.call.request` outside the observational allowlist. |
 
 ### What makes the set "closed"
 

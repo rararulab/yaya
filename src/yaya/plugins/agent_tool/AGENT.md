@@ -11,6 +11,12 @@ same kernel `AgentLoop` the parent uses.
 - Params (pydantic): `goal: str`, `strategy: str = "react"`,
   `tools: list[str] | None`, `max_steps: int = 20`,
   `max_wall_seconds: float = 300.0`.
+- `tools` is an **observational** allowlist at 0.2: tool names
+  outside the list are recorded and surfaced via
+  `x.agent.allowlist.narrowed` but not blocked. Hard enforcement
+  lands in a later release. `tools=None` inherits all parent tools;
+  `tools=[]` treats every call as forbidden (records all as
+  narrowed).
 - `requires_approval = True` — every spawn flows through the
   approval runtime (#28).
 

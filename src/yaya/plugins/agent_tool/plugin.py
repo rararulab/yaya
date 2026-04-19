@@ -15,8 +15,8 @@ The happy path:
    context, see :meth:`AgentPlugin.on_load`).
 2. It calls ``parent.fork(child_id)``; the overlay tape isolates child
    writes from the parent.
-3. It subscribes to the bus on three kinds (``assistant.message.done``,
-   ``tool.call.request``, ``tool.error``), filtered by
+3. It subscribes to the bus on two kinds (``assistant.message.done``
+   and ``tool.call.request``), filtered by
    ``ev.session_id == child_id``.
 4. It publishes ``user.message.received`` on the child session; the
    kernel's running :class:`~yaya.kernel.loop.AgentLoop` drives the
@@ -39,7 +39,7 @@ from uuid import uuid4
 from pydantic import ConfigDict, Field
 
 from yaya.kernel.bus import EventBus, Subscription
-from yaya.kernel.events import Event, new_event
+from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
 from yaya.kernel.session import Session
 from yaya.kernel.tool import TextBlock, Tool, ToolError, ToolOk, ToolReturnValue, register_tool
@@ -85,6 +85,12 @@ class _Runtime:
 
     session: Session | None = None
     bus: EventBus | None = None
+    # Plugin-owned KernelContext cached during on_load so AgentTool.run
+    # can emit x.agent.* events with source="agent-tool". The ctx the v1
+    # dispatcher hands to run() carries plugin_name="kernel" (see
+    # kernel/tool.py::install_dispatcher), which would mis-attribute
+    # plugin-private extension events to the kernel itself.
+    plugin_ctx: KernelContext | None = None
     max_depth: int = DEFAULT_MAX_DEPTH
 
 
@@ -126,7 +132,7 @@ def _subscribe_child(
 ) -> tuple[asyncio.Future[str], list[str], list[Subscription]]:
     """Wire the child-session listeners and return the coordination handles.
 
-    Installs three subscriptions, all filtered to ``ev.session_id ==
+    Installs two subscriptions, both filtered to ``ev.session_id ==
     child_id`` so the bridge cannot accidentally consume another
     session's traffic:
 
@@ -136,11 +142,15 @@ def _subscribe_child(
       is not None and the requested ``name`` is outside it, append to
       ``forbidden_hits`` so the caller can surface
       ``x.agent.allowlist.narrowed`` once the run finishes.
-    * ``tool.error`` with ``kind == "internal"`` on the child session
-      — treated as a fatal crash for the sub-agent and translates to a
-      completion failure (the dispatcher already envelopes other
-      ``tool.error`` kinds back as ``tool.call.result`` so they route
-      through the strategy like any tool failure).
+
+    Tool failures inside the sub-agent (``validation``, ``not_found``,
+    ``rejected``) round-trip through the v1 dispatcher as
+    ``tool.call.result`` envelopes with ``ok=False`` — the child's
+    strategy loop handles them like any tool failure. Fatal dispatcher
+    crashes (``internal`` / ``crashed``) also land inside the result
+    envelope (see :func:`yaya.kernel.tool.dispatch`); the sub-agent
+    runs until its own guard (timeout, max steps, assistant.done)
+    rather than short-circuiting on a single tool error.
 
     Returns:
         ``(completion, forbidden_hits, subscriptions)``. The caller is
@@ -168,21 +178,9 @@ def _subscribe_child(
         if name and name not in allowed_set:
             forbidden_hits.append(name)
 
-    async def _on_tool_error(ev: Event) -> None:
-        if ev.session_id != child_id or completion.done():
-            return
-        kind = ev.payload.get("kind")
-        if kind == "internal":
-            # A crashed dispatch inside the child is fatal to the run;
-            # surface the brief so the parent sees why.
-            raw_brief = ev.payload.get("brief")
-            brief = raw_brief if isinstance(raw_brief, str) else "subagent crashed"
-            completion.set_exception(RuntimeError(brief))
-
     subs: list[Subscription] = [
         bus.subscribe("assistant.message.done", _on_done, source="agent-tool"),
         bus.subscribe("tool.call.request", _on_request, source="agent-tool"),
-        bus.subscribe("tool.error", _on_tool_error, source="agent-tool"),
     ]
     return completion, forbidden_hits, subs
 
@@ -216,7 +214,11 @@ class AgentTool(Tool):
     )
     tools: list[str] | None = Field(
         default=None,
-        description="Optional allowlist of tool names the sub-agent may call. None = inherit parent.",
+        description=(
+            "Observational allowlist at 0.2: tool names outside this list "
+            "are recorded via x.agent.allowlist.narrowed but not blocked. "
+            "Hard enforcement lands in a later release. None = inherit parent."
+        ),
     )
     max_steps: int = Field(default=DEFAULT_MAX_STEPS, ge=1, le=200)
     max_wall_seconds: float = Field(default=DEFAULT_MAX_WALL_SECONDS, gt=0.0, le=3600.0)
@@ -360,11 +362,21 @@ async def _emit(ctx: KernelContext, kind: str, payload: dict[str, Any]) -> None:
 
     Lesson #2: plugin-private extension events use a stable bridge
     session so they never interleave with conversation FIFOs.
+
+    Routes through the plugin's own cached :class:`KernelContext` when
+    available so ``x.agent.*`` events stamp ``source="agent-tool"``.
+    The ``ctx`` the v1 dispatcher hands to :meth:`AgentTool.run` carries
+    ``plugin_name="kernel"`` (see ``kernel/tool.py::install_dispatcher``);
+    using it directly would mis-attribute plugin-private extension
+    events to the kernel itself. Falling back to ``ctx`` keeps the
+    helper usable from tests or lifecycle paths that construct their
+    own context before ``on_load`` has bound the plugin ctx.
     """
+    emit_ctx = _Runtime.plugin_ctx or ctx
     try:
-        await ctx.emit(kind, payload, session_id=_AGENT_SESSION)
+        await emit_ctx.emit(kind, payload, session_id=_AGENT_SESSION)
     except Exception:  # pragma: no cover - defensive, emit errors are logged.
-        ctx.logger.exception("agent-tool: failed to emit %s", kind)
+        emit_ctx.logger.exception("agent-tool: failed to emit %s", kind)
 
 
 class AgentPlugin:
@@ -397,10 +409,19 @@ class AgentPlugin:
         return []
 
     async def on_load(self, ctx: KernelContext) -> None:
-        """Register :class:`AgentTool` and bind the runtime session + bus."""
+        """Register :class:`AgentTool` and bind the runtime session + bus.
+
+        Caches ``ctx`` on :class:`_Runtime` so :func:`_emit` can emit
+        ``x.agent.*`` events with ``source="agent-tool"`` — the ctx the
+        v1 dispatcher hands to :meth:`AgentTool.run` stamps
+        ``source="kernel"`` (see
+        ``kernel/tool.py::install_dispatcher``), which would
+        mis-attribute plugin-private extension events.
+        """
         register_tool(AgentTool)
         _Runtime.session = ctx.session
         _Runtime.bus = ctx.bus
+        _Runtime.plugin_ctx = ctx
         configured = cast("int", ctx.config.get("max_depth", self._max_depth)) if ctx.config else self._max_depth
         _Runtime.max_depth = int(configured)
         ctx.logger.debug(
@@ -416,6 +437,7 @@ class AgentPlugin:
         """Drop the cached kernel bindings. Idempotent."""
         _Runtime.session = None
         _Runtime.bus = None
+        _Runtime.plugin_ctx = None
 
 
 __all__ = [
@@ -429,8 +451,3 @@ __all__ = [
     "AgentPlugin",
     "AgentTool",
 ]
-
-# Satisfy pyright's `_` shadow-var rule in the `new_event` import — we
-# re-export the symbol for monkeypatching in tests even though the
-# plugin body uses ``ctx.emit`` at runtime.
-_NEW_EVENT = new_event

@@ -334,6 +334,33 @@ async def test_unbound_runtime_returns_internal_error(tmp_path: Path) -> None:
     assert "not bound" in parsed.brief
 
 
+async def test_extension_events_attributed_to_plugin(tmp_path: Path) -> None:
+    """``x.agent.*`` events must carry ``source="agent-tool"``.
+
+    The ctx handed to :meth:`AgentTool.run` by the v1 dispatcher stamps
+    ``source="kernel"`` (see ``kernel/tool.py::install_dispatcher``);
+    the plugin caches its own :class:`KernelContext` on ``on_load`` so
+    plugin-private events are attributed correctly. Asserted on the
+    ``x.agent.subagent.started`` emit — the first one of the four —
+    so a future regression trips immediately.
+    """
+    bus, _parent, _plugin = await _bootstrap(tmp_path)
+    loop = FakeAgentLoop(bus=bus, default_answer="done")
+    loop.start()
+
+    started: list[Event] = []
+    completed: list[Event] = []
+    collect(bus, EVENT_SUBAGENT_STARTED, started)
+    collect(bus, EVENT_SUBAGENT_COMPLETED, completed)
+
+    await _publish_and_wait(bus, "parent", args={"goal": "attribution check"})
+    loop.stop()
+
+    assert started and completed
+    assert started[0].source == "agent-tool"
+    assert completed[0].source == "agent-tool"
+
+
 async def test_registered_after_on_load(tmp_path: Path) -> None:
     """``on_load`` registers the v1 tool under name ``agent``."""
     from yaya.kernel.tool import get_tool

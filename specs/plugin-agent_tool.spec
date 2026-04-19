@@ -32,7 +32,9 @@ the child session resolves the tool's return envelope.
   `tool.call.request` the child emits is compared against the
   allowlist; offenders are recorded and surfaced via
   `x.agent.allowlist.narrowed`. Hard enforcement requires kernel
-  changes outside the 0.2 scope.
+  changes outside the 0.2 scope. `tools=None` inherits all parent
+  tools; `tools=[]` treats every call as forbidden (records all as
+  narrowed).
 - Progress events live under the `x.agent.*` extension namespace
   (principle #3) on a stable bridge session
   `_bridge:agent-tool` so they never interleave with conversation

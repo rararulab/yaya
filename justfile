@@ -44,10 +44,12 @@ fmt:
     uv run ruff format .
     uv run ruff check --fix .
 
-# Run unit + CLI tests (default suite)
+# Run unit + CLI tests (default suite) + per-module coverage gates
 test:
     @echo "🧪 Running pytest"
-    uv run python -m pytest --cov --cov-report=term-missing
+    uv run python -m pytest --cov --cov-report=term-missing --cov-report=xml
+    @echo "📊 Enforcing per-module coverage gates"
+    uv run python scripts/check_coverage.py
 
 # Build wheel, install into a fresh venv, run post-install smoke
 test-e2e:

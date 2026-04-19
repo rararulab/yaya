@@ -586,6 +586,37 @@ for its bundle — Vite emits it as a separate chunk.</p>
   still deep-links into the modal (queued in a microtask so the modal
   element is registered first).</li>
 </ul>
+<h3 id="chat-input-keybindings-issue-115">Chat input keybindings (issue #115)<a class="headerlink" href="#chat-input-keybindings-issue-115" title="Permanent link">&para;</a></h3>
+<p>The chat composer is an auto-growing <code>&lt;textarea&gt;</code> (<code>.yaya-input</code>) with
+<code>rows=1</code> starting height and a 240 px cap; past the cap the internal
+<code>overflow-y: auto</code> takes over. <code>chat-shell.ts</code> detects macOS at module
+load via <code>navigator.platform</code> (with a <code>userAgent</code> fallback) and stores
+it in <code>IS_MAC</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Keys</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cmd+Enter</strong> (macOS) / <strong>Ctrl+Enter</strong> (other)</td>
+<td>Submit. <code>preventDefault()</code>; clears value + resets height.</td>
+</tr>
+<tr>
+<td><strong>Enter</strong></td>
+<td>Native newline (no JS).</td>
+</tr>
+<tr>
+<td><strong>Shift+Enter</strong></td>
+<td>Native newline (no JS).</td>
+</tr>
+</tbody>
+</table>
+<p>A small hint line below the textarea shows the active modifier label.
+The submit button stays for click submission and is disabled while a
+turn is in flight.</p>
 <h3 id="extending-settings-with-a-new-tab">Extending Settings with a new tab<a class="headerlink" href="#extending-settings-with-a-new-tab" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Add a <code>Tab</code> variant in <code>settings-view.ts</code>
@@ -686,10 +717,12 @@ use-case-coupled modules that assume the browser owns the agent, API
 keys, and session storage. yaya inverts each of those — the Python
 kernel owns the agent, env vars hold keys, a future memory plugin
 holds sessions. We cherry-pick; we do NOT import the barrel index.</p>
-<p><strong>Whitelist:</strong> <code>MessageList</code>, <code>StreamingMessageContainer</code>, <code>Input</code>,
+<p><strong>Whitelist:</strong> <code>MessageList</code>, <code>StreamingMessageContainer</code>,
 <code>ConsoleBlock</code>. Plus <code>@mariozechner/mini-lit</code> primitives (including
 <code>ThemeToggle</code>), <code>lit</code>, <code>lucide</code>, and Tailwind via
-<code>@tailwindcss/vite</code>.</p>
+<code>@tailwindcss/vite</code>. The chat input is a plain
+auto-growing <code>&lt;textarea&gt;</code> (see "Chat input keybindings"); pi-web-ui's
+<code>Input</code> was removed in #115 when we adopted multiline + Cmd/Ctrl+Enter.</p>
 <p><strong>Blacklist (pre-commit grep enforces in <code>src/yaya/plugins/web/src/</code>):</strong></p>
 <ul>
 <li>The upstream chat panel class (pulls the upstream agent-core runtime)</li>

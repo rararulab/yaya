@@ -76,6 +76,12 @@ PublicEventKind = Literal[
     "session.compaction.started",
     "session.compaction.completed",
     "session.compaction.failed",
+    # Session context runtime (kernel → all; issue #36 multi-connection fanout).
+    "session.context.attached",
+    "session.context.detached",
+    "session.context.evicted",
+    "session.replay.entry",
+    "session.replay.done",
 ]
 
 PUBLIC_EVENT_KINDS: frozenset[str] = frozenset(get_args(PublicEventKind))
@@ -657,6 +663,101 @@ class SessionCompactionFailedPayload(TypedDict):
     attempts: NotRequired[int]
 
 
+class SessionContextAttachedPayload(TypedDict):
+    """``session.context.attached`` — a client attached to a session.
+
+    Routed on ``session_id="kernel"`` (lesson #2) so the emission
+    does not enqueue behind a drain worker that is currently fanning
+    out events to the same session.
+
+    Fields:
+        session_id: Logical id of the underlying
+            :class:`~yaya.kernel.session.Session`.
+        connection_id: uuid4 hex assigned by
+            :class:`~yaya.kernel.session_context.SessionContext`.
+        adapter_id: Adapter label (``"web"``, ``"tui"``, ...);
+            informational only.
+    """
+
+    session_id: str
+    connection_id: str
+    adapter_id: str
+
+
+class SessionContextDetachedPayload(TypedDict):
+    """``session.context.detached`` — a connection left the registry.
+
+    Fields:
+        session_id: Logical id of the underlying session.
+        connection_id: The detaching connection's id.
+        reason: Closed-set reason —
+            :data:`~yaya.kernel.session_context.DetachReason`.
+    """
+
+    session_id: str
+    connection_id: str
+    reason: Literal["client_close", "timeout", "shutdown", "send_failed"]
+
+
+class SessionContextEvictedPayload(TypedDict):
+    """``session.context.evicted`` — an idle context was dropped.
+
+    Emitted by future idle-eviction logic when a
+    :class:`~yaya.kernel.session_context.SessionContext` has had
+    zero connections for longer than the configured idle TTL. The
+    event is part of the closed catalog now so adapters can start
+    rendering it; the eviction scheduler itself lands alongside the
+    web adapter integration.
+
+    Fields:
+        session_id: Logical id of the evicted session.
+        reason: ``"idle"`` today; kept open as
+            :data:`str` so future causes (manual, policy) can land
+            without another catalog amendment.
+    """
+
+    session_id: str
+    reason: str
+
+
+class SessionReplayEntryPayload(TypedDict):
+    """``session.replay.entry`` — one replayed tape entry for a reattach.
+
+    Emitted by :meth:`~yaya.kernel.session_context.SessionContext.attach`
+    when the caller passes ``since_entry``. Routed on
+    ``session_id="kernel"`` so replay does not interleave with the
+    attached session's live FIFO.
+
+    Fields:
+        session_id: Logical id of the session being replayed.
+        entry_id: Monotonic tape-entry id (:class:`republic.TapeEntry.id`).
+        kind: Tape entry kind (``"message"`` / ``"tool_call"`` / ...).
+        payload: Tape entry payload, copied verbatim.
+    """
+
+    session_id: str
+    entry_id: int
+    kind: str
+    payload: dict[str, Any]
+
+
+class SessionReplayDonePayload(TypedDict):
+    """``session.replay.done`` — reattach replay finished.
+
+    Followed by live fanout. Adapters flip their UI out of
+    "catching up…" state on seeing this event.
+
+    Fields:
+        session_id: Logical id of the session.
+        connection_id: The reattaching connection's id.
+        replayed: Number of entries replayed (excludes this event).
+    """
+
+    session_id: str
+    connection_id: str
+    replayed: int
+
+
 class KernelErrorPayload(TypedDict):
     """``kernel.error`` — the kernel itself failed; ``yaya serve`` exits non-zero.
 
@@ -776,8 +877,13 @@ __all__ = [
     "SessionCompactionCompletedPayload",
     "SessionCompactionFailedPayload",
     "SessionCompactionStartedPayload",
+    "SessionContextAttachedPayload",
+    "SessionContextDetachedPayload",
+    "SessionContextEvictedPayload",
     "SessionForkedPayload",
     "SessionHandoffPayload",
+    "SessionReplayDonePayload",
+    "SessionReplayEntryPayload",
     "SessionResetPayload",
     "SessionStartedPayload",
     "StrategyDecideRequestPayload",

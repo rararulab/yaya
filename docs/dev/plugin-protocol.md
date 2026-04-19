@@ -659,6 +659,83 @@ collision-tolerant identifier — not a security primitive — hence
   land on any tape. Those events belong to the control plane; if
   an adapter needs to render them it subscribes to them directly.
 
+## Multi-connection fanout (#36)
+
+A `Session` (the tape) is durable; a `SessionContext` is the
+runtime overlay that lets **multiple connections** — two browser
+tabs, web + TUI, phone on the LAN behind the user's own reverse
+proxy — attach to the same session and observe a consistent event
+stream. GOAL.md caps scope at single-process local-first through
+1.0; "multi-connection" means many clients in one yaya process,
+never cross-host sync.
+
+### Connection lifecycle
+
+1. Adapter receives a client connection and calls
+   `SessionManager.attach(session_id, send_cb, adapter_id=..., since_entry=...)`.
+2. The manager lazy-creates a `SessionContext` (backed by the
+   matching `Session`) and appends a `Connection` handle with a
+   fresh uuid4 hex id, heartbeat timestamp, and adapter label.
+3. When `since_entry` is set, the context holds a per-connection
+   `asyncio.Lock` and replays every tape entry whose `id` is
+   strictly greater than `since_entry` as a `session.replay.entry`
+   event. A terminating `session.replay.done` closes the replay.
+4. After replay, live bus events tagged with the session id fan
+   out to every attached connection via their `send_cb`. Send
+   failures translate to a quiet `detach(reason="send_failed")`;
+   the bus / surviving connections are unaffected.
+5. Adapters keep the connection alive with
+   `SessionManager.heartbeat(session_id, connection_id)`. Clients
+   silent for more than `heartbeat_timeout_s` (default 60 s) are
+   reaped and surface `session.context.detached(reason="timeout")`.
+6. Normal teardown: the adapter calls
+   `SessionManager.detach(session_id, connection_id)`. On kernel
+   shutdown, `SessionContext.close` emits
+   `session.context.detached(reason="shutdown")` for every
+   remaining connection before clearing the registry.
+
+### Replay protocol
+
+- Every tape entry has a monotonic `id`
+  (`republic.TapeEntry.id`). The client persists the highest `id`
+  it has rendered.
+- On reconnect, the adapter calls
+  `attach(..., since_entry=last_id)`. The context queries
+  `Session.entries()`, filters to `id > since_entry`, wraps each
+  survivor in a `session.replay.entry` envelope, and pushes them
+  in order. A final `session.replay.done` event marks catch-up
+  complete.
+- Live events arriving during replay buffer behind the
+  per-connection lock so nothing is dropped or duplicated — the
+  lock is released synchronously when `session.replay.done` is
+  flushed.
+- Connections that joined at the start of time use
+  `since_entry=0` (entry ids start at 1) to receive the full
+  tape; callers cold-starting without replay pass `None`.
+
+### Lifecycle event payloads
+
+Every `session.context.*` / `session.replay.*` envelope rides
+`session_id="kernel"` (lesson #2) with `source="kernel-session-context"`:
+
+| kind | payload |
+|---|---|
+| `session.context.attached` | `{session_id, connection_id, adapter_id}` |
+| `session.context.detached` | `{session_id, connection_id, reason}` with `reason ∈ {"client_close","timeout","shutdown","send_failed"}` |
+| `session.context.evicted`  | `{session_id, reason}` — reserved for idle-context eviction; the background scheduler lands with the web adapter |
+| `session.replay.entry`     | `{session_id, entry_id, kind, payload}` |
+| `session.replay.done`      | `{session_id, connection_id, replayed}` |
+
+### Adapter-side wire format
+
+The bundled web adapter serialises each event envelope to JSON
+over its WebSocket transport using the `{id, kind, session_id,
+ts, source, payload}` shape. The `connection_id` is returned in
+the WebSocket's handshake reply so the client can persist it and
+send it back on reconnect alongside `since_entry=<last_id>`. See
+`docs/dev/web-ui.md` for the concrete WS schema (the web adapter
+integration lands in a follow-up that consumes this primitive).
+
 ## Sub-agents via the `agent` tool (#34)
 
 Multi-agent in yaya is **not** a new plugin category. Spawning a

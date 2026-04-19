@@ -31,8 +31,6 @@ import { customElement, property, state } from "lit/decorators.js";
 import "@yaya/pi-web-ui/components/ConsoleBlock.js";
 import "@yaya/mini-lit/ThemeToggle.js";
 
-import { Input } from "@yaya/pi-web-ui/components/Input.js";
-
 import type {
 	AssistantChatMessage,
 	ChatMessage,
@@ -61,6 +59,32 @@ interface ToolCallState {
 }
 
 const THEME_KEY = "yaya.theme";
+
+/** Maximum visible textarea height in pixels before internal scrolling kicks in. */
+const INPUT_MAX_PX = 240;
+
+/**
+ * Detects macOS to pick the correct submit modifier for the chat input.
+ *
+ * On macOS the submit shortcut is Cmd+Enter (metaKey); on every other
+ * platform it is Ctrl+Enter (ctrlKey). We detect once at module load
+ * via `navigator.platform` with a `userAgent` fallback so the hint
+ * label and the keydown check stay in sync.
+ */
+function detectIsMac(): boolean {
+	if (typeof navigator === "undefined") {
+		return false;
+	}
+	const platform = (navigator.platform ?? "").toLowerCase();
+	if (platform.includes("mac")) {
+		return true;
+	}
+	const ua = (navigator.userAgent ?? "").toLowerCase();
+	return ua.includes("mac");
+}
+
+const IS_MAC = detectIsMac();
+const SUBMIT_MODIFIER_LABEL = IS_MAC ? "Cmd" : "Ctrl";
 
 function loadTheme(): "light" | "dark" {
 	const stored = localStorage.getItem(THEME_KEY);
@@ -287,8 +311,47 @@ export class YayaChat extends LitElement {
 		};
 		this.messages = [...this.messages, msg];
 		this.inputValue = "";
+		// Reset the textarea height after submit. `inputValue` is the
+		// source of truth, but the element's inline `style.height` was
+		// set by the auto-grow handler and is not cleared automatically
+		// when the bound value shrinks.
+		const ta = this.querySelector<HTMLTextAreaElement>(".yaya-input");
+		if (ta) {
+			ta.style.height = "auto";
+		}
 		this.inFlight = true;
 		this.ws.send({ type: "user.message", text });
+	}
+
+	/**
+	 * Auto-grows the textarea to match its content up to `INPUT_MAX_PX`.
+	 *
+	 * Sets height to `auto` first so `scrollHeight` reflects the
+	 * shrunk content, then clamps to the max. Past the cap the
+	 * textarea's internal overflow handles scrolling.
+	 */
+	private autoGrow(el: HTMLTextAreaElement): void {
+		el.style.height = "auto";
+		el.style.height = `${Math.min(el.scrollHeight, INPUT_MAX_PX)}px`;
+	}
+
+	private onInputEvent(e: Event): void {
+		const el = e.target as HTMLTextAreaElement;
+		this.inputValue = el.value;
+		this.autoGrow(el);
+	}
+
+	private onKeyDown(e: KeyboardEvent): void {
+		if (e.key !== "Enter") {
+			return;
+		}
+		const isSubmit = IS_MAC ? e.metaKey : e.ctrlKey;
+		if (isSubmit) {
+			e.preventDefault();
+			this.sendMessage();
+		}
+		// Plain Enter and Shift+Enter fall through to the textarea's
+		// native newline behaviour — no JS intervention.
 	}
 
 	private interrupt(): void {
@@ -390,20 +453,18 @@ export class YayaChat extends LitElement {
 				</section>
 
 				<section class="flex flex-col gap-2">
-					${Input({
-						value: this.inputValue,
-						placeholder: "Type a message… (Enter to send, Shift+Enter for newline)",
-						disabled: this.inFlight,
-						onInput: (e: Event) => {
-							this.inputValue = (e.target as HTMLInputElement).value;
-						},
-						onKeyDown: (e: KeyboardEvent) => {
-							if (e.key === "Enter" && !e.shiftKey) {
-								e.preventDefault();
-								this.sendMessage();
-							}
-						},
-					})}
+					<textarea
+						class="yaya-input"
+						rows="1"
+						placeholder="Type a message… (${SUBMIT_MODIFIER_LABEL}+Enter to send, Enter for newline)"
+						.value=${this.inputValue}
+						?disabled=${this.inFlight}
+						@input=${(e: Event) => this.onInputEvent(e)}
+						@keydown=${(e: KeyboardEvent) => this.onKeyDown(e)}
+					></textarea>
+					<div class="yaya-input-hint">
+						<kbd>${SUBMIT_MODIFIER_LABEL}+Enter</kbd> to send · <kbd>Enter</kbd> for newline
+					</div>
 					<div class="flex items-center justify-end gap-2">
 						${this.inFlight
 							? html`<button

@@ -71,7 +71,6 @@ The `static/` directory is the output of `vite build` inside this folder, a Vite
 |---|---|
 | `MessageList` | scrolling transcript |
 | `StreamingMessageContainer` | in-flight assistant bubble |
-| `Input` | text input atom (mini-lit `fc`) |
 | `ConsoleBlock` | tool stdout/stderr renderer |
 | `MessageEditor`, `AttachmentTile`, `ExpandableSection`, `ThinkingBlock` | available if needed; audit deps before using |
 
@@ -105,7 +104,7 @@ src/yaya/plugins/web/
 │   ├── main.ts         # bootstrap
 │   ├── app.css         # kimi theme tokens + pi-web-ui base
 │   ├── app-shell.ts    # <yaya-app> sidebar + hash router (kimi layout)
-│   ├── chat-shell.ts   # <yaya-chat> chat transcript + empty-state hero
+│   ├── chat-shell.ts   # <yaya-chat> chat transcript + empty-state hero; multiline textarea, Cmd/Ctrl+Enter submits (#115)
 │   ├── settings-view.ts# <yaya-settings> tabs (lazy chunk)
 │   ├── schema-form.ts  # JSON-Schema-driven form (depth 1)
 │   ├── store.ts        # createStore<T>() reactive primitive

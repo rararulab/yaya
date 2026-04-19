@@ -22,7 +22,11 @@ set -euo pipefail
 
 PYTHON="${PYTHON:-python3.14}"
 DIST_DIR="${DIST_DIR:-dist}"
-TARGETS=("${@:-wheel sdist}")
+if [ "$#" -eq 0 ]; then
+  TARGETS=(wheel sdist)
+else
+  TARGETS=("$@")
+fi
 
 if ! command -v "$PYTHON" >/dev/null 2>&1; then
   echo "❌ $PYTHON not on PATH — set PYTHON=<interpreter> and retry." >&2

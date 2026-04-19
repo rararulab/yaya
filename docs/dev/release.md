@@ -47,6 +47,8 @@ What the smoke covers:
 
 ### Reproducing the smoke locally
 
+Requires `uv` installed (provides `uvx`).
+
 ```bash
 # Wheel + sdist, two fresh venvs:
 scripts/post_install_smoke.sh

@@ -559,8 +559,26 @@ coverage; <code>min_score=0.6</code> is the floor.</p>
 (<code>agent-spec-tool-first</code> for Claude Code, equivalents for Codex /
 Cursor). Not required for CI.</p>
 <p>If you do not want to install Rust locally, skip it — the wrapper
-script prints a friendly notice and succeeds, and CI enforces the
-check on every PR.</p>
+script prints a friendly notice and succeeds locally, and CI enforces
+the check on every PR.</p>
+<h3 id="missing-binary-behavior-decision-tree">Missing-binary behavior (decision tree)<a class="headerlink" href="#missing-binary-behavior-decision-tree" title="Permanent link">&para;</a></h3>
+<p><code>scripts/check_specs.sh</code> resolves the "binary missing" case in this
+order:</p>
+<ol>
+<li><strong>Under <code>$CI</code> or <code>$GITHUB_ACTIONS</code></strong> — hard-fail (exit 1). A CI
+   run without <code>agent-spec</code> is always a CI config bug (cargo install
+   step dropped, cache-key drift, etc.); silently exiting 0 would let
+   spec drift land without enforcement. Fix the workflow, do not
+   route around it.</li>
+<li><strong><code>SKIP_AGENT_SPEC=1</code></strong> — soft-skip (exit 0) with an info message.
+   Explicit opt-out for contributors who deliberately want to bypass
+   (e.g., doc-only branches, sandbox experiments). Preferred over
+   relying on the binary being absent.</li>
+<li><strong>Local, no opt-out, binary missing</strong> — soft-skip (exit 0) with a
+   warning. Keeps the Rust-free contributor experience intact. This
+   default is scheduled to flip to hard-fail in a future release once
+   the toolchain is universally installed in the team dev shell.</li>
+</ol>
 <h2 id="task-contract-shape-specsslugspec">Task contract shape (<code>specs/&lt;slug&gt;.spec</code>)<a class="headerlink" href="#task-contract-shape-specsslugspec" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>spec: task
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>name: &quot;&lt;slug&gt;&quot;

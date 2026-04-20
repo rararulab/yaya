@@ -74,7 +74,15 @@ function renderField(
 	`;
 }
 
-function renderControl(
+/**
+ * Render a type-aware input control without a wrapping label.
+ *
+ * Exported so callers that need their own row layout (e.g. the
+ * Advanced settings grid) can compose the control into a custom
+ * cell without inheriting `renderField`'s label markup — the
+ * reason Advanced stopped duplicating the key above every input.
+ */
+export function renderControl(
 	key: string,
 	schema: JsonSchema,
 	value: unknown,

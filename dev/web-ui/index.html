@@ -634,51 +634,65 @@ turn is in flight.</p>
   decoupled from the WS client and tests can drive the dot without
   standing up a fake WebSocket.</li>
 </ul>
-<h3 id="plugins-tab-unified-surface-issue-141">Plugins tab (unified surface, issue #141)<a class="headerlink" href="#plugins-tab-unified-surface-issue-141" title="Permanent link">&para;</a></h3>
-<p>There is one tab per plugin. Before #141 an extra "LLM Providers" tab
-existed to configure instance-scoped llm-provider plugins; users got
-confused between the two surfaces and the Plugins tab's writes were a
-silent no-op for llm-provider plugins (wrong namespace). The tab is
-gone.</p>
-<p>llm-provider rows route config through the <strong>default instance</strong> —
-<code>providers.&lt;plugin-name&gt;.*</code>, the same namespace the plugin reads via
-<code>ctx.providers.instances_for_plugin(...)</code>. Other categories keep the
-plugin-scoped <code>plugin.&lt;name&gt;.*</code> path. The <code>/api/llm-providers</code> CRUD
-surface is unchanged; power users curate additional instances with
-<code>yaya config set providers.&lt;custom-id&gt;.plugin &lt;plugin-name&gt;</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>┌─ Plugins ─────────────────────────────────────────────────┐
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>│ [+ Install]                                               │
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>│                                                           │
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>│ agent-tool     v0.1.0 · tool        [loaded] ☑ enabled    │
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>│   [configure] [Remove]                                    │
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>│                                                           │
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>│ llm-openai     v0.1.0 · llm-provider [loaded] ☑ enabled ● │
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>│   [Test connection] [collapse] [Remove]                   │
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>│   ┌─ expanded row body ────────────────────────────────┐  │
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>│   │ Api Key [ ••••••••••••••••            ] [show]     │  │
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>│   │ Base Url [                                    ]    │  │
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>│   │ Model    [ gpt-4o                             ]    │  │
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>│   └────────────────────────────────────────────────────┘  │
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>│                                                           │
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>│ memory-sqlite  v0.1.0 · memory      [loaded] ☑ enabled    │
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>│   [configure] [Remove]                                    │
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>└───────────────────────────────────────────────────────────┘
+<h3 id="plugins-tab-unified-surface-issues-141-143">Plugins tab (unified surface, issues #141 · #143)<a class="headerlink" href="#plugins-tab-unified-surface-issues-141-143" title="Permanent link">&para;</a></h3>
+<p>One tab per plugin. Before #141 there was a dedicated "LLM Providers"
+tab that duplicated llm-provider configuration — users got confused
+between surfaces and the Plugins tab's writes were a silent no-op
+(wrong namespace). #141 deleted the duplicate; #143 reintroduced full
+multi-instance management <strong>inside</strong> the Plugins tab so we keep the
+single-tab UX without losing the add/delete/rename features.</p>
+<p>For <code>category === "llm-provider"</code> plugins, expanding <code>configure</code> shows
+a list of all instances backed by that plugin (<code>providers.&lt;id&gt;.*</code>
+rows from <code>/api/llm-providers</code>), each with active-radio · label · id
+· status dot · Test connection · configure · Delete. A <code>+ Add
+instance</code> button opens a modal that auto-suggests the next free id
+and renders the plugin's JSON Schema for initial config.</p>
+<p>Non-llm-provider plugins render a flat schema-form under <code>configure</code>
+and save to <code>plugin.&lt;name&gt;.&lt;field&gt;</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>┌─ Plugins ─────────────────────────────────────────────────────┐
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>│ [+ Install]                                                   │
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>│                                                               │
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>│ agent-tool     v0.1.0 · tool         [loaded] ☑ enabled       │
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>│   [configure] [Remove]                                        │
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>│                                                               │
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>│ llm-openai     v0.1.0 · llm-provider [loaded] ☑ enabled       │
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>│   2 instances   [collapse] [Remove]                           │
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>│   ┌─────────────────────────────────────────────────────────┐ │
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>│   │ (•) llm-openai (default) llm-openai   ● [Test][…][Del]  │ │
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>│   │ ( ) Azure OpenAI Prod    llm-openai-2 ● [Test][…][Del]  │ │
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>│   │     ┌─ expanded row body (Azure OpenAI Prod) ─────────┐ │ │
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>│   │     │ Label   [ Azure OpenAI Prod                  ] │ │ │
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>│   │     │ Api Key [ ••••••••••••••••           ] [show] │ │ │
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>│   │     │ Base Url[ https://…                          ] │ │ │
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>│   │     │ Model   [ gpt-4o-mini                        ] │ │ │
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>│   │     │              [Save] [Reset]                    │ │ │
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>│   │     └─────────────────────────────────────────────────┘ │ │
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>│   │ [+ Add instance]                                        │ │
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>│   └─────────────────────────────────────────────────────────┘ │
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>│                                                               │
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>│ memory-sqlite  v0.1.0 · memory       [loaded] ☑ enabled       │
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>│   [configure] [Remove]                                        │
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>└───────────────────────────────────────────────────────────────┘
 </code></pre></div>
 <ul>
-<li><strong>Config writes auto-save</strong> field-by-field via <code>PATCH /api/config/&lt;key&gt;</code>;
-  the schema-form has no Save button because every change is persisted
-  immediately. For llm-provider rows the key is
-  <code>providers.&lt;plugin-name&gt;.&lt;field&gt;</code>; for other plugins it is
-  <code>plugin.&lt;name&gt;.&lt;field&gt;</code>.</li>
-<li><strong>Status dot</strong> on llm-provider rows maps the most recent Test-
-  connection outcome: green (connected), red (failed, error tooltip),
-  grey (untested).</li>
-<li><strong>Test connection</strong> calls <code>POST /api/llm-providers/&lt;plugin-name&gt;/test</code>
-  and flips the dot; a saved config invalidates any prior result so
-  operators re-test against the new values.</li>
-<li><strong>Toggle</strong> patches <code>{enabled}</code> via <code>PATCH /api/plugins/&lt;name&gt;</code>;
-  disabled plugins stop receiving events on the next reload.</li>
-<li><strong>Remove</strong> calls <code>DELETE /api/plugins/&lt;name&gt;</code> with a native confirm
+<li><strong>Active radio</strong> on an instance fires <code>PATCH /api/llm-providers/active</code>
+  with <code>{name: &lt;id&gt;}</code> (body key still <code>name</code> for PR #110 compat; value
+  is an instance id post-D4c).</li>
+<li><strong>Status dot</strong> maps the most recent Test-connection outcome: green
+  (connected), red (failed, error tooltip), grey (untested).</li>
+<li><strong>Save</strong> on an instance PATCHes only the fields that diverge from
+  the server row — partial-write blast-radius minimiser.</li>
+<li><strong>Delete</strong> opens a confirm dialog; 409 (active / last-of-plugin safety)
+  surfaces as a <code>.yaya-row-error</code> on the row, not a banner.</li>
+<li><strong>Test connection</strong> calls <code>POST /api/llm-providers/&lt;id&gt;/test</code>; a
+  successful Save invalidates any prior result so operators re-test.</li>
+<li><strong>+ Add instance</strong> opens a modal with auto-suggested id (<code>&lt;plugin&gt;</code> →
+  <code>&lt;plugin&gt;-&lt;N&gt;</code> when taken), client-side validation via
+  <code>isValidInstanceId</code>, optional label, and the backing plugin's JSON
+  Schema rendered inline. 400/409 render inside the modal.</li>
+<li><strong>Plugin-level toggle</strong> patches <code>{enabled}</code> via
+  <code>PATCH /api/plugins/&lt;name&gt;</code>. <strong>Remove</strong> calls
+  <code>DELETE /api/plugins/&lt;name&gt;</code> with a native confirm
   prompt.</li>
 </ul>
 <h3 id="extending-settings-with-a-new-tab">Extending Settings with a new tab<a class="headerlink" href="#extending-settings-with-a-new-tab" title="Permanent link">&para;</a></h3>

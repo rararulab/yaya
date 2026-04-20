@@ -924,6 +924,50 @@ look up the instance via <code>ctx.providers.get_instance(id)</code>:</p>
 <code>(provider, model)</code> pair via <code>ctx.providers.active_id</code> →
 <code>ctx.providers.get_instance(active_id).config["model"]</code>. Flipping the
 kernel-level <code>provider</code> key hot-switches dispatch on the next decision.</p>
+<p><strong>HTTP CRUD surface</strong> (bundled <code>web</code> adapter, <code>/api/llm-providers</code>).
+The adapter exposes instance-shaped CRUD on top of the
+<code>providers.&lt;id&gt;.*</code> namespace so the browser UI can add, edit, and
+remove instances without a restart:</p>
+<table>
+<thead>
+<tr>
+<th>Method + path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /api/llm-providers</code></td>
+<td>Bare array of <code>{id, plugin, label, active, config, config_schema}</code>. Secrets mask by suffix unless <code>?show=1</code>.</td>
+</tr>
+<tr>
+<td><code>POST /api/llm-providers</code></td>
+<td>Create an instance. Body: <code>{id?, plugin, label?, config?}</code>. Returns <code>201</code> + the row. Auto-generates <code>id = f"{plugin}-{uuid8}"</code> when omitted.</td>
+</tr>
+<tr>
+<td><code>PATCH /api/llm-providers/&lt;id&gt;</code></td>
+<td>Partial merge. Body: <code>{label?, config?}</code>. <code>plugin</code> is NOT rebindable — use delete+create.</td>
+</tr>
+<tr>
+<td><code>DELETE /api/llm-providers/&lt;id&gt;</code></td>
+<td>Remove an instance. <code>204</code> on success; <code>409</code> when the target is the active instance or the last instance of its backing plugin.</td>
+</tr>
+<tr>
+<td><code>PATCH /api/llm-providers/active</code></td>
+<td>Body: <code>{name: &lt;instance_id&gt;}</code>. Writes the <code>provider</code> config key. Validates both that the id exists and that the backing plugin is loaded.</td>
+</tr>
+<tr>
+<td><code>POST /api/llm-providers/&lt;id&gt;/test</code></td>
+<td>One-shot <code>llm.call.request</code> on session id <code>_bridge:web-api-test:&lt;uuid&gt;</code>. Returns <code>{ok, latency_ms, error?}</code>. 5s timeout.</td>
+</tr>
+</tbody>
+</table>
+<p>Instance ids are validated by <code>yaya.kernel.providers.is_valid_instance_id</code>:
+3-64 lowercase alphanumeric + dash characters, no dots (a dotted id would
+corrupt the <code>providers.&lt;id&gt;.&lt;field&gt;</code> grouping), no leading or trailing dash.
+Creates use multiple <code>ConfigStore.set</code> calls; a mid-way failure may leave a
+partial instance — operators clean up with <code>yaya config unset
+providers.&lt;id&gt;.*</code>.</p>
 <h3 id="extension-namespace">Extension namespace<a class="headerlink" href="#extension-namespace" title="Permanent link">&para;</a></h3>
 <p>Plugins may emit and subscribe to events named <code>x.&lt;plugin&gt;.&lt;kind&gt;</code>.
 The kernel routes these through the same bus but <strong>does not interpret

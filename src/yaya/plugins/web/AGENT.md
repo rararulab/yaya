@@ -104,7 +104,7 @@ src/yaya/plugins/web/
 │   ├── main.ts         # bootstrap
 │   ├── app.css         # kimi theme tokens + pi-web-ui base
 │   ├── app-shell.ts    # <yaya-app> sidebar + hash router (kimi layout)
-│   ├── chat-shell.ts   # <yaya-chat> chat transcript + empty-state hero; multiline textarea, Cmd/Ctrl+Enter submits (#115)
+│   ├── chat-shell.ts   # <yaya-chat> chat transcript + empty-state hero; multiline textarea, plain Enter submits (kimi-style, Shift+Enter = newline)
 │   ├── settings-view.ts# <yaya-settings> tabs (lazy chunk)
 │   ├── schema-form.ts  # JSON-Schema-driven form (depth 1)
 │   ├── store.ts        # createStore<T>() reactive primitive

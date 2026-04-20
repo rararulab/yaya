@@ -160,7 +160,6 @@ yaya-app {
 	padding: 12px 4px;
 }
 
-.yaya-app.is-collapsed .yaya-sidebar-top,
 .yaya-app.is-collapsed .yaya-new-chat,
 .yaya-app.is-collapsed .yaya-nav-item,
 .yaya-app.is-collapsed .yaya-sidebar-status,
@@ -169,6 +168,18 @@ yaya-app {
 	justify-content: center;
 	padding: 8px 4px;
 	min-height: 32px;
+}
+
+/* Collapsed sidebar-top: only the hamburger toggle remains — the logo
+ * button is hidden entirely so the 48px rail has no branding clutter.
+ * Centering the lone toggle gives a clean icon rail. */
+.yaya-app.is-collapsed .yaya-sidebar-top {
+	justify-content: center;
+	padding: 0;
+}
+
+.yaya-app.is-collapsed .yaya-logo {
+	display: none;
 }
 
 .yaya-app.is-collapsed .yaya-sidebar-footer {
@@ -824,6 +835,12 @@ yaya-settings-modal {
 }
 
 .yaya-settings-dialog {
+	/* Tailwind preflight (from pi-web-ui) resets `margin: 0` on every
+	 * element, which strips the UA default `margin: auto` that centers
+	 * a native <dialog> opened via showModal(). Restore auto-centering
+	 * explicitly. */
+	inset: 0;
+	margin: auto;
 	padding: 0;
 	border: 0;
 	background: transparent;
@@ -902,18 +919,18 @@ yaya-settings-modal {
 
 .yaya-input {
 	width: 100%;
-	min-height: 40px;
-	max-height: 240px;
+	min-height: 96px;
+	max-height: 320px;
 	resize: none;
 	overflow-y: auto;
-	padding: 10px 14px;
+	padding: 14px 52px 14px 16px;
 	border: 1px solid var(--yaya-border);
 	border-radius: var(--yaya-radius-lg);
 	background: var(--yaya-main-bg);
 	color: var(--yaya-text-primary);
 	font: inherit;
 	font-size: 14px;
-	line-height: 1.4;
+	line-height: 1.5;
 	box-sizing: border-box;
 	transition: border-color 120ms ease, box-shadow 120ms ease;
 }
@@ -929,21 +946,52 @@ yaya-settings-modal {
 	cursor: not-allowed;
 }
 
-.yaya-input-hint {
-	font-size: 11px;
-	color: var(--yaya-text-secondary);
-	display: flex;
-	gap: 6px;
-	align-items: center;
+.yaya-composer {
+	position: relative;
 }
 
-.yaya-input-hint kbd {
-	font-family:
-		ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-	font-size: 10px;
-	padding: 1px 5px;
-	border: 1px solid var(--yaya-border);
-	border-radius: 4px;
-	background: var(--yaya-hover);
-	color: var(--yaya-text-primary);
+/* Kimi-style send button: 32px circle pinned to the textarea's inner
+ * bottom-right. The textarea leaves `padding-right: 52px` so text never
+ * slides under the button. */
+.yaya-send-btn {
+	position: absolute;
+	right: 10px;
+	bottom: 10px;
+	width: 32px;
+	height: 32px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: 0;
+	border-radius: var(--yaya-radius-pill);
+	background: var(--yaya-accent);
+	color: #ffffff;
+	cursor: pointer;
+	transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.yaya-send-btn svg {
+	width: 16px;
+	height: 16px;
+}
+
+.yaya-send-btn:hover {
+	background: var(--yaya-accent-hover);
+	box-shadow: var(--yaya-shadow-md);
+}
+
+.yaya-send-btn[disabled] {
+	opacity: 0.35;
+	cursor: not-allowed;
+	box-shadow: none;
+}
+
+.yaya-send-btn.is-interrupt {
+	background: var(--yaya-status-danger);
+}
+
+.yaya-send-btn.is-interrupt:hover {
+	background: var(--yaya-status-danger);
+	opacity: 0.9;
 }

@@ -160,7 +160,6 @@ yaya-app {
 	padding: 12px 4px;
 }
 
-.yaya-app.is-collapsed .yaya-sidebar-top,
 .yaya-app.is-collapsed .yaya-new-chat,
 .yaya-app.is-collapsed .yaya-nav-item,
 .yaya-app.is-collapsed .yaya-sidebar-status,
@@ -169,6 +168,23 @@ yaya-app {
 	justify-content: center;
 	padding: 8px 4px;
 	min-height: 32px;
+}
+
+/* Collapsed sidebar-top: stack the hamburger toggle above the logo so
+ * both fit inside the 40px (48px col - 2*4px padding) of usable width.
+ * Horizontal layout overflows because toggle (32px) + logo mark (28px)
+ * + gap exceeds that width. */
+.yaya-app.is-collapsed .yaya-sidebar-top {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	padding: 0;
+}
+
+.yaya-app.is-collapsed .yaya-logo {
+	padding: 0;
+	gap: 0;
 }
 
 .yaya-app.is-collapsed .yaya-sidebar-footer {
@@ -824,6 +840,12 @@ yaya-settings-modal {
 }
 
 .yaya-settings-dialog {
+	/* Tailwind preflight (from pi-web-ui) resets `margin: 0` on every
+	 * element, which strips the UA default `margin: auto` that centers
+	 * a native <dialog> opened via showModal(). Restore auto-centering
+	 * explicitly. */
+	inset: 0;
+	margin: auto;
 	padding: 0;
 	border: 0;
 	background: transparent;
@@ -929,12 +951,27 @@ yaya-settings-modal {
 	cursor: not-allowed;
 }
 
+.yaya-composer {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.yaya-composer-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
 .yaya-input-hint {
 	font-size: 11px;
 	color: var(--yaya-text-secondary);
 	display: flex;
 	gap: 6px;
 	align-items: center;
+	flex-wrap: wrap;
 }
 
 .yaya-input-hint kbd {

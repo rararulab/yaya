@@ -470,7 +470,7 @@ export class YayaChat extends LitElement {
 					${this.renderToolBlocks()}
 				</section>
 
-				<section class="flex flex-col gap-2">
+				<section class="yaya-composer">
 					<textarea
 						class="yaya-input"
 						rows="1"
@@ -480,23 +480,24 @@ export class YayaChat extends LitElement {
 						@input=${(e: Event) => this.onInputEvent(e)}
 						@keydown=${(e: KeyboardEvent) => this.onKeyDown(e)}
 					></textarea>
-					<div class="yaya-input-hint">
-						<kbd>${SUBMIT_MODIFIER_LABEL}+Enter</kbd> to send · <kbd>Enter</kbd> for newline
-					</div>
-					<div class="flex items-center justify-end gap-2">
+					<div class="yaya-composer-row">
+						<div class="yaya-input-hint">
+							<kbd>${SUBMIT_MODIFIER_LABEL}+Enter</kbd> to send ·
+							<kbd>Enter</kbd> for newline
+						</div>
 						${this.inFlight
 							? html`<button
-									class="rounded bg-destructive px-3 py-1 text-sm text-destructive-foreground"
+									class="yaya-btn-danger"
 									@click=${() => this.interrupt()}
 								>
-									interrupt
+									Interrupt
 								</button>`
 							: html`<button
-									class="rounded bg-primary px-3 py-1 text-sm text-primary-foreground disabled:opacity-50"
+									class="yaya-btn"
 									?disabled=${this.inputValue.trim().length === 0}
 									@click=${() => this.sendMessage()}
 								>
-									send
+									Send
 								</button>`}
 					</div>
 				</section>

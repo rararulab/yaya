@@ -635,6 +635,55 @@ turn is in flight.</p>
   decoupled from the WS client and tests can drive the dot without
   standing up a fake WebSocket.</li>
 </ul>
+<h3 id="llm-providers-tab-instance-centric-issue-129">LLM Providers tab (instance-centric, issue #129)<a class="headerlink" href="#llm-providers-tab-instance-centric-issue-129" title="Permanent link">&para;</a></h3>
+<p>Post-D4d the LLM Providers tab renders one row per
+<code>providers.&lt;id&gt;.*</code> instance exposed by the D4c HTTP CRUD surface,
+not one row per backing plugin. The same backing plugin can power
+many instances (e.g. one <code>llm-openai</code> plugin + three openai rows
+with different models or keys).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>┌─ LLM Providers ───────────────────────────────────────────┐
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>│ [+ Add instance]                                          │
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>│                                                           │
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>│ ( ) OpenAI GPT-4          llm-openai · llm-openai    ●    │
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>│     [Test connection] [configure]                         │
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>│                                                           │
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>│ (•) OpenAI GPT-3.5        llm-openai · llm-openai-2  ●    │
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>│     [Test connection] [collapse]                          │
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>│     ┌─ expanded row body ─────────────────────────────┐   │
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>│     │ Label   [ OpenAI GPT-3.5                    ]  │   │
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>│     │ API key [ ••••••••••••••••          ] [show]   │   │
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>│     │ Model   [ gpt-3.5-turbo                    ]   │   │
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>│     │                                                │   │
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>│     │                  [Save] [Reset] [Delete]       │   │
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>│     └────────────────────────────────────────────────┘   │
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>│                                                           │
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>│ ( ) Echo                  llm-echo · llm-echo        ●    │
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>│     [Test connection] [configure]                         │
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>└───────────────────────────────────────────────────────────┘
+</code></pre></div>
+<ul>
+<li><strong>Active radio</strong> fires <code>PATCH /api/llm-providers/active</code> with
+  <code>{name: &lt;id&gt;}</code> (body key still <code>name</code> for PR #110 compat; the
+  value is an instance id post-D4c).</li>
+<li><strong>Status dot</strong> maps the most recent Test-connection outcome:
+  green (connected), red (failed, error tooltip), grey (untested).</li>
+<li><strong>Save</strong> sends a PATCH carrying only the fields that diverge
+  from the server row — partial-write blast-radius minimiser.</li>
+<li><strong>Delete</strong> opens an in-modal confirmation; 409 responses from
+  the active-instance / last-of-plugin safety checks surface as
+  an inline row error (<code>.yaya-row-error</code>), not a banner.</li>
+<li><strong>Test connection</strong> calls <code>POST /api/llm-providers/&lt;id&gt;/test</code>
+  with a spinner on the button and caches the result in a local
+  <code>testResults</code> map so the dot stays accurate across re-renders.</li>
+<li><strong>Add instance</strong> opens a modal: backing plugin dropdown
+  (filtered to <code>category === "llm-provider"</code> from <code>/api/plugins</code>),
+  auto-suggested instance id (<code>&lt;plugin&gt;</code> → <code>&lt;plugin&gt;-&lt;N&gt;</code> when
+  taken), client-side validation via <code>isValidInstanceId</code>, and the
+  backing plugin's JSON Schema rendered inline so the operator
+  can seed initial config (including API keys) in one submit.
+  400/409 responses from the server render inline inside the
+  modal.</li>
+</ul>
 <h3 id="extending-settings-with-a-new-tab">Extending Settings with a new tab<a class="headerlink" href="#extending-settings-with-a-new-tab" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Add a <code>Tab</code> variant in <code>settings-view.ts</code>
@@ -708,17 +757,32 @@ them; the footer toggle persists an explicit <code>.dark</code> class on
 </tr>
 <tr>
 <td>GET</td>
+<td><code>/api/llm-providers[?show=1]</code></td>
+<td>instance rows <code>{id, plugin, label, active, config, config_schema}</code> (D4c)</td>
+</tr>
+<tr>
+<td>POST</td>
 <td><code>/api/llm-providers</code></td>
-<td>provider rows with active flag</td>
+<td><code>{plugin, id?, label?, config?}</code> → 201 + row (D4c)</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/llm-providers/&lt;id&gt;</code></td>
+<td><code>{label?, config?}</code> partial merge (D4c)</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/llm-providers/&lt;id&gt;</code></td>
+<td>204; 409 when active / last-of-plugin (D4c)</td>
 </tr>
 <tr>
 <td>PATCH</td>
 <td><code>/api/llm-providers/active</code></td>
-<td><code>{name}</code> → list</td>
+<td><code>{name: &lt;id&gt;}</code> → list (body key kept for compat)</td>
 </tr>
 <tr>
 <td>POST</td>
-<td><code>/api/llm-providers/&lt;name&gt;/test</code></td>
+<td><code>/api/llm-providers/&lt;id&gt;/test</code></td>
 <td><code>{ok, latency_ms, error?}</code></td>
 </tr>
 </tbody>
@@ -782,10 +846,10 @@ install time.</p>
   The wheel already contains <code>src/yaya/plugins/web/static/</code>.</li>
 <li><strong>Build time (contributor)</strong>: Node 20+ and npm. Inside
   <code>src/yaya/plugins/web/</code>:
-  <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>npm<span class="w"> </span>ci<span class="w">          </span><span class="c1"># install</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>npm<span class="w"> </span>run<span class="w"> </span>check<span class="w">   </span><span class="c1"># tsc --noEmit</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>npm<span class="w"> </span>run<span class="w"> </span><span class="nb">test</span><span class="w">    </span><span class="c1"># vitest</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w">   </span><span class="c1"># vite build → static/</span>
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>npm<span class="w"> </span>ci<span class="w">          </span><span class="c1"># install</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>npm<span class="w"> </span>run<span class="w"> </span>check<span class="w">   </span><span class="c1"># tsc --noEmit</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>npm<span class="w"> </span>run<span class="w"> </span><span class="nb">test</span><span class="w">    </span><span class="c1"># vitest</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w">   </span><span class="c1"># vite build → static/</span>
 </code></pre></div></li>
 </ul>
 <h2 id="ci-rules">CI rules<a class="headerlink" href="#ci-rules" title="Permanent link">&para;</a></h2>
@@ -879,7 +943,7 @@ kernel involvement.</p>
 <p><code>yaya serve --port &lt;P&gt;</code> tells the kernel to use port <code>&lt;P&gt;</code>, but the
 web adapter plugin picks its own port from <code>YAYA_WEB_PORT</code> (default:
 auto). If you want them aligned, set the env var:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nv">YAYA_WEB_PORT</span><span class="o">=</span><span class="m">7456</span><span class="w"> </span>yaya<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">7456</span><span class="w"> </span>--no-open
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nv">YAYA_WEB_PORT</span><span class="o">=</span><span class="m">7456</span><span class="w"> </span>yaya<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">7456</span><span class="w"> </span>--no-open
 </code></pre></div>
 <p>A follow-up issue will have <code>serve</code> pass its port to the adapter via
 config. Until then, check <code>/api/health</code> to confirm the actual port.</p>

@@ -561,10 +561,9 @@ the chat view in the main area. Settings is a float <strong>modal overlay</stron
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│  ▸ ⚙ gear  │                                   │
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>│  ▸ version │  #/settings  → modal opens over   │
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>│            │                chat with tabs:    │
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>│            │    · LLM Providers                │
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>│            │    · Plugins                      │
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>│            │    · Advanced (raw config)        │
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>└────────────┴───────────────────────────────────┘
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>│            │    · Plugins                      │
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>│            │    · Advanced (raw config)        │
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>└────────────┴───────────────────────────────────┘
 </code></pre></div>
 <p>Routing is hash-based: <code>#/chat</code> (default) and <code>#/settings</code>. The
 settings module is a dynamic import so chat-only users do not pay
@@ -635,59 +634,57 @@ turn is in flight.</p>
   decoupled from the WS client and tests can drive the dot without
   standing up a fake WebSocket.</li>
 </ul>
-<h3 id="llm-providers-tab-instance-centric-issue-129">LLM Providers tab (instance-centric, issue #129)<a class="headerlink" href="#llm-providers-tab-instance-centric-issue-129" title="Permanent link">&para;</a></h3>
-<p>Post-D4d the LLM Providers tab renders one row per
-<code>providers.&lt;id&gt;.*</code> instance exposed by the D4c HTTP CRUD surface,
-not one row per backing plugin. The same backing plugin can power
-many instances (e.g. one <code>llm-openai</code> plugin + three openai rows
-with different models or keys).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>┌─ LLM Providers ───────────────────────────────────────────┐
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>│ [+ Add instance]                                          │
+<h3 id="plugins-tab-unified-surface-issue-141">Plugins tab (unified surface, issue #141)<a class="headerlink" href="#plugins-tab-unified-surface-issue-141" title="Permanent link">&para;</a></h3>
+<p>There is one tab per plugin. Before #141 an extra "LLM Providers" tab
+existed to configure instance-scoped llm-provider plugins; users got
+confused between the two surfaces and the Plugins tab's writes were a
+silent no-op for llm-provider plugins (wrong namespace). The tab is
+gone.</p>
+<p>llm-provider rows route config through the <strong>default instance</strong> —
+<code>providers.&lt;plugin-name&gt;.*</code>, the same namespace the plugin reads via
+<code>ctx.providers.instances_for_plugin(...)</code>. Other categories keep the
+plugin-scoped <code>plugin.&lt;name&gt;.*</code> path. The <code>/api/llm-providers</code> CRUD
+surface is unchanged; power users curate additional instances with
+<code>yaya config set providers.&lt;custom-id&gt;.plugin &lt;plugin-name&gt;</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>┌─ Plugins ─────────────────────────────────────────────────┐
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>│ [+ Install]                                               │
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>│                                                           │
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>│ ( ) OpenAI GPT-4          llm-openai · llm-openai    ●    │
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>│     [Test connection] [configure]                         │
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>│ agent-tool     v0.1.0 · tool        [loaded] ☑ enabled    │
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>│   [configure] [Remove]                                    │
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>│                                                           │
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>│ (•) OpenAI GPT-3.5        llm-openai · llm-openai-2  ●    │
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>│     [Test connection] [collapse]                          │
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>│     ┌─ expanded row body ─────────────────────────────┐   │
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>│     │ Label   [ OpenAI GPT-3.5                    ]  │   │
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>│     │ API key [ ••••••••••••••••          ] [show]   │   │
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>│     │ Model   [ gpt-3.5-turbo                    ]   │   │
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>│     │                                                │   │
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>│     │                  [Save] [Reset] [Delete]       │   │
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>│     └────────────────────────────────────────────────┘   │
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>│                                                           │
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>│ ( ) Echo                  llm-echo · llm-echo        ●    │
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>│     [Test connection] [configure]                         │
-<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>└───────────────────────────────────────────────────────────┘
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>│ llm-openai     v0.1.0 · llm-provider [loaded] ☑ enabled ● │
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>│   [Test connection] [collapse] [Remove]                   │
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>│   ┌─ expanded row body ────────────────────────────────┐  │
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>│   │ Api Key [ ••••••••••••••••            ] [show]     │  │
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>│   │ Base Url [                                    ]    │  │
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>│   │ Model    [ gpt-4o                             ]    │  │
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>│   └────────────────────────────────────────────────────┘  │
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>│                                                           │
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>│ memory-sqlite  v0.1.0 · memory      [loaded] ☑ enabled    │
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>│   [configure] [Remove]                                    │
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>└───────────────────────────────────────────────────────────┘
 </code></pre></div>
 <ul>
-<li><strong>Active radio</strong> fires <code>PATCH /api/llm-providers/active</code> with
-  <code>{name: &lt;id&gt;}</code> (body key still <code>name</code> for PR #110 compat; the
-  value is an instance id post-D4c).</li>
-<li><strong>Status dot</strong> maps the most recent Test-connection outcome:
-  green (connected), red (failed, error tooltip), grey (untested).</li>
-<li><strong>Save</strong> sends a PATCH carrying only the fields that diverge
-  from the server row — partial-write blast-radius minimiser.</li>
-<li><strong>Delete</strong> opens an in-modal confirmation; 409 responses from
-  the active-instance / last-of-plugin safety checks surface as
-  an inline row error (<code>.yaya-row-error</code>), not a banner.</li>
-<li><strong>Test connection</strong> calls <code>POST /api/llm-providers/&lt;id&gt;/test</code>
-  with a spinner on the button and caches the result in a local
-  <code>testResults</code> map so the dot stays accurate across re-renders.</li>
-<li><strong>Add instance</strong> opens a modal: backing plugin dropdown
-  (filtered to <code>category === "llm-provider"</code> from <code>/api/plugins</code>),
-  auto-suggested instance id (<code>&lt;plugin&gt;</code> → <code>&lt;plugin&gt;-&lt;N&gt;</code> when
-  taken), client-side validation via <code>isValidInstanceId</code>, and the
-  backing plugin's JSON Schema rendered inline so the operator
-  can seed initial config (including API keys) in one submit.
-  400/409 responses from the server render inline inside the
-  modal.</li>
+<li><strong>Config writes auto-save</strong> field-by-field via <code>PATCH /api/config/&lt;key&gt;</code>;
+  the schema-form has no Save button because every change is persisted
+  immediately. For llm-provider rows the key is
+  <code>providers.&lt;plugin-name&gt;.&lt;field&gt;</code>; for other plugins it is
+  <code>plugin.&lt;name&gt;.&lt;field&gt;</code>.</li>
+<li><strong>Status dot</strong> on llm-provider rows maps the most recent Test-
+  connection outcome: green (connected), red (failed, error tooltip),
+  grey (untested).</li>
+<li><strong>Test connection</strong> calls <code>POST /api/llm-providers/&lt;plugin-name&gt;/test</code>
+  and flips the dot; a saved config invalidates any prior result so
+  operators re-test against the new values.</li>
+<li><strong>Toggle</strong> patches <code>{enabled}</code> via <code>PATCH /api/plugins/&lt;name&gt;</code>;
+  disabled plugins stop receiving events on the next reload.</li>
+<li><strong>Remove</strong> calls <code>DELETE /api/plugins/&lt;name&gt;</code> with a native confirm
+  prompt.</li>
 </ul>
 <h3 id="extending-settings-with-a-new-tab">Extending Settings with a new tab<a class="headerlink" href="#extending-settings-with-a-new-tab" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Add a <code>Tab</code> variant in <code>settings-view.ts</code>
-   (e.g. <code>type Tab = "llm" | "plugins" | "advanced" | "mytab"</code>).</li>
+   (e.g. <code>type Tab = "plugins" | "advanced" | "mytab"</code>).</li>
 <li>Add a <code>loaded.mytab = false</code> field and a <code>loadTab()</code> branch that
    fetches from the relevant endpoint, tolerating <code>404</code>/<code>501</code>.</li>
 <li>Add a render method (<code>renderMytab()</code>) that re-uses

@@ -32,6 +32,8 @@ import asyncio
 import os
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
 
@@ -44,6 +46,34 @@ _NAME = "llm-openai"
 _VERSION = "0.1.0"
 _PROVIDERS_PREFIX = "providers."
 _DEFAULT_MODEL = "gpt-4o-mini"
+
+
+class _OpenAIInstanceConfig(BaseModel):
+    """Instance-scoped config schema for one ``llm-openai`` provider.
+
+    Surfaced through ``GET /api/llm-providers`` so the web settings UI
+    can render a typed configure form (api_key as a masked password
+    field, base_url + model as plain text). Falls back to
+    ``OPENAI_API_KEY`` / ``OPENAI_BASE_URL`` env vars when fields are
+    blank — see :meth:`OpenAIProvider._build_client`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    api_key: str | None = Field(
+        default=None,
+        description="OpenAI API key. Falls back to the OPENAI_API_KEY env var.",
+        json_schema_extra={"format": "password"},
+    )
+    base_url: str | None = Field(
+        default=None,
+        description="Custom API base URL (e.g. Azure OpenAI, LM Studio, vLLM). "
+        "Falls back to the OPENAI_BASE_URL env var, then the OpenAI default.",
+    )
+    model: str | None = Field(
+        default=None,
+        description=f"Default model name. Defaults to {_DEFAULT_MODEL} when unset.",
+    )
 
 
 class OpenAIProvider:
@@ -59,6 +89,9 @@ class OpenAIProvider:
     version: str = _VERSION
     category: Category = Category.LLM_PROVIDER
     requires: ClassVar[list[str]] = []
+    # Picked up by the web adapter's `_plugin_config_schema` helper to
+    # drive the configure form in Settings → LLM Providers.
+    ConfigModel: ClassVar[type[BaseModel]] = _OpenAIInstanceConfig
 
     def __init__(self) -> None:
         # Instance-id → live ``AsyncOpenAI`` client. Populated in

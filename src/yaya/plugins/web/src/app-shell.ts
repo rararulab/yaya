@@ -88,12 +88,13 @@ function loadTheme(): "light" | "dark" {
 }
 
 function applyTheme(theme: "light" | "dark"): void {
+	// Toggle both classes so the explicit choice always wins over the
+	// `@media (prefers-color-scheme: dark)` rule. The CSS gates that
+	// rule on `html:not(.light):not(.dark)`, so stamping one class here
+	// disables it regardless of the OS preference.
 	const root = document.documentElement;
-	if (theme === "dark") {
-		root.classList.add("dark");
-	} else {
-		root.classList.remove("dark");
-	}
+	root.classList.toggle("dark", theme === "dark");
+	root.classList.toggle("light", theme === "light");
 	localStorage.setItem(THEME_KEY, theme);
 }
 

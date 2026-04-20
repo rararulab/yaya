@@ -166,55 +166,70 @@ turn is in flight.
   decoupled from the WS client and tests can drive the dot without
   standing up a fake WebSocket.
 
-### Plugins tab (unified surface, issue #141)
+### Plugins tab (unified surface, issues #141 · #143)
 
-There is one tab per plugin. Before #141 an extra "LLM Providers" tab
-existed to configure instance-scoped llm-provider plugins; users got
-confused between the two surfaces and the Plugins tab's writes were a
-silent no-op for llm-provider plugins (wrong namespace). The tab is
-gone.
+One tab per plugin. Before #141 there was a dedicated "LLM Providers"
+tab that duplicated llm-provider configuration — users got confused
+between surfaces and the Plugins tab's writes were a silent no-op
+(wrong namespace). #141 deleted the duplicate; #143 reintroduced full
+multi-instance management **inside** the Plugins tab so we keep the
+single-tab UX without losing the add/delete/rename features.
 
-llm-provider rows route config through the **default instance** —
-`providers.<plugin-name>.*`, the same namespace the plugin reads via
-`ctx.providers.instances_for_plugin(...)`. Other categories keep the
-plugin-scoped `plugin.<name>.*` path. The `/api/llm-providers` CRUD
-surface is unchanged; power users curate additional instances with
-`yaya config set providers.<custom-id>.plugin <plugin-name>`.
+For `category === "llm-provider"` plugins, expanding `configure` shows
+a list of all instances backed by that plugin (`providers.<id>.*`
+rows from `/api/llm-providers`), each with active-radio · label · id
+· status dot · Test connection · configure · Delete. A `+ Add
+instance` button opens a modal that auto-suggests the next free id
+and renders the plugin's JSON Schema for initial config.
+
+Non-llm-provider plugins render a flat schema-form under `configure`
+and save to `plugin.<name>.<field>`.
 
 ```
-┌─ Plugins ─────────────────────────────────────────────────┐
-│ [+ Install]                                               │
-│                                                           │
-│ agent-tool     v0.1.0 · tool        [loaded] ☑ enabled    │
-│   [configure] [Remove]                                    │
-│                                                           │
-│ llm-openai     v0.1.0 · llm-provider [loaded] ☑ enabled ● │
-│   [Test connection] [collapse] [Remove]                   │
-│   ┌─ expanded row body ────────────────────────────────┐  │
-│   │ Api Key [ ••••••••••••••••            ] [show]     │  │
-│   │ Base Url [                                    ]    │  │
-│   │ Model    [ gpt-4o                             ]    │  │
-│   └────────────────────────────────────────────────────┘  │
-│                                                           │
-│ memory-sqlite  v0.1.0 · memory      [loaded] ☑ enabled    │
-│   [configure] [Remove]                                    │
-└───────────────────────────────────────────────────────────┘
+┌─ Plugins ─────────────────────────────────────────────────────┐
+│ [+ Install]                                                   │
+│                                                               │
+│ agent-tool     v0.1.0 · tool         [loaded] ☑ enabled       │
+│   [configure] [Remove]                                        │
+│                                                               │
+│ llm-openai     v0.1.0 · llm-provider [loaded] ☑ enabled       │
+│   2 instances   [collapse] [Remove]                           │
+│   ┌─────────────────────────────────────────────────────────┐ │
+│   │ (•) llm-openai (default) llm-openai   ● [Test][…][Del]  │ │
+│   │ ( ) Azure OpenAI Prod    llm-openai-2 ● [Test][…][Del]  │ │
+│   │     ┌─ expanded row body (Azure OpenAI Prod) ─────────┐ │ │
+│   │     │ Label   [ Azure OpenAI Prod                  ] │ │ │
+│   │     │ Api Key [ ••••••••••••••••           ] [show] │ │ │
+│   │     │ Base Url[ https://…                          ] │ │ │
+│   │     │ Model   [ gpt-4o-mini                        ] │ │ │
+│   │     │              [Save] [Reset]                    │ │ │
+│   │     └─────────────────────────────────────────────────┘ │ │
+│   │ [+ Add instance]                                        │ │
+│   └─────────────────────────────────────────────────────────┘ │
+│                                                               │
+│ memory-sqlite  v0.1.0 · memory       [loaded] ☑ enabled       │
+│   [configure] [Remove]                                        │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-- **Config writes auto-save** field-by-field via `PATCH /api/config/<key>`;
-  the schema-form has no Save button because every change is persisted
-  immediately. For llm-provider rows the key is
-  `providers.<plugin-name>.<field>`; for other plugins it is
-  `plugin.<name>.<field>`.
-- **Status dot** on llm-provider rows maps the most recent Test-
-  connection outcome: green (connected), red (failed, error tooltip),
-  grey (untested).
-- **Test connection** calls `POST /api/llm-providers/<plugin-name>/test`
-  and flips the dot; a saved config invalidates any prior result so
-  operators re-test against the new values.
-- **Toggle** patches `{enabled}` via `PATCH /api/plugins/<name>`;
-  disabled plugins stop receiving events on the next reload.
-- **Remove** calls `DELETE /api/plugins/<name>` with a native confirm
+- **Active radio** on an instance fires `PATCH /api/llm-providers/active`
+  with `{name: <id>}` (body key still `name` for PR #110 compat; value
+  is an instance id post-D4c).
+- **Status dot** maps the most recent Test-connection outcome: green
+  (connected), red (failed, error tooltip), grey (untested).
+- **Save** on an instance PATCHes only the fields that diverge from
+  the server row — partial-write blast-radius minimiser.
+- **Delete** opens a confirm dialog; 409 (active / last-of-plugin safety)
+  surfaces as a `.yaya-row-error` on the row, not a banner.
+- **Test connection** calls `POST /api/llm-providers/<id>/test`; a
+  successful Save invalidates any prior result so operators re-test.
+- **+ Add instance** opens a modal with auto-suggested id (`<plugin>` →
+  `<plugin>-<N>` when taken), client-side validation via
+  `isValidInstanceId`, optional label, and the backing plugin's JSON
+  Schema rendered inline. 400/409 render inside the modal.
+- **Plugin-level toggle** patches `{enabled}` via
+  `PATCH /api/plugins/<name>`. **Remove** calls
+  `DELETE /api/plugins/<name>` with a native confirm
   prompt.
 
 ### Extending Settings with a new tab

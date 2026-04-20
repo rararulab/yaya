@@ -191,3 +191,127 @@ def _check_fields(a: str, b: str, c: str, d: str, secret_suffixes: tuple[str, ..
 @then("each field is flagged as a secret")
 def _assert_flagged(flagged: list[bool]) -> None:
     assert all(flagged), f"one or more fields not flagged: {flagged}"
+
+
+# ---------------------------------------------------------------------------
+# Multi-instance UI shadows — mirror settings-view.test.ts (#143).
+# ---------------------------------------------------------------------------
+
+
+def _compute_patch(
+    row_label: str,
+    row_config: dict[str, object],
+    draft_label: str,
+    draft_config: dict[str, object],
+) -> dict[str, object]:
+    """Python shadow of ``YayaSettings.computePatch``.
+
+    Preserves the draft-vs-server diff contract the TypeScript source
+    owns: only fields that diverge enter the patch, minimising the
+    blast radius of a partial-write failure.
+    """
+    import json
+
+    patch: dict[str, object] = {}
+    if draft_label != row_label:
+        patch["label"] = draft_label
+    changed: dict[str, object] = {}
+    for key, value in draft_config.items():
+        if json.dumps(value, sort_keys=True) != json.dumps(
+            row_config.get(key),
+            sort_keys=True,
+        ):
+            changed[key] = value
+    if changed:
+        patch["config"] = changed
+    return patch
+
+
+def _suggest_instance_id(plugin: str, taken: set[str]) -> str:
+    """Python shadow of ``YayaSettings.suggestInstanceId``."""
+    base = plugin.replace("_", "-")
+    if base not in taken:
+        return base
+    for i in range(2, 100):
+        candidate = f"{base}-{i}"
+        if candidate not in taken:
+            return candidate
+    return base
+
+
+@given("a server row and a draft that matches it exactly", target_fixture="identical_pair")
+def _identical_pair() -> dict[str, object]:
+    row_config: dict[str, object] = {"api_key": "****abcd", "model": "gpt-4o"}
+    return {
+        "row_label": "default",
+        "row_config": row_config,
+        "draft_label": "default",
+        "draft_config": dict(row_config),
+    }
+
+
+@when("the save diff is computed", target_fixture="diff_patch")
+def _diff_patch(request: pytest.FixtureRequest) -> dict[str, object]:
+    # Resolve whichever fixture the scenario populated.
+    for name in ("identical_pair", "model_only_change"):
+        if name in request.fixturenames:
+            pair = request.getfixturevalue(name)
+            assert isinstance(pair, dict)
+            return _compute_patch(
+                str(pair["row_label"]),
+                dict(pair["row_config"]),  # type: ignore[arg-type]
+                str(pair["draft_label"]),
+                dict(pair["draft_config"]),  # type: ignore[arg-type]
+            )
+    raise AssertionError("no input fixture bound for the save-diff scenario")
+
+
+@then("the resulting patch is empty so no PATCH is sent")
+def _assert_empty_patch(diff_patch: dict[str, object]) -> None:
+    assert diff_patch == {}, f"expected empty patch, got {diff_patch!r}"
+
+
+@given(
+    "a server row and a draft that changed only the model field",
+    target_fixture="model_only_change",
+)
+def _model_only_change() -> dict[str, object]:
+    row_config: dict[str, object] = {
+        "api_key": "****abcd",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o",
+    }
+    draft_config: dict[str, object] = {
+        "api_key": "****abcd",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+    }
+    return {
+        "row_label": "default",
+        "row_config": row_config,
+        "draft_label": "default",
+        "draft_config": draft_config,
+    }
+
+
+@then("the patch contains only the model field")
+def _assert_model_only(diff_patch: dict[str, object]) -> None:
+    assert diff_patch == {"config": {"model": "gpt-4o-mini"}}, f"expected single-field diff, got {diff_patch!r}"
+
+
+@given(
+    "a provider list where the base id and -2 suffix are both taken",
+    target_fixture="taken_ids",
+)
+def _taken_ids() -> set[str]:
+    return {"llm-openai", "llm-openai-2"}
+
+
+@when("a new instance id is suggested for the plugin", target_fixture="suggested_id")
+def _suggest(taken_ids: set[str]) -> str:
+    return _suggest_instance_id("llm-openai", taken_ids)
+
+
+@then("the returned id uses the next free counter suffix")
+def _assert_suggested(suggested_id: str) -> None:
+    assert suggested_id == "llm-openai-3", f"suggester must skip to -3 when base and -2 are taken; got {suggested_id!r}"

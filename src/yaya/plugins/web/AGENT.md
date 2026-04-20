@@ -50,7 +50,7 @@ Settings tabs consume PR B's HTTP config surface:
 
 | Tab | Endpoints | Notes |
 |---|---|---|
-| Plugins | `GET/PATCH/DELETE /api/plugins`, `POST /api/plugins/install`, `GET /api/llm-providers`, `POST /api/llm-providers/<id>/test` | One row per plugin with enabled toggle + schema-driven config + install modal. For `category === "llm-provider"` the row sources config from the default instance (`providers.<plugin-name>.*`, matching what the plugin reads via `ctx.providers.instances_for_plugin`) and exposes Test connection. Additional instances are CLI-only: `yaya config set providers.<custom-id>.plugin <plugin-name>`. |
+| Plugins | `GET/PATCH/DELETE /api/plugins`, `POST /api/plugins/install`, `GET/POST/PATCH/DELETE /api/llm-providers`, `PATCH /api/llm-providers/active`, `POST /api/llm-providers/<id>/test` | One row per plugin with enabled toggle + schema-driven config + install modal. For `category === "llm-provider"` the row expands into a full instance list sourced from `/api/llm-providers` — active radio, per-instance schema form (writes to `providers.<id>.<field>`, the namespace the plugin reads via `ctx.providers.instances_for_plugin`), Test connection, inline Delete, and an `+ Add instance` modal. |
 | Advanced | `GET/PATCH/DELETE /api/config`, `GET /api/config/<key>?show=1` | raw config grid; prefix filter; secret reveal toggle. |
 
 The schema-driven form (`src/schema-form.ts`) handles shallow JSON Schema (string / integer / number / boolean / array / object) and auto-detects secret fields by suffix (`_key`, `_token`, `_secret`, `_password`) — password input + reveal toggle. Missing schema falls back to a generic key-value grid.

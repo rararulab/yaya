@@ -32,10 +32,12 @@ without Node.
 - **Empty-state hero.** When the chat transcript is empty, render a
   large `yaya` wordmark, tagline, and three hardcoded quick-start
   chips that prefill the prompt input on click.
-- **Settings tabs.** LLM Providers (radio-switch + per-provider
-  config form + test-connection button), Plugins (enabled toggle +
-  schema-driven config + install/remove), Advanced (raw config
-  grid with prefix filter + secret reveal toggle).
+- **Settings tabs.** Plugins (enabled toggle + schema-driven config
+  + install/remove; for `llm-provider` plugins the row expands into
+  an instance list with active radio, per-instance schema form,
+  test-connection, delete, and an add-instance modal — #141 / #143)
+  and Advanced (raw config grid with prefix filter + secret reveal
+  toggle).
 - **Schema-driven forms.** Shallow (depth 1) JSON Schema renderer:
   `string` → text input (password variant if the key ends in
   `_key`/`_token`/`_secret`/`_password`), `integer`/`number` →
@@ -72,6 +74,7 @@ without Node.
 - src/yaya/plugins/web/src/__tests__/settings-modal.test.ts
 - src/yaya/plugins/web/src/__tests__/chat-shell.test.ts
 - src/yaya/plugins/web/src/__tests__/sidebar.test.ts
+- src/yaya/plugins/web/src/__tests__/settings-view.test.ts
 - src/yaya/plugins/web/static/
 - src/yaya/plugins/web/static/**
 - src/yaya/plugins/web/static/index.html
@@ -149,6 +152,33 @@ Scenario: Theme tokens honour prefers-color-scheme
   Given the built CSS bundle
   When the stylesheet is inspected for theme tokens
   Then it declares a prefers-color-scheme dark override
+
+Scenario: Instance save diff skips unchanged fields
+  Test:
+    Package: yaya
+    Filter: tests/bdd/test_plugin_web_ui.py::test_instance_save_diff_skips_unchanged
+  Level: unit
+  Given a server row and a draft that matches it exactly
+  When the save diff is computed
+  Then the resulting patch is empty so no PATCH is sent
+
+Scenario: Instance save diff emits only the fields that diverged
+  Test:
+    Package: yaya
+    Filter: tests/bdd/test_plugin_web_ui.py::test_instance_save_diff_emits_only_changed
+  Level: unit
+  Given a server row and a draft that changed only the model field
+  When the save diff is computed
+  Then the patch contains only the model field
+
+Scenario: Instance id suggester picks the next free counter suffix
+  Test:
+    Package: yaya
+    Filter: tests/bdd/test_plugin_web_ui.py::test_instance_id_suggester_picks_next_free
+  Level: unit
+  Given a provider list where the base id and -2 suffix are both taken
+  When a new instance id is suggested for the plugin
+  Then the returned id uses the next free counter suffix
 
 ## Out of Scope
 

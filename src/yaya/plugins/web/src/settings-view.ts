@@ -1,15 +1,19 @@
 /**
  * Settings view — tabbed surface for plugins and the raw config editor.
  *
- * The prior "LLM Providers" tab was merged into the Plugins tab (#141).
- * llm-provider plugins are instance-scoped under ``providers.<id>.*``;
- * the Plugins row for those plugins now renders the default instance
- * (where id equals the plugin name) and routes config writes through
- * the ``providers.*`` namespace the plugin actually reads from.
+ * Two tabs: Plugins · Advanced. The Plugins tab lists one row per
+ * loaded plugin. For plugins of category ``llm-provider`` the row
+ * expands into an **instance list** — one sub-row per
+ * ``providers.<id>.*`` instance backed by the plugin, with add / test
+ * connection / configure / delete / active-radio controls. This keeps
+ * the single-tab UX from #141 while restoring the multi-instance
+ * management the dedicated LLM Providers tab used to carry (#143).
  *
- * Non-llm-provider plugins keep the plugin-scoped ``plugin.<name>.*``
- * store. Power users can still curate additional instances via
- * ``yaya config set providers.<id>.*`` from the CLI.
+ * Writes land in the namespaces the runtime reads from:
+ * llm-provider instance config → ``providers.<id>.<field>`` (what
+ * ``llm_openai/plugin.py`` et al. consume via
+ * ``ctx.providers.instances_for_plugin``); other categories →
+ * ``plugin.<name>.<field>``.
  *
  * This module is its own Vite chunk so chat-only users do not pay the
  * settings bundle cost until they navigate to /settings.
@@ -20,16 +24,22 @@ import { customElement, state } from "lit/decorators.js";
 
 import {
 	ApiError,
+	createLlmProvider,
 	deleteConfigKey,
+	deleteLlmProvider,
 	getConfig,
 	getConfigKey,
 	installPlugin,
+	isValidInstanceId,
 	listLlmProviders,
 	listPlugins,
 	patchConfigKey,
 	patchPlugin,
 	removePlugin,
+	setActiveLlmProvider,
 	testLlmProvider,
+	updateLlmProvider,
+	type CreateLlmProviderBody,
 	type LlmProviderRow,
 	type PluginRow,
 } from "./api.js";
@@ -49,6 +59,40 @@ interface TestResult {
 	at: number;
 }
 
+/**
+ * Per-instance pending edits before Save / Reset.
+ *
+ * Keeping a draft per instance lets operators toggle a secret reveal,
+ * type a new model, and inspect the diff before committing. Saving
+ * PATCHes only the fields that diverge from the server row so a
+ * dropped write mid-batch leaves the row in a known subset rather
+ * than a silent overwrite.
+ */
+interface ProviderDraft {
+	label: string;
+	config: Record<string, unknown>;
+}
+
+interface AddInstanceForm {
+	open: boolean;
+	plugin: string;
+	id: string;
+	label: string;
+	config: Record<string, unknown>;
+	idError: string | null;
+	submitError: string | null;
+}
+
+const INITIAL_ADD_FORM: AddInstanceForm = {
+	open: false,
+	plugin: "",
+	id: "",
+	label: "",
+	config: {},
+	idError: null,
+	submitError: null,
+};
+
 @customElement("yaya-settings")
 export class YayaSettings extends LitElement {
 	@state() private tab: Tab = "plugins";
@@ -56,6 +100,7 @@ export class YayaSettings extends LitElement {
 	@state() private providers: LlmProviderRow[] = [];
 	@state() private config: Record<string, unknown> = {};
 	@state() private expandedPlugin: string | null = null;
+	@state() private expandedInstance: string | null = null;
 	@state() private revealed: Set<string> = new Set();
 	@state() private banner: Banner | null = null;
 	@state() private configFilter = "";
@@ -63,8 +108,12 @@ export class YayaSettings extends LitElement {
 	@state() private installSource = "";
 	@state() private installEditable = false;
 	@state() private loaded = { plugins: false, advanced: false };
+	@state() private drafts: Record<string, ProviderDraft> = {};
 	@state() private testResults: Record<string, TestResult> = {};
 	@state() private testing: Set<string> = new Set();
+	@state() private deleteConfirmId: string | null = null;
+	@state() private rowError: Record<string, string> = {};
+	@state() private addForm: AddInstanceForm = { ...INITIAL_ADD_FORM };
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
@@ -78,16 +127,13 @@ export class YayaSettings extends LitElement {
 	private async loadTab(tab: Tab): Promise<void> {
 		try {
 			if (tab === "plugins" && !this.loaded.plugins) {
-				// Instance list is needed so llm-provider rows can render
-				// their current config and route saves to providers.<id>.*.
-				// Failing silently keeps the Plugins tab usable if the
-				// instance CRUD surface is unavailable on older builds.
 				const [plugins, providers] = await Promise.all([
 					listPlugins(),
 					listLlmProviders().catch(() => [] as LlmProviderRow[]),
 				]);
 				this.plugins = plugins;
 				this.providers = providers;
+				this.drafts = this.makeDraftsFrom(providers);
 				this.loaded = { ...this.loaded, plugins: true };
 			} else if (tab === "advanced" && !this.loaded.advanced) {
 				this.config = await getConfig();
@@ -105,22 +151,38 @@ export class YayaSettings extends LitElement {
 		}
 	}
 
+	private makeDraftsFrom(rows: LlmProviderRow[]): Record<string, ProviderDraft> {
+		const out: Record<string, ProviderDraft> = {};
+		for (const row of rows) {
+			out[row.id] = { label: row.label, config: { ...row.config } };
+		}
+		return out;
+	}
+
+	private async refreshProviders(): Promise<void> {
+		const providers = await listLlmProviders();
+		this.providers = providers;
+		this.drafts = this.makeDraftsFrom(providers);
+	}
+
 	private switchTab(tab: Tab): void {
 		this.tab = tab;
 		void this.loadTab(tab);
 	}
 
-	private providerFor(plugin: PluginRow): LlmProviderRow | undefined {
-		// Default instance id = plugin name; matches how bootstrap seeds
-		// ``providers.<plugin-name>.plugin = <plugin-name>`` on first boot.
-		// If an operator renamed the default instance from the CLI we fall
-		// back to the first row backed by this plugin — degrading to "show
-		// *some* config" is friendlier than surfacing an empty-state when
-		// a valid row exists.
-		const candidates = this.providers.filter((r) => r.plugin === plugin.name);
-		return (
-			candidates.find((r) => r.id === plugin.name) ?? candidates[0]
-		);
+	private instancesFor(plugin: PluginRow): LlmProviderRow[] {
+		return this.providers.filter((r) => r.plugin === plugin.name);
+	}
+
+	private async onSetActive(id: string): Promise<void> {
+		try {
+			this.providers = await setActiveLlmProvider(id);
+			this.drafts = this.makeDraftsFrom(this.providers);
+			this.banner = { kind: "info", text: `Active provider: ${id}` };
+		} catch (err) {
+			const detail = err instanceof ApiError ? (err.detail ?? err.message) : String(err);
+			this.banner = { kind: "error", text: detail };
+		}
 	}
 
 	private async onTestProvider(id: string): Promise<void> {
@@ -158,6 +220,195 @@ export class YayaSettings extends LitElement {
 		if (!r) return { kind: "untested", title: "Untested" };
 		if (r.ok) return { kind: "connected", title: `Connected (${r.latency_ms}ms)` };
 		return { kind: "failed", title: r.error ?? "Failed" };
+	}
+
+	private onDraftLabelChange(id: string, next: string): void {
+		const draft = this.drafts[id];
+		if (!draft) return;
+		this.drafts = { ...this.drafts, [id]: { ...draft, label: next } };
+	}
+
+	private onDraftConfigChange(id: string, key: string, value: unknown): void {
+		const draft = this.drafts[id];
+		if (!draft) return;
+		this.drafts = {
+			...this.drafts,
+			[id]: { ...draft, config: { ...draft.config, [key]: value } },
+		};
+	}
+
+	private computePatch(row: LlmProviderRow, draft: ProviderDraft): {
+		label?: string;
+		config?: Record<string, unknown>;
+	} {
+		const patch: { label?: string; config?: Record<string, unknown> } = {};
+		if (draft.label !== row.label) patch.label = draft.label;
+		const changed: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(draft.config)) {
+			if (JSON.stringify(v) !== JSON.stringify(row.config[k])) {
+				changed[k] = v;
+			}
+		}
+		if (Object.keys(changed).length > 0) patch.config = changed;
+		return patch;
+	}
+
+	private async onSaveRow(id: string): Promise<void> {
+		const row = this.providers.find((p) => p.id === id);
+		const draft = this.drafts[id];
+		if (!row || !draft) return;
+		const patch = this.computePatch(row, draft);
+		if (Object.keys(patch).length === 0) {
+			this.banner = { kind: "info", text: "No changes to save." };
+			return;
+		}
+		try {
+			const updated = await updateLlmProvider(id, patch);
+			this.providers = this.providers.map((p) => (p.id === id ? updated : p));
+			this.drafts = {
+				...this.drafts,
+				[id]: { label: updated.label, config: { ...updated.config } },
+			};
+			this.rowError = { ...this.rowError, [id]: "" };
+			const { [id]: _stale, ...rest } = this.testResults;
+			this.testResults = rest;
+			this.revealed = new Set(
+				Array.from(this.revealed).filter(
+					(k) => !k.startsWith(`providers.${id}.`),
+				),
+			);
+			this.banner = { kind: "info", text: `Saved ${id}` };
+		} catch (err) {
+			const detail = err instanceof ApiError ? (err.detail ?? err.message) : String(err);
+			this.rowError = { ...this.rowError, [id]: detail };
+		}
+	}
+
+	private onResetRow(id: string): void {
+		const row = this.providers.find((p) => p.id === id);
+		if (!row) return;
+		this.drafts = { ...this.drafts, [id]: { label: row.label, config: { ...row.config } } };
+		this.rowError = { ...this.rowError, [id]: "" };
+	}
+
+	private async onConfirmDelete(id: string): Promise<void> {
+		try {
+			await deleteLlmProvider(id);
+			this.providers = this.providers.filter((p) => p.id !== id);
+			const { [id]: _drop, ...rest } = this.drafts;
+			this.drafts = rest;
+			const { [id]: _dropTest, ...remainingResults } = this.testResults;
+			this.testResults = remainingResults;
+			this.revealed = new Set(
+				Array.from(this.revealed).filter(
+					(k) => !k.startsWith(`providers.${id}.`),
+				),
+			);
+			this.deleteConfirmId = null;
+			this.banner = { kind: "info", text: `Deleted ${id}` };
+			if (this.expandedInstance === id) this.expandedInstance = null;
+		} catch (err) {
+			const detail = err instanceof ApiError ? (err.detail ?? err.message) : String(err);
+			this.rowError = { ...this.rowError, [id]: detail };
+			this.deleteConfirmId = null;
+		}
+	}
+
+	private async onRevealToggle(id: string, field: string): Promise<void> {
+		const revealKey = `providers.${id}.${field}`;
+		const next = new Set(this.revealed);
+		if (next.has(revealKey)) {
+			next.delete(revealKey);
+		} else {
+			next.add(revealKey);
+			try {
+				const resp = await getConfigKey(revealKey, true);
+				const draft = this.drafts[id];
+				if (draft) {
+					this.drafts = {
+						...this.drafts,
+						[id]: { ...draft, config: { ...draft.config, [field]: resp.value } },
+					};
+				}
+			} catch {
+				// Keep masked value; toggle purely cosmetic.
+			}
+		}
+		this.revealed = next;
+	}
+
+	private openAddInstance(plugin: string): void {
+		this.addForm = {
+			...INITIAL_ADD_FORM,
+			open: true,
+			plugin,
+			id: this.suggestInstanceId(plugin),
+		};
+	}
+
+	private suggestInstanceId(plugin: string): string {
+		// Normalize ``llm_openai`` → ``llm-openai`` and pick the next free
+		// counter suffix against the loaded providers list.
+		const base = plugin.replace(/_/g, "-");
+		const taken = new Set(this.providers.map((p) => p.id));
+		if (!taken.has(base)) return base;
+		for (let i = 2; i < 100; i++) {
+			const candidate = `${base}-${i}`;
+			if (!taken.has(candidate)) return candidate;
+		}
+		return base;
+	}
+
+	private onAddFormChange(patch: Partial<AddInstanceForm>): void {
+		this.addForm = { ...this.addForm, ...patch, submitError: null };
+	}
+
+	private onAddIdChange(id: string): void {
+		const trimmed = id.trim();
+		const err = trimmed && !isValidInstanceId(trimmed)
+			? "id must be 3-64 lowercase alphanumeric characters / dashes; no dots."
+			: null;
+		this.addForm = { ...this.addForm, id: trimmed, idError: err, submitError: null };
+	}
+
+	private onAddConfigChange(key: string, value: unknown): void {
+		this.addForm = {
+			...this.addForm,
+			config: { ...this.addForm.config, [key]: value },
+			submitError: null,
+		};
+	}
+
+	private async onAddSubmit(): Promise<void> {
+		const form = this.addForm;
+		if (!form.plugin) {
+			this.addForm = { ...form, submitError: "Pick a backing plugin." };
+			return;
+		}
+		if (!form.id) {
+			this.addForm = { ...form, submitError: "Enter an instance id." };
+			return;
+		}
+		if (form.idError) {
+			this.addForm = { ...form, submitError: form.idError };
+			return;
+		}
+		const body: CreateLlmProviderBody = {
+			plugin: form.plugin,
+			id: form.id,
+		};
+		if (form.label) body.label = form.label;
+		if (Object.keys(form.config).length > 0) body.config = form.config;
+		try {
+			const created = await createLlmProvider(body);
+			await this.refreshProviders();
+			this.expandedInstance = created.id;
+			this.addForm = { ...INITIAL_ADD_FORM };
+			this.banner = { kind: "info", text: `Created ${created.id}` };
+		} catch (err) {
+			const detail = err instanceof ApiError ? (err.detail ?? err.message) : String(err);
+			this.addForm = { ...form, submitError: detail };
+		}
 	}
 
 	private async onPluginToggle(row: PluginRow, enabled: boolean): Promise<void> {
@@ -200,25 +451,6 @@ export class YayaSettings extends LitElement {
 		try {
 			await patchConfigKey(key, value);
 			this.config = { ...this.config, [key]: value };
-			// A ``providers.<id>.<field>`` write may have rotated a secret.
-			// Re-fetch the instance list so the row shows the server's
-			// masked shape instead of the plaintext the user just typed —
-			// mirroring the value locally would leak the secret into every
-			// re-render until a full reload.
-			if (key.startsWith("providers.")) {
-				const [, id] = key.split(".", 3);
-				if (id) {
-					const { [id]: _stale, ...rest } = this.testResults;
-					this.testResults = rest;
-				}
-				try {
-					this.providers = await listLlmProviders();
-				} catch {
-					// Tolerate a stale list — the write itself succeeded and
-					// a later reload will re-sync. Better than surfacing a
-					// banner for a best-effort mirror.
-				}
-			}
 		} catch (err) {
 			this.banner = { kind: "error", text: String(err) };
 		}
@@ -236,7 +468,7 @@ export class YayaSettings extends LitElement {
 		}
 	}
 
-	private async onRevealToggle(key: string): Promise<void> {
+	private async onAdvancedRevealToggle(key: string): Promise<void> {
 		const next = new Set(this.revealed);
 		if (next.has(key)) {
 			next.delete(key);
@@ -244,19 +476,7 @@ export class YayaSettings extends LitElement {
 			next.add(key);
 			try {
 				const resp = await getConfigKey(key, true);
-				// For providers.<id>.<field> reveals, push the unmasked
-				// value into the cached providers row so the form input
-				// shows the cleartext on the next render.
-				if (key.startsWith("providers.")) {
-					const [, id, field] = key.split(".", 3);
-					if (id && field) {
-						this.providers = this.providers.map((p) =>
-							p.id === id ? { ...p, config: { ...p.config, [field]: resp.value } } : p,
-						);
-					}
-				} else {
-					this.config = { ...this.config, [key]: resp.value };
-				}
+				this.config = { ...this.config, [key]: resp.value };
 			} catch {
 				// Keep masked value; toggle purely cosmetic.
 			}
@@ -283,6 +503,8 @@ export class YayaSettings extends LitElement {
 					${this.tab === "plugins" ? this.renderPlugins() : nothing}
 					${this.tab === "advanced" ? this.renderAdvanced() : nothing}
 				</div>
+				${this.addForm.open ? this.renderAddInstance() : nothing}
+				${this.deleteConfirmId ? this.renderDeleteConfirm(this.deleteConfirmId) : nothing}
 			</section>
 		`;
 	}
@@ -319,10 +541,12 @@ export class YayaSettings extends LitElement {
 		const expanded = this.expandedPlugin === plugin.name;
 		const enabled = plugin.enabled ?? true;
 		const isLlm = plugin.category === "llm-provider";
-		const provider = isLlm ? this.providerFor(plugin) : undefined;
-		const testId = provider?.id ?? plugin.name;
-		const isTesting = isLlm && this.testing.has(testId);
-		const status = isLlm ? this.statusFor(testId) : null;
+		const instances = isLlm ? this.instancesFor(plugin) : [];
+		const instanceSummary = isLlm
+			? instances.length === 1
+				? "1 instance"
+				: `${instances.length} instances`
+			: null;
 		return html`
 			<li class="yaya-row">
 				<div class="yaya-row-head">
@@ -337,63 +561,38 @@ export class YayaSettings extends LitElement {
 						/>
 						<span>${enabled ? "enabled" : "disabled"}</span>
 					</label>
-					${status
-						? html`<span
-								class="yaya-status-dot yaya-status-${status.kind}"
-								title=${status.title}
-								aria-label=${status.title}
-							></span>`
-						: nothing}
-					${isLlm
-						? html`<button
-								class="yaya-btn-ghost yaya-test-btn"
-								?disabled=${isTesting}
-								@click=${() => this.onTestProvider(testId)}
-							>
-								${isTesting ? "Testing…" : "Test connection"}
-							</button>`
+					${instanceSummary
+						? html`<span class="yaya-row-meta">${instanceSummary}</span>`
 						: nothing}
 					<button class="yaya-link" @click=${() => {
 						this.expandedPlugin = expanded ? null : plugin.name;
 					}}>${expanded ? "collapse" : "configure"}</button>
 					<button class="yaya-btn-ghost" @click=${() => this.onPluginRemove(plugin.name)}>Remove</button>
 				</div>
-				${expanded ? this.renderPluginBody(plugin, provider) : nothing}
+				${expanded ? this.renderPluginBody(plugin, instances) : nothing}
 			</li>
 		`;
 	}
 
 	private renderPluginBody(
 		plugin: PluginRow,
-		provider: LlmProviderRow | undefined,
+		instances: LlmProviderRow[],
 	): TemplateResult {
 		if (plugin.category === "llm-provider") {
-			if (!provider) {
-				return html`<div class="yaya-row-body">
-					<p class="yaya-empty">
-						No default provider instance for ${plugin.name}. Create the
-						default with
-						<code>yaya config set providers.${plugin.name}.plugin ${plugin.name}</code>,
-						or a custom-id instance with
-						<code>yaya config set providers.&lt;id&gt;.plugin ${plugin.name}</code>,
-						then reload.
-					</p>
-				</div>`;
-			}
-			const prefix = `providers.${provider.id}.`;
-			const revealed = new Set(
-				Array.from(this.revealed)
-					.filter((k) => k.startsWith(prefix))
-					.map((k) => k.slice(prefix.length)),
-			);
 			return html`<div class="yaya-row-body">
-				${renderSchemaForm({
-					schema: provider.config_schema ?? null,
-					values: provider.config,
-					revealSecrets: revealed,
-					onToggleReveal: (field) => void this.onRevealToggle(`${prefix}${field}`),
-					onChange: (field, value) => void this.onConfigPatch(`${prefix}${field}`, value),
-				})}
+				${instances.length === 0
+					? html`<p class="yaya-empty">No instances yet.</p>`
+					: html`<ul class="yaya-list yaya-instance-list">
+							${instances.map((inst) => this.renderInstanceRow(inst))}
+						</ul>`}
+				<div class="yaya-row-actions">
+					<button
+						class="yaya-btn yaya-add-instance"
+						@click=${() => this.openAddInstance(plugin.name)}
+					>
+						+ Add instance
+					</button>
+				</div>
 			</div>`;
 		}
 		return html`<div class="yaya-row-body">
@@ -401,10 +600,183 @@ export class YayaSettings extends LitElement {
 				schema: plugin.config_schema ?? null,
 				values: plugin.current_config ?? {},
 				revealSecrets: this.revealed,
-				onToggleReveal: (k) => void this.onRevealToggle(`plugin.${plugin.name}.${k}`),
+				onToggleReveal: (k) => void this.onAdvancedRevealToggle(`plugin.${plugin.name}.${k}`),
 				onChange: (k, v) => void this.onConfigPatch(`plugin.${plugin.name}.${k}`, v),
 			})}
 		</div>`;
+	}
+
+	private renderInstanceRow(provider: LlmProviderRow): TemplateResult {
+		const expanded = this.expandedInstance === provider.id;
+		const draft = this.drafts[provider.id] ?? {
+			label: provider.label,
+			config: { ...provider.config },
+		};
+		const status = this.statusFor(provider.id);
+		const isTesting = this.testing.has(provider.id);
+		const err = this.rowError[provider.id];
+		const revealed = new Set(
+			Array.from(this.revealed)
+				.filter((k) => k.startsWith(`providers.${provider.id}.`))
+				.map((k) => k.slice(`providers.${provider.id}.`.length)),
+		);
+		return html`
+			<li class="yaya-row yaya-instance" data-instance-id=${provider.id}>
+				<div class="yaya-row-head">
+					<label class="yaya-radio">
+						<input
+							type="radio"
+							name="active-provider"
+							.checked=${provider.active}
+							@change=${() => this.onSetActive(provider.id)}
+						/>
+						<span class="yaya-row-name">${provider.label}</span>
+					</label>
+					<span class="yaya-row-meta">${provider.id}</span>
+					<span
+						class="yaya-status-dot yaya-status-${status.kind}"
+						title=${status.title}
+						aria-label=${status.title}
+					></span>
+					<button
+						class="yaya-btn-ghost yaya-test-btn"
+						?disabled=${isTesting}
+						@click=${() => this.onTestProvider(provider.id)}
+					>
+						${isTesting ? "Testing…" : "Test connection"}
+					</button>
+					<button class="yaya-link" @click=${() => {
+						this.expandedInstance = expanded ? null : provider.id;
+					}}>${expanded ? "collapse" : "configure"}</button>
+					<button
+						class="yaya-btn-danger"
+						@click=${() => {
+							this.deleteConfirmId = provider.id;
+						}}
+					>
+						Delete
+					</button>
+				</div>
+				${expanded
+					? html`<div class="yaya-row-body">
+							<label class="yaya-form-field">
+								<span class="yaya-form-label">Label</span>
+								<input
+									type="text"
+									.value=${draft.label}
+									@change=${(e: Event) =>
+										this.onDraftLabelChange(
+											provider.id,
+											(e.target as HTMLInputElement).value,
+										)}
+								/>
+							</label>
+							${renderSchemaForm({
+								schema: provider.config_schema ?? null,
+								values: draft.config,
+								revealSecrets: revealed,
+								onToggleReveal: (field) => void this.onRevealToggle(provider.id, field),
+								onChange: (k, v) => this.onDraftConfigChange(provider.id, k, v),
+							})}
+							${err ? html`<p class="yaya-row-error">${err}</p>` : nothing}
+							<div class="yaya-row-actions">
+								<button class="yaya-btn" @click=${() => this.onSaveRow(provider.id)}>Save</button>
+								<button class="yaya-btn-ghost" @click=${() => this.onResetRow(provider.id)}>Reset</button>
+							</div>
+						</div>`
+					: nothing}
+			</li>
+		`;
+	}
+
+	private renderDeleteConfirm(id: string): TemplateResult {
+		return html`
+			<div class="yaya-modal" @click=${() => {
+				this.deleteConfirmId = null;
+			}}>
+				<div class="yaya-modal-card" @click=${(e: Event) => e.stopPropagation()}>
+					<h3>Delete instance</h3>
+					<p>Remove <code>${id}</code>? This cannot be undone.</p>
+					<div class="yaya-modal-actions">
+						<button class="yaya-btn-ghost" @click=${() => {
+							this.deleteConfirmId = null;
+						}}>Cancel</button>
+						<button
+							class="yaya-btn-danger yaya-confirm-delete"
+							@click=${() => this.onConfirmDelete(id)}
+						>
+							Delete
+						</button>
+					</div>
+				</div>
+			</div>
+		`;
+	}
+
+	private renderAddInstance(): TemplateResult {
+		const plugin = this.plugins.find((p) => p.name === this.addForm.plugin);
+		const schema = plugin?.config_schema ?? null;
+		return html`
+			<div class="yaya-modal" @click=${() => {
+				this.addForm = { ...INITIAL_ADD_FORM };
+			}}>
+				<div class="yaya-modal-card" @click=${(e: Event) => e.stopPropagation()}>
+					<h3>Add ${this.addForm.plugin} instance</h3>
+					<label class="yaya-form-field">
+						<span class="yaya-form-label">Instance id</span>
+						<input
+							type="text"
+							.value=${this.addForm.id}
+							@input=${(e: Event) =>
+								this.onAddIdChange((e.target as HTMLInputElement).value)}
+							placeholder="e.g. llm-openai-gpt4"
+						/>
+						${this.addForm.idError
+							? html`<span class="yaya-row-error">${this.addForm.idError}</span>`
+							: nothing}
+					</label>
+					<label class="yaya-form-field">
+						<span class="yaya-form-label">Label (optional)</span>
+						<input
+							type="text"
+							.value=${this.addForm.label}
+							@input=${(e: Event) =>
+								this.onAddFormChange({
+									label: (e.target as HTMLInputElement).value,
+								})}
+						/>
+					</label>
+					${schema
+						? renderSchemaForm({
+								schema,
+								values: this.addForm.config,
+								revealSecrets: new Set(),
+								onToggleReveal: () => {},
+								onChange: (k, v) => this.onAddConfigChange(k, v),
+							})
+						: nothing}
+					${this.addForm.submitError
+						? html`<p class="yaya-row-error">${this.addForm.submitError}</p>`
+						: nothing}
+					<div class="yaya-modal-actions">
+						<button
+							class="yaya-btn-ghost"
+							@click=${() => {
+								this.addForm = { ...INITIAL_ADD_FORM };
+							}}
+						>
+							Cancel
+						</button>
+						<button
+							class="yaya-btn yaya-add-submit"
+							@click=${() => this.onAddSubmit()}
+						>
+							Add instance
+						</button>
+					</div>
+				</div>
+			</div>
+		`;
 	}
 
 	private renderInstallModal(): TemplateResult {
@@ -472,7 +844,7 @@ export class YayaSettings extends LitElement {
 										schema: null,
 										values: { [key]: value },
 										revealSecrets: this.revealed,
-										onToggleReveal: (k) => void this.onRevealToggle(k),
+										onToggleReveal: (k) => void this.onAdvancedRevealToggle(k),
 										onChange: (k, v) => void this.onConfigPatch(k, v),
 									})}
 									<button class="yaya-btn-ghost" @click=${() => this.onConfigDelete(key)}>Delete</button>

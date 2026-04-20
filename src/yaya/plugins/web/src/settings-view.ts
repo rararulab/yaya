@@ -113,8 +113,13 @@ export class YayaSettings extends LitElement {
 	private providerFor(plugin: PluginRow): LlmProviderRow | undefined {
 		// Default instance id = plugin name; matches how bootstrap seeds
 		// ``providers.<plugin-name>.plugin = <plugin-name>`` on first boot.
-		return this.providers.find(
-			(r) => r.plugin === plugin.name && r.id === plugin.name,
+		// If an operator renamed the default instance from the CLI we fall
+		// back to the first row backed by this plugin — degrading to "show
+		// *some* config" is friendlier than surfacing an empty-state when
+		// a valid row exists.
+		const candidates = this.providers.filter((r) => r.plugin === plugin.name);
+		return (
+			candidates.find((r) => r.id === plugin.name) ?? candidates[0]
 		);
 	}
 
@@ -195,19 +200,23 @@ export class YayaSettings extends LitElement {
 		try {
 			await patchConfigKey(key, value);
 			this.config = { ...this.config, [key]: value };
-			// Mirror the write into the cached providers list so the next
-			// render of the llm-provider row shows the new value without a
-			// round-trip to refetch.
+			// A ``providers.<id>.<field>`` write may have rotated a secret.
+			// Re-fetch the instance list so the row shows the server's
+			// masked shape instead of the plaintext the user just typed —
+			// mirroring the value locally would leak the secret into every
+			// re-render until a full reload.
 			if (key.startsWith("providers.")) {
-				const [, id, field] = key.split(".", 3);
-				if (id && field) {
-					this.providers = this.providers.map((p) =>
-						p.id === id ? { ...p, config: { ...p.config, [field]: value } } : p,
-					);
-					// A saved config may have rotated secrets — drop any cached
-					// test result so the operator re-tests with the new values.
+				const [, id] = key.split(".", 3);
+				if (id) {
 					const { [id]: _stale, ...rest } = this.testResults;
 					this.testResults = rest;
+				}
+				try {
+					this.providers = await listLlmProviders();
+				} catch {
+					// Tolerate a stale list — the write itself succeeded and
+					// a later reload will re-sync. Better than surfacing a
+					// banner for a best-effort mirror.
 				}
 			}
 		} catch (err) {
@@ -362,9 +371,12 @@ export class YayaSettings extends LitElement {
 			if (!provider) {
 				return html`<div class="yaya-row-body">
 					<p class="yaya-empty">
-						No default provider instance for ${plugin.name}. Create one with
-						<code>yaya config set providers.${plugin.name}.plugin ${plugin.name}</code>
-						and reload.
+						No default provider instance for ${plugin.name}. Create the
+						default with
+						<code>yaya config set providers.${plugin.name}.plugin ${plugin.name}</code>,
+						or a custom-id instance with
+						<code>yaya config set providers.&lt;id&gt;.plugin ${plugin.name}</code>,
+						then reload.
 					</p>
 				</div>`;
 			}

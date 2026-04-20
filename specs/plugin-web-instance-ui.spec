@@ -174,6 +174,33 @@ Scenario: Add instance unknown plugin surfaces 400 inline
   When the operator submits the add-instance form
   Then the modal shows the server detail inline
 
+Scenario: Save invalidates the stale connection-test result
+  Test:
+    Package: yaya
+    Filter: src/yaya/plugins/web/src/__tests__/settings-view-instances.test.ts::Save clears the cached test result so the dot resets to Untested
+  Level: unit
+  Given a provider row with a recent successful test result rendering as the connected dot
+  When the operator saves a config change on that row
+  Then the cached test result is cleared and the status dot returns to the untested variant
+
+Scenario: Delete clears the cached test result and reveal entries for the removed id
+  Test:
+    Package: yaya
+    Filter: src/yaya/plugins/web/src/__tests__/settings-view-instances.test.ts::Delete clears test result and reveal cache for the removed id
+  Level: unit
+  Given a row with a cached test result and a reveal entry for its api_key
+  When the operator confirms Delete
+  Then the test result and the reveal entry scoped to that instance are both cleared
+
+Scenario: Add instance button disabled when no llm-provider plugins are loaded
+  Test:
+    Package: yaya
+    Filter: src/yaya/plugins/web/src/__tests__/settings-view-instances.test.ts::Add instance button is disabled when no llm-provider plugin is loaded
+  Level: unit
+  Given the plugin list contains no plugin with category llm-provider
+  When the LLM Providers tab renders
+  Then the Add instance button is disabled and its tooltip explains why
+
 Scenario: Client-side instance id validator rejects dots and invalid characters
   Test:
     Package: yaya

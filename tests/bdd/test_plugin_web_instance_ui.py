@@ -269,6 +269,77 @@ def _assert_validator_regex_anchors() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Scenario: Save invalidates the stale connection-test result
+# ---------------------------------------------------------------------------
+
+
+@given(
+    "a provider row with a recent successful test result rendering as the connected dot",
+)
+def _row_with_cached_test_result() -> None:
+    assert "testResults" in _settings_view_source()
+
+
+@when("the operator saves a config change on that row")
+def _save_with_cached_result_noop() -> None:
+    """Vitest drives the save click."""
+
+
+@then(
+    "the cached test result is cleared and the status dot returns to the untested variant",
+)
+def _assert_save_clears_test_result() -> None:
+    src = _settings_view_source()
+    # onSaveRow must drop the cached result and the reveal entries.
+    assert "_stale" in src
+    assert "this.testResults = rest" in src
+    assert "providers.${id}." in src
+
+
+# ---------------------------------------------------------------------------
+# Scenario: Delete clears cached test result + reveal entries
+# ---------------------------------------------------------------------------
+
+
+@given("a row with a cached test result and a reveal entry for its api_key")
+def _row_with_reveal_and_result() -> None:
+    assert "revealed" in _settings_view_source()
+
+
+@then(
+    "the test result and the reveal entry scoped to that instance are both cleared",
+)
+def _assert_delete_clears_caches() -> None:
+    src = _settings_view_source()
+    assert "_dropTest" in src
+    assert "this.testResults = remainingResults" in src
+    # Reveal cleanup reuses the same ``providers.<id>.`` prefix filter.
+    assert "!k.startsWith(`providers.${id}.`)" in src
+
+
+# ---------------------------------------------------------------------------
+# Scenario: Add instance button disabled when no llm-provider plugins loaded
+# ---------------------------------------------------------------------------
+
+
+@given("the plugin list contains no plugin with category llm-provider")
+def _no_llm_providers_loaded() -> None:
+    assert 'category === "llm-provider"' in _settings_view_source()
+
+
+@when("the LLM Providers tab renders")
+def _tab_render_noop() -> None:
+    """Vitest drives the mount."""
+
+
+@then("the Add instance button is disabled and its tooltip explains why")
+def _assert_add_button_disabled_when_empty() -> None:
+    src = _settings_view_source()
+    assert "?disabled=${noBackingPlugin}" in src
+    assert "No llm-provider plugins loaded" in src
+
+
+# ---------------------------------------------------------------------------
 # Bundle invariants — verify D4d assets ship in the wheel.
 # ---------------------------------------------------------------------------
 

@@ -368,6 +368,115 @@ describe("settings-view instance UI", () => {
 		expect(err?.textContent).toMatch(/not a loaded llm-provider/);
 	});
 
+	it("Save clears the cached test result so the dot resets to Untested", async () => {
+		installFetchStub((method, url) => {
+			if (method === "GET" && url === "/api/llm-providers") return json(SEED_PROVIDERS);
+			if (method === "GET" && url === "/api/plugins") return json(SEED_PLUGINS);
+			if (method === "POST" && url === "/api/llm-providers/llm-openai/test") {
+				return json({ ok: true, latency_ms: 42 });
+			}
+			if (method === "PATCH" && url === "/api/llm-providers/llm-openai") {
+				return json({ ...SEED_PROVIDERS[0], label: "Renamed" });
+			}
+			return new Response("not found", { status: 404 });
+		});
+		el = await mount();
+		// 1. Seed a successful test result -> green dot.
+		(el.querySelector('[data-instance-id="llm-openai"] .yaya-test-btn') as HTMLButtonElement).click();
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await el.updateComplete;
+		expect(
+			el.querySelector('[data-instance-id="llm-openai"] .yaya-status-dot')?.classList.contains(
+				"yaya-status-connected",
+			),
+		).toBe(true);
+		// 2. Edit the label and Save.
+		(el.querySelector('[data-instance-id="llm-openai"] .yaya-link') as HTMLButtonElement).click();
+		await el.updateComplete;
+		const labelInput = el.querySelector(
+			'[data-instance-id="llm-openai"] .yaya-row-body input[type="text"]',
+		) as HTMLInputElement;
+		labelInput.value = "Renamed";
+		labelInput.dispatchEvent(new Event("change"));
+		await el.updateComplete;
+		const saveBtn = Array.from(
+			el.querySelectorAll('[data-instance-id="llm-openai"] .yaya-row-actions .yaya-btn'),
+		).find((b) => b.textContent?.trim() === "Save") as HTMLButtonElement;
+		saveBtn.click();
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await el.updateComplete;
+		// 3. Dot must reset to "untested" — save invalidates the cache.
+		expect(
+			el.querySelector('[data-instance-id="llm-openai"] .yaya-status-dot')?.classList.contains(
+				"yaya-status-untested",
+			),
+		).toBe(true);
+	});
+
+	it("Delete clears test result and reveal cache for the removed id", async () => {
+		installFetchStub((method, url) => {
+			if (method === "GET" && url === "/api/llm-providers") return json(SEED_PROVIDERS);
+			if (method === "GET" && url === "/api/plugins") return json(SEED_PLUGINS);
+			if (method === "POST" && url === "/api/llm-providers/llm-openai/test") {
+				return json({ ok: true, latency_ms: 7 });
+			}
+			if (method === "DELETE" && url === "/api/llm-providers/llm-openai") {
+				return new Response(null, { status: 204 });
+			}
+			return new Response("not found", { status: 404 });
+		});
+		el = await mount();
+		// Seed a test result and a reveal entry for the row.
+		(el.querySelector('[data-instance-id="llm-openai"] .yaya-test-btn') as HTMLButtonElement).click();
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await el.updateComplete;
+		// Reach into private state to seed a reveal key — we only assert
+		// it gets cleaned, the UI path is covered elsewhere.
+		type Internals = { revealed: Set<string>; testResults: Record<string, unknown> };
+		const internals = el as unknown as Internals;
+		internals.revealed = new Set([
+			"providers.llm-openai.api_key",
+			"providers.llm-echo.api_key",
+		]);
+		expect(Object.keys(internals.testResults)).toContain("llm-openai");
+		// Expand + delete + confirm.
+		(el.querySelector('[data-instance-id="llm-openai"] .yaya-link') as HTMLButtonElement).click();
+		await el.updateComplete;
+		(el.querySelector('[data-instance-id="llm-openai"] .yaya-btn-danger') as HTMLButtonElement).click();
+		await el.updateComplete;
+		(el.querySelector(".yaya-confirm-delete") as HTMLButtonElement).click();
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await el.updateComplete;
+		expect(Object.keys(internals.testResults)).not.toContain("llm-openai");
+		expect(internals.revealed.has("providers.llm-openai.api_key")).toBe(false);
+		// Unrelated instance reveal entry survives.
+		expect(internals.revealed.has("providers.llm-echo.api_key")).toBe(true);
+	});
+
+	it("Add instance button is disabled when no llm-provider plugin is loaded", async () => {
+		installFetchStub((method, url) => {
+			if (method === "GET" && url === "/api/llm-providers") return json([]);
+			// No plugin with category "llm-provider" — only an unrelated tool.
+			if (method === "GET" && url === "/api/plugins") {
+				return json([
+					{
+						name: "tool-bash",
+						category: "tool",
+						status: "loaded",
+						version: "0.1.0",
+						enabled: true,
+					},
+				]);
+			}
+			return new Response("not found", { status: 404 });
+		});
+		el = await mount();
+		const btn = el.querySelector(".yaya-add-instance") as HTMLButtonElement;
+		expect(btn).not.toBeNull();
+		expect(btn.disabled).toBe(true);
+		expect(btn.getAttribute("title")).toMatch(/no llm-provider plugins loaded/i);
+	});
+
 	it("client-side id validator rejects dots and short ids", () => {
 		expect(isValidInstanceId("llm-openai")).toBe(true);
 		expect(isValidInstanceId("openai.gpt4")).toBe(false);

@@ -265,6 +265,19 @@ export class YayaSettings extends LitElement {
 			this.providers = this.providers.map((p) => (p.id === id ? updated : p));
 			this.drafts = { ...this.drafts, [id]: { label: updated.label, config: { ...updated.config } } };
 			this.rowError = { ...this.rowError, [id]: "" };
+			// Saved config may have rotated secrets or changed model/base_url —
+			// any prior connection-test result is no longer a truthful signal,
+			// so drop the cached dot and force the operator to re-test.
+			const { [id]: _stale, ...rest } = this.testResults;
+			this.testResults = rest;
+			// Reveal state is keyed by ``providers.<id>.<field>``; clear those
+			// entries so a freshly-rotated api_key does not stay plaintext on
+			// screen from the prior edit.
+			this.revealed = new Set(
+				Array.from(this.revealed).filter(
+					(k) => !k.startsWith(`providers.${id}.`),
+				),
+			);
 			this.banner = { kind: "info", text: `Saved ${id}` };
 		} catch (err) {
 			const detail = err instanceof ApiError ? (err.detail ?? err.message) : String(err);
@@ -285,6 +298,16 @@ export class YayaSettings extends LitElement {
 			this.providers = this.providers.filter((p) => p.id !== id);
 			const { [id]: _drop, ...rest } = this.drafts;
 			this.drafts = rest;
+			// Drop cached connection-test result and reveal entries so a
+			// future instance reusing this id starts from a clean slate —
+			// otherwise a recycled id would inherit the previous row's dot.
+			const { [id]: _dropTest, ...remainingResults } = this.testResults;
+			this.testResults = remainingResults;
+			this.revealed = new Set(
+				Array.from(this.revealed).filter(
+					(k) => !k.startsWith(`providers.${id}.`),
+				),
+			);
 			this.deleteConfirmId = null;
 			this.banner = { kind: "info", text: `Deleted ${id}` };
 			if (this.expandedProvider === id) this.expandedProvider = null;
@@ -347,6 +370,11 @@ export class YayaSettings extends LitElement {
 	}
 
 	private onAddPluginChange(plugin: string): void {
+		// Switching plugin resets the form — including any hand-typed id —
+		// because the auto-suggested id is derived from the plugin name and
+		// the config shape is schema-dependent. This is intentional: users
+		// changing plugins usually want a fresh default, not a half-merged
+		// state bridging two different schemas.
 		this.addForm = {
 			...this.addForm,
 			plugin,
@@ -515,10 +543,14 @@ export class YayaSettings extends LitElement {
 	}
 
 	private renderLlm(): TemplateResult {
+		const llmPlugins = this.plugins.filter((p) => p.category === "llm-provider");
+		const noBackingPlugin = llmPlugins.length === 0;
 		return html`
 			<div class="yaya-toolbar">
 				<button
 					class="yaya-btn yaya-add-instance"
+					?disabled=${noBackingPlugin}
+					title=${noBackingPlugin ? "No llm-provider plugins loaded" : ""}
 					@click=${() => this.openAddInstance()}
 				>
 					+ Add instance

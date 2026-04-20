@@ -237,6 +237,22 @@ export class YayaSettings extends LitElement {
 		};
 	}
 
+	/**
+	 * Compute the PATCH body for a row: only fields that changed.
+	 *
+	 * Comparing the draft against the server row minimises blast
+	 * radius on a partial-write failure — a dropped network mid-batch
+	 * leaves the row in a known subset rather than a silent overwrite.
+	 *
+	 * Masked-vs-revealed round-trip: if the operator clicks "show" on
+	 * a secret, ``onRevealToggle`` GETs the cleartext with ``show=1``
+	 * and writes it into the draft. The server row still carries the
+	 * masked placeholder. On save the diff picks the cleartext as
+	 * "changed" and PATCHes it back. Because the reveal GET and the
+	 * save PATCH hit the same ``ConfigStore``, the cleartext already
+	 * equals the stored value — the round-trip is a server-side no-op,
+	 * never an overwrite.
+	 */
 	private computePatch(row: LlmProviderRow, draft: ProviderDraft): {
 		label?: string;
 		config?: Record<string, unknown>;
@@ -574,6 +590,17 @@ export class YayaSettings extends LitElement {
 		`;
 	}
 
+	/**
+	 * Render the body of an expanded plugin row.
+	 *
+	 * Save-button divergence: llm-provider instances go through an
+	 * explicit Save (draft + computePatch + PATCH), while other
+	 * plugins auto-save field-by-field. That's intentional —
+	 * llm-provider config has interdependent fields (base_url +
+	 * api_key + model) and auto-saving a half-typed api_key would
+	 * race a Test connection into a 401. Single-field plugin config
+	 * is rarely interdependent, so auto-save is fine there.
+	 */
 	private renderPluginBody(
 		plugin: PluginRow,
 		instances: LlmProviderRow[],
@@ -690,6 +717,21 @@ export class YayaSettings extends LitElement {
 	}
 
 	private renderDeleteConfirm(id: string): TemplateResult {
+		const target = this.providers.find((p) => p.id === id);
+		const isActive = target?.active ?? false;
+		const isSoleForPlugin =
+			target !== undefined &&
+			this.providers.filter((p) => p.plugin === target.plugin).length === 1;
+		// Surfacing the 409 reasons (active / last-of-plugin) inside the
+		// modal lets operators cancel before the backend rejects the
+		// delete — the inline row error is still the authoritative
+		// source of truth when the click goes through, but pre-warning
+		// saves a round-trip for the common "oops, wrong row" case.
+		const warning = isActive
+			? "This is the active instance; the kernel will refuse to delete it."
+			: isSoleForPlugin && target
+				? `This is the only instance for ${target.plugin}; the kernel keeps at least one instance per loaded plugin.`
+				: null;
 		return html`
 			<div class="yaya-modal" @click=${() => {
 				this.deleteConfirmId = null;
@@ -697,6 +739,9 @@ export class YayaSettings extends LitElement {
 				<div class="yaya-modal-card" @click=${(e: Event) => e.stopPropagation()}>
 					<h3>Delete instance</h3>
 					<p>Remove <code>${id}</code>? This cannot be undone.</p>
+					${warning
+						? html`<p class="yaya-row-error">${warning}</p>`
+						: nothing}
 					<div class="yaya-modal-actions">
 						<button class="yaya-btn-ghost" @click=${() => {
 							this.deleteConfirmId = null;

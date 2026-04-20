@@ -38,3 +38,18 @@ Feature: Web adapter UI redesign
     Given the built CSS bundle
     When the stylesheet is inspected for theme tokens
     Then it declares a prefers-color-scheme dark override
+
+  Scenario: Instance save diff skips unchanged fields
+    Given a server row and a draft that matches it exactly
+    When the save diff is computed
+    Then the resulting patch is empty so no PATCH is sent
+
+  Scenario: Instance save diff emits only the fields that diverged
+    Given a server row and a draft that changed only the model field
+    When the save diff is computed
+    Then the patch contains only the model field
+
+  Scenario: Instance id suggester picks the next free counter suffix
+    Given a provider list where the base id and -2 suffix are both taken
+    When a new instance id is suggested for the plugin
+    Then the returned id uses the next free counter suffix

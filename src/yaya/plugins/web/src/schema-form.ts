@@ -25,7 +25,10 @@ import type { JsonSchema } from "./api.js";
 
 const SECRET_SUFFIXES = ["_key", "_token", "_secret", "_password"] as const;
 
-function isSecretField(name: string): boolean {
+function isSecretField(name: string, schema?: JsonSchema): boolean {
+	// Explicit schema intent wins over the name heuristic so plugins can
+	// opt into masking for fields that do not match the suffix list.
+	if (schema?.format === "password") return true;
 	const lowered = name.toLowerCase();
 	return SECRET_SUFFIXES.some((suffix) => lowered.endsWith(suffix));
 }
@@ -114,7 +117,7 @@ function renderControl(
 		></textarea>`;
 	}
 	// string (default)
-	const secret = isSecretField(key);
+	const secret = isSecretField(key, schema);
 	const revealed = opts.revealSecrets.has(key);
 	const inputType = secret && !revealed ? "password" : "text";
 	const stringValue = value === undefined || value === null ? "" : String(value);

@@ -66,8 +66,12 @@
 	--yaya-modal-backdrop: rgba(0, 0, 0, 0.45);
 }
 
+/* OS preference only applies when the user has not made an explicit
+ * choice. `applyTheme()` stamps `html.light` or `html.dark`, so either
+ * class disables this block — otherwise a dark-OS default would leak
+ * back into an explicit Light selection and flip the tokens. */
 @media (prefers-color-scheme: dark) {
-	:root {
+	html:not(.light):not(.dark) {
 		--yaya-sidebar-bg: #0f0f0f;
 		--yaya-main-bg: #1a1a1a;
 		--yaya-accent: #60a5fa;

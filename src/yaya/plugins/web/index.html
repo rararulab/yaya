@@ -4,6 +4,24 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>yaya</title>
+		<script>
+			// Stamp the theme class before the stylesheet paints so a
+			// dark-OS browser with an explicit Light choice does not flash
+			// dark for a frame. Mirrors loadTheme() / applyTheme() in
+			// app-shell.ts; kept inline so it runs pre-hydration.
+			(function () {
+				var t = null;
+				try {
+					t = localStorage.getItem("yaya.theme");
+				} catch (_) {}
+				if (t !== "light" && t !== "dark") {
+					t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+						? "dark"
+						: "light";
+				}
+				document.documentElement.classList.add(t);
+			})();
+		</script>
 		<link rel="stylesheet" href="./src/app.css" />
 	</head>
 	<body class="bg-background text-foreground">

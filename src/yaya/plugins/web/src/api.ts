@@ -70,6 +70,10 @@ export interface JsonSchema {
 	description?: string;
 	enum?: readonly (string | number)[];
 	default?: unknown;
+	// Standard JSON Schema field; plugins set `"password"` via pydantic
+	// `json_schema_extra` to force a masked input even when the field
+	// name does not match the secret-suffix heuristic.
+	format?: string;
 }
 
 export class ApiError extends Error {

@@ -45,6 +45,19 @@ import { WsClient, defaultWsUrl } from "./ws-client.js";
 
 type ConnectionStatus = "connecting" | "connected" | "reconnecting";
 
+/**
+ * Broadcast the current WS status to any listener (currently
+ * `<yaya-app>`'s sidebar footer). We use a window-level CustomEvent
+ * rather than a direct reference so the chat component stays
+ * addressable in isolation in tests and the sidebar can pick up
+ * transitions without a parent-child coupling.
+ */
+function publishConnectionStatus(status: ConnectionStatus): void {
+	window.dispatchEvent(
+		new CustomEvent("yaya:connection-status", { detail: { status } }),
+	);
+}
+
 interface Toast {
 	id: number;
 	kind: "info" | "error";
@@ -148,6 +161,10 @@ export class YayaChat extends LitElement {
 		applyTheme(loadTheme());
 		this.ws = new WsClient({ url: defaultWsUrl() });
 		this.ws.onFrame((f) => this.onFrame(f));
+		// Surface the initial handshake as `connecting` so the sidebar
+		// dot does not flash red between mount and the first
+		// `ws.connected` frame.
+		publishConnectionStatus("connecting");
 		this.ws.connect();
 		window.addEventListener("yaya:new-chat", this.onNewChat);
 	}
@@ -169,9 +186,11 @@ export class YayaChat extends LitElement {
 		switch (frame.type) {
 			case "ws.connected":
 				this.status = "connected";
+				publishConnectionStatus("connected");
 				return;
 			case "ws.disconnected":
 				this.status = "reconnecting";
+				publishConnectionStatus("reconnecting");
 				// An in-flight turn is effectively aborted when the socket
 				// drops; reset so the UI becomes interactive again.
 				this.inFlight = false;
@@ -404,21 +423,13 @@ export class YayaChat extends LitElement {
 	}
 
 	override render(): TemplateResult {
-		const statusLabel = this.status === "connected" ? "connected" : this.status === "reconnecting" ? "reconnecting…" : "connecting…";
-		const statusColor = this.status === "connected" ? "bg-green-500" : "bg-yellow-500";
-
+		// Connection state moved into the sidebar footer dot (#114); the
+		// chat header no longer renders a duplicate indicator.
 		const empty = this.messages.length === 0 && this.streamingMessage === null;
 		const quickStart = ["Summarize a file", "Generate a plan", "Review code diff"];
 
 		return html`
 			<div class="yaya-chat mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
-				<header class="flex items-center justify-between">
-					<span class="flex items-center gap-1 text-xs text-muted-foreground">
-						<span class="inline-block h-2 w-2 rounded-full ${statusColor}"></span>
-						${statusLabel}
-					</span>
-				</header>
-
 				${empty
 					? html`<section class="yaya-hero">
 							<h1 class="yaya-hero-title">yaya</h1>

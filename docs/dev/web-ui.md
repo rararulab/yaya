@@ -149,6 +149,24 @@ A small hint line below the textarea shows the active modifier label.
 The submit button stays for click submission and is disabled while a
 turn is in flight.
 
+### Sidebar collapse + connection status (issue #114)
+
+- A hamburger button in `.yaya-sidebar-top` flips `<yaya-app>`'s
+  `sidebarCollapsed` state, swapping the grid column between 240px and
+  48px via the `.yaya-app.is-collapsed` class. The layout transition
+  is `200ms ease`; `@media (prefers-reduced-motion: reduce)` disables
+  it. State persists to `localStorage["yaya.sidebar.collapsed"]`.
+- Sidebar-footer `.yaya-sidebar-status` renders a `<span class="yaya-status-dot">`
+  whose color is driven by the `data-state` attribute:
+  `connected` → green, `connecting`/`reconnecting` → amber,
+  `disconnected` → red. The initial state is `connecting` so the
+  handshake never flashes red.
+- `<yaya-chat>` publishes transitions via a window-level
+  `yaya:connection-status` CustomEvent (`detail: { status }`). The
+  shell subscribes once in `connectedCallback` so the sidebar stays
+  decoupled from the WS client and tests can drive the dot without
+  standing up a fake WebSocket.
+
 ### Extending Settings with a new tab
 
 1. Add a `Tab` variant in `settings-view.ts`

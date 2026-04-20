@@ -18,7 +18,12 @@ from pathlib import Path
 import pytest
 
 from yaya.kernel.config_store import ConfigStore
-from yaya.kernel.providers import InstanceRow, ProvidersView
+from yaya.kernel.providers import (
+    INSTANCE_ID_MAX_LEN,
+    InstanceRow,
+    ProvidersView,
+    is_valid_instance_id,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -184,6 +189,44 @@ def test_empty_store_list_instances_is_empty(tmp_path: Path) -> None:
             await store.close()
 
     _run(_body())
+
+
+@pytest.mark.parametrize(
+    "good_id",
+    [
+        "abc",
+        "llm-openai",
+        "openai-gpt4",
+        "a" * INSTANCE_ID_MAX_LEN,
+        "x0",  # 2-char; test minimum boundary below rejects this
+    ],
+)
+def test_is_valid_instance_id_accepts_kebab_lowercase(good_id: str) -> None:
+    """Kebab-lowercase ids of allowed length round-trip through the validator."""
+    if len(good_id) < 3:
+        assert not is_valid_instance_id(good_id)
+    else:
+        assert is_valid_instance_id(good_id)
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        "",
+        "ab",  # too short
+        "a" * (INSTANCE_ID_MAX_LEN + 1),
+        "With.Dot",
+        "UPPER",
+        "has space",
+        "-leading",
+        "trailing-",
+        "has_underscore",
+        "a.b",
+    ],
+)
+def test_is_valid_instance_id_rejects_unsafe_shapes(bad_id: str) -> None:
+    """Dots, uppercase, whitespace, and leading/trailing dashes are all rejected."""
+    assert not is_valid_instance_id(bad_id)
 
 
 def test_instance_row_label_defaults_to_empty_string(tmp_path: Path) -> None:

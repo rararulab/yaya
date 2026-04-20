@@ -39,6 +39,7 @@ Python standard library. No imports from ``cli``, ``plugins``, or
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -46,11 +47,63 @@ if TYPE_CHECKING:  # pragma: no cover - type-only import, avoids a cycle.
     from yaya.kernel.config_store import ConfigStore
 
 __all__ = [
+    "INSTANCE_ID_MAX_LEN",
+    "INSTANCE_ID_MIN_LEN",
     "PROVIDERS_PREFIX",
     "PROVIDERS_SEEDED_MARKER",
     "InstanceRow",
     "ProvidersView",
+    "is_valid_instance_id",
 ]
+
+INSTANCE_ID_MIN_LEN = 3
+"""Minimum length for a provider-instance id.
+
+Chosen so the id cannot collide with common single-letter test
+placeholders and leaves room for meaningful names. Enforced by
+:func:`is_valid_instance_id` and, transitively, by the HTTP create
+endpoint that writes ``providers.<id>.*``.
+"""
+
+INSTANCE_ID_MAX_LEN = 64
+"""Maximum length for a provider-instance id.
+
+Keeps the full ``providers.<id>.<field>`` key within reasonable bounds
+for UI rendering and avoids unbounded config-store keys.
+"""
+
+_INSTANCE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+"""Kebab-lowercase pattern for provider-instance ids.
+
+Crucially excludes ``.`` because :class:`ProvidersView` splits
+``providers.<id>.<field>`` on the first dot after the prefix — allowing
+dots in an id would collide the grouping with nested fields. Also
+rejects leading/trailing dashes and whitespace so ids round-trip
+cleanly through URL paths.
+"""
+
+
+def is_valid_instance_id(instance_id: str) -> bool:
+    """Return ``True`` iff ``instance_id`` is safe for ``providers.<id>.*``.
+
+    Rules:
+
+    * length between :data:`INSTANCE_ID_MIN_LEN` and
+      :data:`INSTANCE_ID_MAX_LEN` (inclusive);
+    * lowercase alphanumeric + dash only;
+    * must start and end with an alphanumeric character (no leading or
+      trailing dashes);
+    * no dots — :class:`ProvidersView` parses
+      ``providers.<id>.<field>`` on the first dot and an id with a dot
+      would corrupt the grouping.
+
+    The HTTP instance-create endpoint calls this before accepting a
+    caller-supplied id so malformed ids never reach
+    :meth:`yaya.kernel.config_store.ConfigStore.set`.
+    """
+    if not INSTANCE_ID_MIN_LEN <= len(instance_id) <= INSTANCE_ID_MAX_LEN:
+        return False
+    return bool(_INSTANCE_ID_RE.match(instance_id))
 
 
 PROVIDERS_PREFIX = "providers."

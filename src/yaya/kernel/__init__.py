@@ -79,10 +79,13 @@ from yaya.kernel.logging import configure_logging, get_plugin_logger
 from yaya.kernel.loop import AgentLoop, LoopConfig
 from yaya.kernel.plugin import Category, KernelContext, Plugin
 from yaya.kernel.providers import (
+    INSTANCE_ID_MAX_LEN,
+    INSTANCE_ID_MIN_LEN,
     PROVIDERS_PREFIX,
     PROVIDERS_SEEDED_MARKER,
     InstanceRow,
     ProvidersView,
+    is_valid_instance_id,
 )
 from yaya.kernel.registry import PluginRegistry, PluginStatus, validate_install_source
 from yaya.kernel.session import (
@@ -135,6 +138,8 @@ __all__ = [
     "DEFAULT_HANDLER_TIMEOUT_S",
     "DEFAULT_HEARTBEAT_TIMEOUT_S",
     "DEFAULT_MAX_CONNECTIONS",
+    "INSTANCE_ID_MAX_LEN",
+    "INSTANCE_ID_MIN_LEN",
     "PROVIDERS_PREFIX",
     "PROVIDERS_SEEDED_MARKER",
     "PUBLIC_EVENT_KINDS",
@@ -222,6 +227,7 @@ __all__ = [
     "install_dispatcher",
     "install_session_manager",
     "install_session_persister",
+    "is_valid_instance_id",
     "load_config",
     "mark_legacy_tool",
     "new_event",

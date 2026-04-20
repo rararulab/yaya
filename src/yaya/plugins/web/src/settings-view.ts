@@ -43,7 +43,7 @@ import {
 	type LlmProviderRow,
 	type PluginRow,
 } from "./api.js";
-import { renderSchemaForm } from "./schema-form.js";
+import { renderControl, renderSchemaForm } from "./schema-form.js";
 
 type Tab = "plugins" | "advanced";
 
@@ -880,24 +880,45 @@ export class YayaSettings extends LitElement {
 			</div>
 			${entries.length === 0
 				? html`<p class="yaya-empty">No configuration entries.</p>`
-				: html`<ul class="yaya-list">
-						${entries.map(
-							([key, value]) => html`<li class="yaya-row">
-								<div class="yaya-row-head">
-									<span class="yaya-row-name">${key}</span>
-									${renderSchemaForm({
-										schema: null,
-										values: { [key]: value },
-										revealSecrets: this.revealed,
-										onToggleReveal: (k) => void this.onAdvancedRevealToggle(k),
-										onChange: (k, v) => void this.onConfigPatch(k, v),
-									})}
-									<button class="yaya-btn-ghost" @click=${() => this.onConfigDelete(key)}>Delete</button>
-								</div>
-							</li>`,
-						)}
+				: html`<ul class="yaya-adv-grid">
+						${entries.map(([key, value]) => this.renderAdvancedRow(key, value))}
 					</ul>`}
 		`;
+	}
+
+	/**
+	 * Render one raw-config row in the Advanced tab.
+	 *
+	 * The prior implementation wrapped each row in
+	 * ``renderSchemaForm({schema: null, values: {[key]: value}})``
+	 * which forced the key to be rendered twice — once as the row
+	 * label and again by ``renderGenericGrid``'s per-field label —
+	 * and left column alignment to the flow of the flex row. This
+	 * layout pairs an explicit 3-column CSS grid (.yaya-adv-grid)
+	 * with ``renderControl`` (no label wrapper) so the key column
+	 * stays fixed-width, the input column starts at the same x for
+	 * every row, and there is exactly one instance of the key name
+	 * on each row.
+	 */
+	private renderAdvancedRow(key: string, value: unknown): TemplateResult {
+		return html`<li class="yaya-adv-row">
+			<span class="yaya-adv-key" title=${key}>${key}</span>
+			<span class="yaya-adv-control">
+				${renderControl(key, {}, value, {
+					schema: null,
+					values: {},
+					revealSecrets: this.revealed,
+					onToggleReveal: (k) => void this.onAdvancedRevealToggle(k),
+					onChange: (k, v) => void this.onConfigPatch(k, v),
+				})}
+			</span>
+			<button
+				class="yaya-btn-ghost yaya-adv-delete"
+				@click=${() => this.onConfigDelete(key)}
+			>
+				Delete
+			</button>
+		</li>`;
 	}
 }
 

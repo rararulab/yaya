@@ -22,17 +22,39 @@
 @source "./**/*.{ts,html}";
 @source "../index.html";
 
-/* --- Kimi-style theme tokens ---------------------------------------- */
+/* --- Kimi-style theme tokens ----------------------------------------
+ *
+ * Values derived from kimi.com/en via `designlang` extraction
+ * (see design-extract-output/kimi-com-*). KMBlue #1783ff is the brand
+ * accent; text colors use black-alpha so labels sit on any surface.
+ */
 
 :root {
-	--yaya-sidebar-bg: #fafaf9;
+	--yaya-sidebar-bg: #f9fbfc;
 	--yaya-main-bg: #ffffff;
-	--yaya-accent: #3b82f6;
-	--yaya-text-primary: #111827;
-	--yaya-text-secondary: #6b7280;
-	--yaya-border: #e5e7eb;
-	--yaya-hover: #f3f4f6;
-	--yaya-active: #e0e7ff;
+	--yaya-accent: #1783ff;
+	--yaya-accent-hover: #167ff7;
+	--yaya-text-primary: rgba(0, 0, 0, 0.9);
+	--yaya-text-secondary: rgba(0, 0, 0, 0.6);
+	--yaya-border: rgba(0, 0, 0, 0.08);
+	--yaya-hover: #f5f5f5;
+	--yaya-active: rgba(23, 131, 255, 0.1);
+
+	--yaya-radius-sm: 4px;
+	--yaya-radius-md: 8px;
+	--yaya-radius-lg: 12px;
+	--yaya-radius-xl: 20px;
+	--yaya-radius-pill: 999px;
+
+	--yaya-shadow-xs: 0 -1px 1px rgba(3, 26, 38, 0.02),
+		0 -2px 2px rgba(3, 26, 38, 0.02), 0 -5px 3px rgba(3, 26, 38, 0.01);
+	--yaya-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.03),
+		0 5px 16px -4px rgba(0, 0, 0, 0.07);
+	--yaya-shadow-lg: 0 4px 16.4px rgba(0, 0, 0, 0.1);
+
+	--yaya-status-success: #16c456;
+	--yaya-status-warn: #ffd230;
+	--yaya-status-danger: #ff3849;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,11 +62,12 @@
 		--yaya-sidebar-bg: #0f0f0f;
 		--yaya-main-bg: #1a1a1a;
 		--yaya-accent: #60a5fa;
+		--yaya-accent-hover: #3b82f6;
 		--yaya-text-primary: #f3f4f6;
 		--yaya-text-secondary: #9ca3af;
 		--yaya-border: #262626;
 		--yaya-hover: #262626;
-		--yaya-active: #1e293b;
+		--yaya-active: rgba(96, 165, 250, 0.15);
 	}
 }
 
@@ -52,11 +75,12 @@ html.dark {
 	--yaya-sidebar-bg: #0f0f0f;
 	--yaya-main-bg: #1a1a1a;
 	--yaya-accent: #60a5fa;
+	--yaya-accent-hover: #3b82f6;
 	--yaya-text-primary: #f3f4f6;
 	--yaya-text-secondary: #9ca3af;
 	--yaya-border: #262626;
 	--yaya-hover: #262626;
-	--yaya-active: #1e293b;
+	--yaya-active: rgba(96, 165, 250, 0.15);
 }
 
 body {
@@ -212,27 +236,27 @@ yaya-app {
 }
 
 .yaya-sidebar-status[data-state="connected"] .yaya-status-dot {
-	background: #10b981; /* green */
+	background: var(--yaya-status-success);
 }
 
 .yaya-sidebar-status[data-state="connecting"] .yaya-status-dot,
 .yaya-sidebar-status[data-state="reconnecting"] .yaya-status-dot {
-	background: #f59e0b; /* amber */
+	background: var(--yaya-status-warn);
 }
 
 .yaya-sidebar-status[data-state="disconnected"] .yaya-status-dot {
-	background: #ef4444; /* red */
+	background: var(--yaya-status-danger);
 }
 
 /* Instance-row status dots (LLM Providers tab): map test-connection
  * outcomes to the same palette as the sidebar connection dot so the
  * visual vocabulary stays consistent across the UI. */
 .yaya-status-connected {
-	background: #10b981; /* green */
+	background: var(--yaya-status-success);
 }
 
 .yaya-status-failed {
-	background: #ef4444; /* red */
+	background: var(--yaya-status-danger);
 }
 
 .yaya-status-untested {

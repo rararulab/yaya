@@ -224,6 +224,21 @@ yaya-app {
 	background: #ef4444; /* red */
 }
 
+/* Instance-row status dots (LLM Providers tab): map test-connection
+ * outcomes to the same palette as the sidebar connection dot so the
+ * visual vocabulary stays consistent across the UI. */
+.yaya-status-connected {
+	background: #10b981; /* green */
+}
+
+.yaya-status-failed {
+	background: #ef4444; /* red */
+}
+
+.yaya-status-untested {
+	background: #9ca3af; /* grey */
+}
+
 .yaya-new-chat,
 .yaya-nav-item,
 .yaya-history-item {
@@ -527,9 +542,43 @@ yaya-app {
 	border-color: var(--yaya-accent);
 }
 
+.yaya-btn-danger {
+	padding: 6px 12px;
+	border-radius: 6px;
+	font-size: 13px;
+	cursor: pointer;
+	border: 1px solid #ef4444;
+	background: #ef4444;
+	color: white;
+}
+
 .yaya-btn:hover,
-.yaya-btn-ghost:hover {
+.yaya-btn-ghost:hover,
+.yaya-btn-danger:hover {
 	opacity: 0.9;
+}
+
+.yaya-btn[disabled],
+.yaya-btn-ghost[disabled],
+.yaya-btn-danger[disabled] {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.yaya-row-actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 12px;
+	justify-content: flex-end;
+}
+
+.yaya-row-error {
+	color: #991b1b;
+	background: #fee2e2;
+	border-radius: 6px;
+	padding: 8px 10px;
+	font-size: 12px;
+	margin: 8px 0 0;
 }
 
 .yaya-toolbar {

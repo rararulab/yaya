@@ -50,7 +50,7 @@ Settings tabs consume PR B's HTTP config surface:
 
 | Tab | Endpoints | Notes |
 |---|---|---|
-| LLM Providers | `GET/PATCH /api/llm-providers`, `POST /api/llm-providers/<name>/test` | radio-switch active provider; per-provider schema-driven config; test-connection button. |
+| LLM Providers | `GET/POST/PATCH/DELETE /api/llm-providers`, `PATCH /api/llm-providers/active`, `POST /api/llm-providers/<id>/test` | **Instance-centric** (D4d): one row per `providers.<id>.*` instance — active radio · editable label · backing plugin · status dot (connected/failed/untested) · schema-driven config with Save/Reset/Delete · per-row Test connection · `+ Add instance` modal (picks backing plugin, validates id client-side via `isValidInstanceId`, seeds config from the plugin schema). 4xx/409 surface inline on the row (or inside the modal) rather than as a banner. |
 | Plugins | `GET/PATCH/DELETE /api/plugins`, `POST /api/plugins/install` | enabled toggle + schema-driven config; install modal. |
 | Advanced | `GET/PATCH/DELETE /api/config`, `GET /api/config/<key>?show=1` | raw config grid; prefix filter; secret reveal toggle. |
 
@@ -119,6 +119,7 @@ src/yaya/plugins/web/
 │       ├── store.test.ts
 │       ├── schema-form.test.ts
 │       ├── settings-modal.test.ts
+│       ├── settings-view-instances.test.ts
 │       └── sidebar.test.ts
 └── static/             # vite build output — git-tracked, chunk-split
 ```

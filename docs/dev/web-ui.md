@@ -167,6 +167,58 @@ turn is in flight.
   decoupled from the WS client and tests can drive the dot without
   standing up a fake WebSocket.
 
+### LLM Providers tab (instance-centric, issue #129)
+
+Post-D4d the LLM Providers tab renders one row per
+`providers.<id>.*` instance exposed by the D4c HTTP CRUD surface,
+not one row per backing plugin. The same backing plugin can power
+many instances (e.g. one `llm-openai` plugin + three openai rows
+with different models or keys).
+
+```
+┌─ LLM Providers ───────────────────────────────────────────┐
+│ [+ Add instance]                                          │
+│                                                           │
+│ ( ) OpenAI GPT-4          llm-openai · llm-openai    ●    │
+│     [Test connection] [configure]                         │
+│                                                           │
+│ (•) OpenAI GPT-3.5        llm-openai · llm-openai-2  ●    │
+│     [Test connection] [collapse]                          │
+│     ┌─ expanded row body ─────────────────────────────┐   │
+│     │ Label   [ OpenAI GPT-3.5                    ]  │   │
+│     │ API key [ ••••••••••••••••          ] [show]   │   │
+│     │ Model   [ gpt-3.5-turbo                    ]   │   │
+│     │                                                │   │
+│     │                  [Save] [Reset] [Delete]       │   │
+│     └────────────────────────────────────────────────┘   │
+│                                                           │
+│ ( ) Echo                  llm-echo · llm-echo        ●    │
+│     [Test connection] [configure]                         │
+└───────────────────────────────────────────────────────────┘
+```
+
+- **Active radio** fires `PATCH /api/llm-providers/active` with
+  `{name: <id>}` (body key still `name` for PR #110 compat; the
+  value is an instance id post-D4c).
+- **Status dot** maps the most recent Test-connection outcome:
+  green (connected), red (failed, error tooltip), grey (untested).
+- **Save** sends a PATCH carrying only the fields that diverge
+  from the server row — partial-write blast-radius minimiser.
+- **Delete** opens an in-modal confirmation; 409 responses from
+  the active-instance / last-of-plugin safety checks surface as
+  an inline row error (`.yaya-row-error`), not a banner.
+- **Test connection** calls `POST /api/llm-providers/<id>/test`
+  with a spinner on the button and caches the result in a local
+  `testResults` map so the dot stays accurate across re-renders.
+- **Add instance** opens a modal: backing plugin dropdown
+  (filtered to `category === "llm-provider"` from `/api/plugins`),
+  auto-suggested instance id (`<plugin>` → `<plugin>-<N>` when
+  taken), client-side validation via `isValidInstanceId`, and the
+  backing plugin's JSON Schema rendered inline so the operator
+  can seed initial config (including API keys) in one submit.
+  400/409 responses from the server render inline inside the
+  modal.
+
 ### Extending Settings with a new tab
 
 1. Add a `Tab` variant in `settings-view.ts`
@@ -203,9 +255,12 @@ The settings view consumes the adapter-side HTTP config surface:
 | GET    | `/api/config/<key>?show=1`        | reveal one key                     |
 | PATCH  | `/api/config/<key>`               | `{value}`                          |
 | DELETE | `/api/config/<key>`               | drop one key                       |
-| GET    | `/api/llm-providers`              | provider rows with active flag     |
-| PATCH  | `/api/llm-providers/active`       | `{name}` → list                    |
-| POST   | `/api/llm-providers/<name>/test`  | `{ok, latency_ms, error?}`         |
+| GET    | `/api/llm-providers[?show=1]`     | instance rows `{id, plugin, label, active, config, config_schema}` (D4c) |
+| POST   | `/api/llm-providers`              | `{plugin, id?, label?, config?}` → 201 + row (D4c) |
+| PATCH  | `/api/llm-providers/<id>`         | `{label?, config?}` partial merge (D4c) |
+| DELETE | `/api/llm-providers/<id>`         | 204; 409 when active / last-of-plugin (D4c) |
+| PATCH  | `/api/llm-providers/active`       | `{name: <id>}` → list (body key kept for compat) |
+| POST   | `/api/llm-providers/<id>/test`    | `{ok, latency_ms, error?}`         |
 
 The client in `src/api.ts` returns `ApiError { status }` on non-2xx
 responses. Tabs render an informational banner when the backend

@@ -1,24 +1,30 @@
 /**
  * HTTP client for the /api endpoints served by the Python web adapter.
  *
- * The endpoint contract is defined by PR B (the HTTP config API layer):
+ * The endpoint contract is defined by PR B (the HTTP config API layer)
+ * with the post-D4c instance-shaped LLM provider surface layered on top:
  *
- *   GET    /api/health              → {ok, adapter}
- *   GET    /api/plugins             → PluginRow[]  (new shape) or {plugins: ...}  (old shape)
- *   PATCH  /api/plugins/<name>      → PluginRow
- *   POST   /api/plugins/install     → {job_id}
- *   DELETE /api/plugins/<name>      → 204
- *   GET    /api/config              → {[key]: value}
- *   GET    /api/config/<key>        → {key, value}
- *   PATCH  /api/config/<key>        → {key, value}
- *   DELETE /api/config/<key>        → 204
- *   GET    /api/llm-providers       → LlmProviderRow[]
- *   PATCH  /api/llm-providers/active→ LlmProviderRow[]
- *   POST   /api/llm-providers/<name>/test → {ok, latency_ms, error?}
+ *   GET    /api/health                    → {ok, adapter}
+ *   GET    /api/plugins                   → PluginRow[]  (new shape)
+ *   PATCH  /api/plugins/<name>            → PluginRow
+ *   POST   /api/plugins/install           → {job_id}
+ *   DELETE /api/plugins/<name>            → 204
+ *   GET    /api/config                    → {[key]: value}
+ *   GET    /api/config/<key>              → {key, value}
+ *   PATCH  /api/config/<key>              → {key, value}
+ *   DELETE /api/config/<key>              → 204
+ *   GET    /api/llm-providers             → LlmProviderRow[]
+ *   POST   /api/llm-providers             → 201 + LlmProviderRow
+ *   PATCH  /api/llm-providers/<id>        → LlmProviderRow
+ *   DELETE /api/llm-providers/<id>        → 204 (409 on unsafe)
+ *   PATCH  /api/llm-providers/active      → LlmProviderRow[]
+ *   POST   /api/llm-providers/<id>/test   → {ok, latency_ms, error?}
  *
  * The client tolerates 404/501 gracefully — the UI falls back to an
  * empty state and surfaces a toast so users know the backend build
- * predates the config API.
+ * predates the config API. It also surfaces the server's error detail
+ * on 4xx so the UI can render actionable inline errors (e.g. 409 from
+ * DELETE /api/llm-providers/<id> when the target is the active one).
  */
 
 export interface PluginRow {
@@ -31,12 +37,23 @@ export interface PluginRow {
 	current_config?: Record<string, unknown>;
 }
 
+/**
+ * One row in the D4c instance-shaped /api/llm-providers response.
+ *
+ * `id` uniquely identifies the instance in the
+ * ``providers.<id>.*`` namespace. `plugin` is the backing
+ * llm-provider plugin name — immutable on an instance (rebinding is a
+ * delete + create). `config` carries the schema fields currently
+ * stored under ``providers.<id>.<field>``; secrets are masked unless
+ * the caller passed ``?show=1``.
+ */
 export interface LlmProviderRow {
-	name: string;
-	version: string;
+	id: string;
+	plugin: string;
+	label: string;
 	active: boolean;
+	config: Record<string, unknown>;
 	config_schema?: JsonSchema | null;
-	current_config?: Record<string, unknown>;
 }
 
 export interface TestConnectionResult {
@@ -57,9 +74,11 @@ export interface JsonSchema {
 
 export class ApiError extends Error {
 	readonly status: number;
-	constructor(status: number, message: string) {
+	readonly detail: string | null;
+	constructor(status: number, message: string, detail: string | null = null) {
 		super(message);
 		this.status = status;
+		this.detail = detail;
 	}
 }
 
@@ -71,7 +90,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 	}
 	const resp = await fetch(path, init);
 	if (!resp.ok) {
-		throw new ApiError(resp.status, `${method} ${path} → ${resp.status}`);
+		let detail: string | null = null;
+		try {
+			const parsed = (await resp.clone().json()) as { detail?: unknown };
+			if (parsed && typeof parsed.detail === "string") {
+				detail = parsed.detail;
+			}
+		} catch {
+			// ignore; fall back to status-only message.
+		}
+		const msg = detail ?? `${method} ${path} → ${resp.status}`;
+		throw new ApiError(resp.status, msg, detail);
 	}
 	if (resp.status === 204) {
 		return undefined as T;
@@ -114,14 +143,55 @@ export function deleteConfigKey(key: string): Promise<void> {
 	return request<void>("DELETE", `/api/config/${encodeURIComponent(key)}`);
 }
 
-export function listLlmProviders(): Promise<LlmProviderRow[]> {
-	return request<LlmProviderRow[]>("GET", "/api/llm-providers");
+export function listLlmProviders(show = false): Promise<LlmProviderRow[]> {
+	const suffix = show ? "?show=1" : "";
+	return request<LlmProviderRow[]>("GET", `/api/llm-providers${suffix}`);
 }
 
-export function setActiveLlmProvider(name: string): Promise<LlmProviderRow[]> {
-	return request<LlmProviderRow[]>("PATCH", "/api/llm-providers/active", { name });
+export interface CreateLlmProviderBody {
+	plugin: string;
+	id?: string;
+	label?: string;
+	config?: Record<string, unknown>;
 }
 
-export function testLlmProvider(name: string): Promise<TestConnectionResult> {
-	return request<TestConnectionResult>("POST", `/api/llm-providers/${encodeURIComponent(name)}/test`);
+export function createLlmProvider(body: CreateLlmProviderBody): Promise<LlmProviderRow> {
+	return request<LlmProviderRow>("POST", "/api/llm-providers", body);
+}
+
+export interface UpdateLlmProviderBody {
+	label?: string;
+	config?: Record<string, unknown>;
+}
+
+export function updateLlmProvider(id: string, body: UpdateLlmProviderBody): Promise<LlmProviderRow> {
+	return request<LlmProviderRow>("PATCH", `/api/llm-providers/${encodeURIComponent(id)}`, body);
+}
+
+export function deleteLlmProvider(id: string): Promise<void> {
+	return request<void>("DELETE", `/api/llm-providers/${encodeURIComponent(id)}`);
+}
+
+export function setActiveLlmProvider(id: string): Promise<LlmProviderRow[]> {
+	// The server body field is still named ``name`` post-D4c for backwards
+	// compatibility, but the value is an instance id.
+	return request<LlmProviderRow[]>("PATCH", "/api/llm-providers/active", { name: id });
+}
+
+export function testLlmProvider(id: string): Promise<TestConnectionResult> {
+	return request<TestConnectionResult>("POST", `/api/llm-providers/${encodeURIComponent(id)}/test`);
+}
+
+/**
+ * Shared client-side validator for instance ids.
+ *
+ * Mirrors ``yaya.kernel.providers.is_valid_instance_id`` — 3-64
+ * lowercase alphanumeric / dash characters, no leading/trailing
+ * dashes, no dots. Surfacing an inline error before POST saves a
+ * server round-trip and keeps the error message under the author's
+ * control.
+ */
+export function isValidInstanceId(id: string): boolean {
+	if (id.length < 3 || id.length > 64) return false;
+	return /^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(id);
 }

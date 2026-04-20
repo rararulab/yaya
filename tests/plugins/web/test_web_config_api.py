@@ -336,48 +336,292 @@ async def test_plugin_delete_rejects_bundled(store: ConfigStore, registry: _Stub
         assert resp.status_code == 400
 
 
-async def test_llm_provider_list_flags_active(store: ConfigStore, registry: _StubRegistry) -> None:
-    """The provider whose name matches config key ``provider`` is active."""
-    await store.set("provider", "llm-echo")
+async def _seed_instances(store: ConfigStore) -> None:
+    """Seed two llm-openai instances + one llm-echo instance.
+
+    Shape matches D4a's bootstrap plus a manually-added second
+    llm-openai record — used by the instance-shaped tests to exercise
+    the "list all / patch one / delete with siblings" paths.
+    """
+    await store.set("providers.llm-openai.plugin", "llm-openai")
+    await store.set("providers.llm-openai.label", "llm-openai (default)")
+    await store.set("providers.llm-openai.api_key", "sk-verysecretkeyabcd")
+    await store.set("providers.llm-openai.model", "gpt-4o")
+    await store.set("providers.openai-gpt4.plugin", "llm-openai")
+    await store.set("providers.openai-gpt4.label", "OpenAI GPT-4")
+    await store.set("providers.openai-gpt4.api_key", "sk-alternativekeyxyz9")
+    await store.set("providers.openai-gpt4.model", "gpt-4-turbo")
+    await store.set("providers.llm-echo.plugin", "llm-echo")
+    await store.set("providers.llm-echo.label", "llm-echo (default)")
+
+
+async def test_instance_list_returns_shape(store: ConfigStore, registry: _StubRegistry) -> None:
+    """GET /api/llm-providers returns a bare array of instance rows."""
+    await _seed_instances(store)
+    await store.set("provider", "openai-gpt4")
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.get("/api/llm-providers")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body, list)
+        by_id = {row["id"]: row for row in body}
+        assert set(by_id) == {"llm-openai", "openai-gpt4", "llm-echo"}
+        assert by_id["openai-gpt4"]["active"] is True
+        assert by_id["llm-openai"]["active"] is False
+        assert by_id["openai-gpt4"]["plugin"] == "llm-openai"
+        assert by_id["openai-gpt4"]["label"] == "OpenAI GPT-4"
+        # llm-echo has no config fields.
+        assert by_id["llm-echo"]["config"] == {}
+
+
+async def test_instance_list_masks_secrets(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Secret-suffix fields in config mask by default."""
+    await _seed_instances(store)
     app = _build_app(store=store, registry=registry)
     async with _client(app) as client:
         resp = await client.get("/api/llm-providers")
         body = resp.json()
-        # Bare array per the TS client contract.
-        assert isinstance(body, list)
-        actives = {row["name"]: row["active"] for row in body}
-        assert actives == {"llm-openai": False, "llm-echo": True}
+        openai_row = next(r for r in body if r["id"] == "llm-openai")
+        assert openai_row["config"]["api_key"] == "****abcd"
+        assert openai_row["config"]["model"] == "gpt-4o"
 
 
-async def test_llm_provider_active_switch(store: ConfigStore, registry: _StubRegistry) -> None:
-    """PATCH /api/llm-providers/active writes ``provider`` and returns the refreshed list."""
+async def test_instance_list_show_reveals_secrets(store: ConfigStore, registry: _StubRegistry) -> None:
+    """``?show=1`` bypasses masking for operators who need the raw value."""
+    await _seed_instances(store)
     app = _build_app(store=store, registry=registry)
     async with _client(app) as client:
-        resp = await client.patch(
-            "/api/llm-providers/active",
-            json={"name": "llm-openai"},
-        )
-        assert resp.status_code == 200
+        resp = await client.get("/api/llm-providers?show=1")
         body = resp.json()
-        assert isinstance(body, list)
-        actives = {row["name"]: row["active"] for row in body}
-        assert actives == {"llm-openai": True, "llm-echo": False}
-        assert await store.get("provider") == "llm-openai"
+        openai_row = next(r for r in body if r["id"] == "llm-openai")
+        assert openai_row["config"]["api_key"] == "sk-verysecretkeyabcd"
 
 
-async def test_llm_provider_active_rejects_non_provider(store: ConfigStore, registry: _StubRegistry) -> None:
-    """Switching to a non-llm-provider plugin → 400."""
+async def test_instance_create_happy_path(store: ConfigStore, registry: _StubRegistry) -> None:
+    """POST /api/llm-providers materialises providers.<id>.* keys and returns 201."""
     app = _build_app(store=store, registry=registry)
     async with _client(app) as client:
-        resp = await client.patch(
-            "/api/llm-providers/active",
-            json={"name": "tool-bash"},
+        resp = await client.post(
+            "/api/llm-providers",
+            json={
+                "id": "openai-local",
+                "plugin": "llm-openai",
+                "label": "Local LM Studio",
+                "config": {"base_url": "http://localhost:1234/v1", "model": "llama3"},
+            },
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["id"] == "openai-local"
+        assert body["plugin"] == "llm-openai"
+        assert body["label"] == "Local LM Studio"
+        assert body["config"]["model"] == "llama3"
+        # Writes materialised through ConfigStore.
+        assert await store.get("providers.openai-local.plugin") == "llm-openai"
+        assert await store.get("providers.openai-local.label") == "Local LM Studio"
+        assert await store.get("providers.openai-local.model") == "llama3"
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        "with.dot",
+        "UPPER",
+        "ab",  # too short
+        "a" * 65,  # too long
+        "-leading-dash",
+        "trailing-dash-",
+        "has space",
+    ],
+)
+async def test_instance_create_rejects_invalid_id(store: ConfigStore, registry: _StubRegistry, bad_id: str) -> None:
+    """Bad instance ids are rejected with 400 before hitting ConfigStore.set."""
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.post(
+            "/api/llm-providers",
+            json={"id": bad_id, "plugin": "llm-openai", "config": {}},
+        )
+        assert resp.status_code == 400
+        assert "invalid instance id" in resp.json()["detail"]
+
+
+async def test_instance_create_rejects_duplicate_id(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Re-creating an existing instance → 409."""
+    await _seed_instances(store)
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.post(
+            "/api/llm-providers",
+            json={"id": "llm-openai", "plugin": "llm-openai"},
+        )
+        assert resp.status_code == 409
+
+
+async def test_instance_create_rejects_unknown_plugin(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Targeting a plugin that is not a loaded llm-provider → 400."""
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        # ``tool-bash`` is loaded but not an llm-provider.
+        resp = await client.post(
+            "/api/llm-providers",
+            json={"id": "bad-ref", "plugin": "tool-bash"},
         )
         assert resp.status_code == 400
 
 
-async def test_llm_provider_active_rejects_unknown_plugin(store: ConfigStore, registry: _StubRegistry) -> None:
-    """Switching to a non-existent plugin → 404."""
+async def test_instance_create_auto_generates_id_when_absent(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Omitting ``id`` produces ``f"{plugin}-{uuid8}"``."""
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.post(
+            "/api/llm-providers",
+            json={"plugin": "llm-openai", "config": {"model": "gpt-4o"}},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["id"].startswith("llm-openai-")
+        # Default label falls back to "<plugin> (<id>)".
+        assert body["label"] == f"llm-openai ({body['id']})"
+
+
+async def test_instance_create_partial_write_surfaces_error(
+    store: ConfigStore,
+    registry: _StubRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mid-way ConfigStore.set failure bubbles up with operator cleanup guidance.
+
+    ``_write_instance_fields`` has no batch-write primitive; if the
+    second of three set calls raises, the instance is half-written. The
+    handler must surface an error (not a success) and point operators
+    at ``yaya config unset providers.<id>.*``.
+    """
+    real_set = store.set
+    calls: list[str] = []
+
+    async def _flaky_set(key: str, value: Any) -> None:
+        calls.append(key)
+        # Second write (label) raises — leaves plugin key behind.
+        if len(calls) == 2:
+            raise RuntimeError("disk full")
+        await real_set(key, value)
+
+    monkeypatch.setattr(store, "set", _flaky_set)
+
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.post(
+            "/api/llm-providers",
+            json={
+                "id": "openai-partial",
+                "plugin": "llm-openai",
+                "label": "Partial",
+                "config": {"model": "gpt-4o"},
+            },
+        )
+        assert resp.status_code in {400, 500}
+        detail = resp.json()["detail"]
+        assert "yaya config unset providers.openai-partial.*" in detail
+
+
+async def test_instance_patch_merges_config_partial(store: ConfigStore, registry: _StubRegistry) -> None:
+    """PATCH merges only the supplied fields; untouched ones survive."""
+    await _seed_instances(store)
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.patch(
+            "/api/llm-providers/openai-gpt4",
+            json={
+                "label": "OpenAI GPT-4 (updated)",
+                "config": {"model": "gpt-4-turbo-2024"},
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["label"] == "OpenAI GPT-4 (updated)"
+        assert body["config"]["model"] == "gpt-4-turbo-2024"
+        # api_key untouched.
+        assert await store.get("providers.openai-gpt4.api_key") == "sk-alternativekeyxyz9"
+
+
+async def test_instance_patch_rejects_plugin_in_body(store: ConfigStore, registry: _StubRegistry) -> None:
+    """PATCH body with ``plugin`` is rejected with 422 by pydantic's forbid-extra.
+
+    Rebinding an instance to a different plugin is explicitly a
+    delete+create — a silent no-op on ``plugin`` would mask client
+    bugs. ``_ProviderPatchBody`` sets ``extra="forbid"`` so the error
+    surfaces at the edge, and the instance's ``plugin`` meta field
+    stays intact.
+    """
+    await _seed_instances(store)
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.patch(
+            "/api/llm-providers/openai-gpt4",
+            json={"plugin": "llm-echo"},
+        )
+        assert resp.status_code == 422
+        # The meta field was not touched.
+        assert await store.get("providers.openai-gpt4.plugin") == "llm-openai"
+
+
+async def test_instance_patch_on_unknown_id(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Patching a non-existent instance → 404."""
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.patch(
+            "/api/llm-providers/ghost",
+            json={"label": "x"},
+        )
+        assert resp.status_code == 404
+
+
+async def test_instance_delete_happy_path(store: ConfigStore, registry: _StubRegistry) -> None:
+    """DELETE clears every providers.<id>.* key and returns 204."""
+    await _seed_instances(store)
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.delete("/api/llm-providers/openai-gpt4")
+        assert resp.status_code == 204
+        assert await store.get("providers.openai-gpt4.plugin") is None
+        assert await store.get("providers.openai-gpt4.api_key") is None
+
+
+async def test_instance_delete_rejects_active(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Deleting the active instance is blocked with 409."""
+    await _seed_instances(store)
+    await store.set("provider", "openai-gpt4")
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.delete("/api/llm-providers/openai-gpt4")
+        assert resp.status_code == 409
+        assert "switch active" in resp.json()["detail"]
+
+
+async def test_instance_delete_rejects_last_of_plugin(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Deleting the last instance of a plugin is blocked with 409."""
+    await _seed_instances(store)
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        # llm-echo has a single seeded instance.
+        resp = await client.delete("/api/llm-providers/llm-echo")
+        assert resp.status_code == 409
+        assert "only instance" in resp.json()["detail"]
+
+
+async def test_instance_delete_unknown_id(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Deleting a non-existent instance → 404."""
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.delete("/api/llm-providers/ghost")
+        assert resp.status_code == 404
+
+
+async def test_active_switch_validates_instance_id(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Switching active to an unknown instance id → 404."""
+    await _seed_instances(store)
     app = _build_app(store=store, registry=registry)
     async with _client(app) as client:
         resp = await client.patch(
@@ -387,25 +631,53 @@ async def test_llm_provider_active_rejects_unknown_plugin(store: ConfigStore, re
         assert resp.status_code == 404
 
 
-async def test_llm_provider_test_roundtrip(store: ConfigStore, registry: _StubRegistry) -> None:
-    """POST /api/llm-providers/<name>/test round-trips through the bus.
+async def test_active_switch_validates_plugin_loaded(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Switching to an instance whose backing plugin is not loaded → 400."""
+    # Seed an instance whose plugin is not in the registry.
+    await store.set("providers.dangling.plugin", "llm-missing")
+    await store.set("providers.dangling.label", "Dangling")
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.patch(
+            "/api/llm-providers/active",
+            json={"name": "dangling"},
+        )
+        assert resp.status_code == 400
 
-    The fake provider subscribes to ``llm.call.request`` and echoes
-    back ``llm.call.response`` with the same ``request_id``. The
-    endpoint returns ``{ok: True, latency_ms}``.
-    """
+
+async def test_active_switch_happy_path(store: ConfigStore, registry: _StubRegistry) -> None:
+    """PATCH /api/llm-providers/active writes provider and returns refreshed list."""
+    await _seed_instances(store)
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.patch(
+            "/api/llm-providers/active",
+            json={"name": "openai-gpt4"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body, list)
+        actives = {row["id"]: row["active"] for row in body}
+        assert actives["openai-gpt4"] is True
+        assert await store.get("provider") == "openai-gpt4"
+
+
+async def test_instance_test_endpoint_routes_on_bridge_session(store: ConfigStore, registry: _StubRegistry) -> None:
+    """POST /api/llm-providers/<id>/test fires request on a ``_bridge:`` session."""
+    await _seed_instances(store)
     bus = EventBus()
+    seen_sessions: list[str] = []
 
     async def _echo(ev: Event) -> None:
-        if ev.payload.get("provider") != "openai":
+        seen_sessions.append(ev.session_id)
+        if ev.payload.get("provider") != "openai-gpt4":
             return
-        reply_id = ev.id
         from yaya.kernel.events import new_event as _mk
 
         await bus.publish(
             _mk(
                 "llm.call.response",
-                {"text": "OK", "tool_calls": [], "usage": {}, "request_id": reply_id},
+                {"text": "OK", "tool_calls": [], "usage": {}, "request_id": ev.id},
                 session_id=ev.session_id,
                 source="stub-openai",
             )
@@ -415,19 +687,24 @@ async def test_llm_provider_test_roundtrip(store: ConfigStore, registry: _StubRe
 
     app = _build_app(store=store, registry=registry, bus=bus)
     async with _client(app) as client:
-        resp = await client.post("/api/llm-providers/llm-openai/test")
+        resp = await client.post("/api/llm-providers/openai-gpt4/test")
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is True
         assert body["latency_ms"] >= 0
 
+    # Session id used a ``_bridge:web-api-test:`` prefix (lesson #2).
+    assert seen_sessions, "expected at least one llm.call.request"
+    assert all(s.startswith("_bridge:web-api-test:") for s in seen_sessions)
 
-async def test_llm_provider_test_error_path(store: ConfigStore, registry: _StubRegistry) -> None:
-    """A provider that emits ``llm.call.error`` → ``{ok: False, error}``."""
+
+async def test_instance_test_error_path(store: ConfigStore, registry: _StubRegistry) -> None:
+    """llm.call.error → ok=False with the error message."""
+    await _seed_instances(store)
     bus = EventBus()
 
     async def _fail(ev: Event) -> None:
-        if ev.payload.get("provider") != "openai":
+        if ev.payload.get("provider") != "llm-openai":
             return
         from yaya.kernel.events import new_event as _mk
 
@@ -441,7 +718,6 @@ async def test_llm_provider_test_error_path(store: ConfigStore, registry: _StubR
         )
 
     bus.subscribe("llm.call.request", _fail, source="stub-openai")
-
     app = _build_app(store=store, registry=registry, bus=bus)
     async with _client(app) as client:
         resp = await client.post("/api/llm-providers/llm-openai/test")
@@ -451,15 +727,15 @@ async def test_llm_provider_test_error_path(store: ConfigStore, registry: _StubR
         assert body["error"] == "not_configured"
 
 
-async def test_llm_provider_test_timeout(
+async def test_instance_test_timeout(
     store: ConfigStore, registry: _StubRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No reply within the budget → ``{ok: False, error: 'timeout'}``."""
+    """No reply within the budget → ok=False with ``timeout``."""
     import yaya.plugins.web.api as api_mod
 
     monkeypatch.setattr(api_mod, "_TEST_PROMPT_TIMEOUT_S", 0.05)
-
-    bus = EventBus()  # no subscriber to ``llm.call.request``
+    await _seed_instances(store)
+    bus = EventBus()
     app = _build_app(store=store, registry=registry, bus=bus)
     async with _client(app) as client:
         resp = await client.post("/api/llm-providers/llm-openai/test")
@@ -468,13 +744,24 @@ async def test_llm_provider_test_timeout(
         assert body["error"] == "timeout"
 
 
-async def test_llm_provider_test_unknown_plugin(store: ConfigStore, registry: _StubRegistry) -> None:
-    """Unknown provider → 404."""
+async def test_instance_test_unknown_id(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Unknown instance → 404."""
     bus = EventBus()
     app = _build_app(store=store, registry=registry, bus=bus)
     async with _client(app) as client:
         resp = await client.post("/api/llm-providers/ghost/test")
         assert resp.status_code == 404
+
+
+async def test_instance_test_rejects_dangling_plugin(store: ConfigStore, registry: _StubRegistry) -> None:
+    """Instance whose backing plugin is not loaded → 400 (call would never dispatch)."""
+    await store.set("providers.dangling.plugin", "llm-missing")
+    await store.set("providers.dangling.label", "Dangling")
+    bus = EventBus()
+    app = _build_app(store=store, registry=registry, bus=bus)
+    async with _client(app) as client:
+        resp = await client.post("/api/llm-providers/dangling/test")
+        assert resp.status_code == 400
 
 
 async def test_plugin_list_returns_schema_when_declared(

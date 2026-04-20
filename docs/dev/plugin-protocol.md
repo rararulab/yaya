@@ -256,6 +256,27 @@ Unrelated prefixes (`plugin.other.*`, kernel keys) are ignored.
 `ctx.providers.get_instance(active_id).config["model"]`. Flipping the
 kernel-level `provider` key hot-switches dispatch on the next decision.
 
+**HTTP CRUD surface** (bundled `web` adapter, `/api/llm-providers`).
+The adapter exposes instance-shaped CRUD on top of the
+`providers.<id>.*` namespace so the browser UI can add, edit, and
+remove instances without a restart:
+
+| Method + path | Purpose |
+|---|---|
+| `GET /api/llm-providers` | Bare array of `{id, plugin, label, active, config, config_schema}`. Secrets mask by suffix unless `?show=1`. |
+| `POST /api/llm-providers` | Create an instance. Body: `{id?, plugin, label?, config?}`. Returns `201` + the row. Auto-generates `id = f"{plugin}-{uuid8}"` when omitted. |
+| `PATCH /api/llm-providers/<id>` | Partial merge. Body: `{label?, config?}`. `plugin` is NOT rebindable — use delete+create. |
+| `DELETE /api/llm-providers/<id>` | Remove an instance. `204` on success; `409` when the target is the active instance or the last instance of its backing plugin. |
+| `PATCH /api/llm-providers/active` | Body: `{name: <instance_id>}`. Writes the `provider` config key. Validates both that the id exists and that the backing plugin is loaded. |
+| `POST /api/llm-providers/<id>/test` | One-shot `llm.call.request` on session id `_bridge:web-api-test:<uuid>`. Returns `{ok, latency_ms, error?}`. 5s timeout. |
+
+Instance ids are validated by `yaya.kernel.providers.is_valid_instance_id`:
+3-64 lowercase alphanumeric + dash characters, no dots (a dotted id would
+corrupt the `providers.<id>.<field>` grouping), no leading or trailing dash.
+Creates use multiple `ConfigStore.set` calls; a mid-way failure may leave a
+partial instance — operators clean up with `yaya config unset
+providers.<id>.*`.
+
 ### Extension namespace
 
 Plugins may emit and subscribe to events named `x.<plugin>.<kind>`.

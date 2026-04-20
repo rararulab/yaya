@@ -995,14 +995,3 @@ yaya-settings-modal {
 	background: var(--yaya-status-danger);
 	opacity: 0.9;
 }
-
-.yaya-input-hint kbd {
-	font-family:
-		ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-	font-size: 10px;
-	padding: 1px 5px;
-	border: 1px solid var(--yaya-border);
-	border-radius: 4px;
-	background: var(--yaya-hover);
-	color: var(--yaya-text-primary);
-}

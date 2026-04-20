@@ -215,16 +215,46 @@ keep working; a follow-up garbage-collects them once every bundled
 `llm-provider` reads instance-scoped config. The marker is stamped
 last so a crash mid-bootstrap re-runs cleanly on next boot.
 
-**Plugin iteration pattern** (for the coming D4b migration):
+**Dispatch pattern** (the D4b shape used by bundled `llm-openai` /
+`llm-echo` after #123). One plugin process owns many instances; the
+`provider` id inside `llm.call.request` is an *instance id*, not a
+plugin name, and the plugin filters its own owned set:
 
 ```python
 async def on_load(self, ctx: KernelContext) -> None:
     view = ctx.providers
+    self._clients: dict[str, _Client] = {}
     if view is None:
-        return  # test/transient context — fall back to ctx.config
+        return  # test/transient context
     for instance in view.instances_for_plugin(self.name):
-        self._instances[instance.id] = _Client.from_config(instance.config)
+        self._clients[instance.id] = _Client.from_config(instance.config)
+
+async def on_event(self, ev: Event, ctx: KernelContext) -> None:
+    if ev.kind == "config.updated":
+        await self._maybe_hot_reload(ev, ctx)
+        return
+    if ev.kind != "llm.call.request":
+        return
+    provider_id = ev.payload.get("provider")
+    if provider_id not in self._clients:
+        return  # sibling plugins own their own ids on this subscription
+    await self._dispatch(ev, ctx, provider_id)
 ```
+
+**Hot-reload.** On `config.updated` with a `providers.<id>.*` key,
+look up the instance via `ctx.providers.get_instance(id)`:
+
+- absent / `plugin` meta no longer matches → drop the per-instance state;
+- owned → rebuild only that instance's state (do not `close()` the old
+  client synchronously — let GC reclaim pools so in-flight dispatches
+  finish cleanly).
+
+Unrelated prefixes (`plugin.other.*`, kernel keys) are ignored.
+
+**Strategy resolution.** `strategy_react` resolves the active
+`(provider, model)` pair via `ctx.providers.active_id` →
+`ctx.providers.get_instance(active_id).config["model"]`. Flipping the
+kernel-level `provider` key hot-switches dispatch on the next decision.
 
 ### Extension namespace
 

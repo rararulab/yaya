@@ -63,20 +63,21 @@ async def _drive_first_turn(tmp_path: Path) -> Event:
 
 
 async def test_picks_echo_when_no_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No ``OPENAI_API_KEY`` → strategy falls back to the echo dev provider."""
+    """No ``OPENAI_API_KEY`` → strategy falls back to the ``llm-echo`` dev instance name."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     response = await _drive_first_turn(tmp_path)
     payload = response.payload
     assert payload["next"] == "llm"
-    assert payload["provider"] == "echo"
+    # D4b: fallback provider ids mirror the D4a-seeded instance names.
+    assert payload["provider"] == "llm-echo"
     assert payload["model"] == "echo"
 
 
 async def test_picks_openai_when_api_key_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``OPENAI_API_KEY`` present → strategy picks the openai provider."""
+    """``OPENAI_API_KEY`` present → strategy picks the ``llm-openai`` fallback instance."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     response = await _drive_first_turn(tmp_path)
     payload = response.payload
     assert payload["next"] == "llm"
-    assert payload["provider"] == "openai"
+    assert payload["provider"] == "llm-openai"
     assert payload["model"] == "gpt-4o-mini"

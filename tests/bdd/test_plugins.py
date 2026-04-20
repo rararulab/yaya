@@ -88,7 +88,9 @@ def _configured_openai(
     stub_client = MagicMock()
     stub_client.chat.completions.create = AsyncMock(return_value=_fake_completion())
     stub_client.close = AsyncMock(return_value=None)
-    plugin._client = stub_client
+    # D4b: instance-dispatch keyed by provider id. Register a stub
+    # client under the id the scenario will publish against.
+    plugin._clients["openai"] = stub_client
 
     async def handler(ev: Event) -> None:
         await plugin.on_event(ev, kernel_ctx)
@@ -130,10 +132,17 @@ def _unconfigured_openai(
         await plugin.on_event(ev, kernel_ctx)
 
     captured: list[Event] = []
+    errors: list[Event] = []
     bus.subscribe("llm.call.request", handler, source=plugin.name)
-    bus.subscribe("llm.call.error", lambda ev: _append_async(captured, ev), source="bdd")
+    bus.subscribe("llm.call.response", lambda ev: _append_async(captured, ev), source="bdd")
+    bus.subscribe("llm.call.error", lambda ev: _append_async(errors, ev), source="bdd")
     ctx.bus = bus
-    ctx.extras.update({"plugin": plugin, "kernel_ctx": kernel_ctx, "captured": captured})
+    ctx.extras.update({
+        "plugin": plugin,
+        "kernel_ctx": kernel_ctx,
+        "captured": captured,
+        "errors": errors,
+    })
 
 
 @given("a configured llm-openai plugin whose stubbed client raises a RateLimitError")
@@ -487,7 +496,8 @@ def _strategy_handles(
 def _strategy_next_llm(ctx: BDDContext) -> None:
     payload = _last_payload(ctx)
     assert payload["next"] == "llm"
-    assert payload["provider"] == "openai"
+    # D4b: fallback provider ids mirror the D4a-seeded instance names.
+    assert payload["provider"] == "llm-openai"
     assert payload["model"] == "gpt-4o-mini"
 
 

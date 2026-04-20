@@ -1,10 +1,10 @@
-"""Zero-restart provider-switch proof for strategy_react (#104).
+"""Zero-restart provider-switch proof for strategy_react + llm_openai (#123).
 
-AC-14 from ``specs/kernel-config-store.spec``. Loads strategy_react
-against a live :class:`~yaya.kernel.config_store.ConfigStore`, drives
-two ``strategy.decide.request`` events back-to-back, and flips
-``plugin.strategy_react.provider`` between them — the emitted
-``llm.call.request`` events must name the two different providers.
+AC-14 / AC-15 from ``specs/kernel-config-store.spec``, flipped to the
+post-D4b ``providers.<id>.*`` namespace. Both tests load plugins
+against a live :class:`~yaya.kernel.config_store.ConfigStore` and
+drive the ``providers.<id>.*`` hot-reload path: instance-scoped
+config edits take effect on the next event with no kernel restart.
 """
 
 from __future__ import annotations
@@ -27,13 +27,33 @@ def _run(coro: object) -> object:
     return asyncio.run(coro)  # type: ignore[arg-type]
 
 
-def test_hot_switch_provider_between_decisions(tmp_path: Path) -> None:
-    """AC-14: a ``yaya config set`` between decisions flips the emitted provider.
+def _ctx_with_providers(
+    bus: EventBus,
+    store: ConfigStore,
+    tmp_path: Path,
+    plugin_name: str,
+) -> KernelContext:
+    """Build a :class:`KernelContext` whose ``providers`` resolves through ``store``."""
+    ctx = KernelContext(
+        bus=bus,
+        logger=_NullLogger(),
+        config={},
+        state_dir=tmp_path / "state",
+        plugin_name=plugin_name,
+        config_store=store,
+    )
+    ctx.state_dir.mkdir(parents=True, exist_ok=True)
+    return ctx
 
-    Wires the real strategy plugin against a live config store scoped
-    view. Two decisions are triggered; between them we flip
-    ``plugin.strategy_react.provider``. The second decision's
-    ``strategy.decide.response`` carries the new provider name.
+
+def test_hot_switch_provider_between_decisions(tmp_path: Path) -> None:
+    """AC-14 (D4b): flipping the active instance id between decisions flips the emitted provider.
+
+    Seeds two ``providers.<id>.*`` instances (``instance-a`` + ``instance-b``),
+    drives two ``strategy.decide.request`` events, and flips the
+    kernel-level ``provider`` key between them. The second
+    ``strategy.decide.response`` carries the second instance's id and
+    its ``config["model"]`` — live, without restarting the plugin.
     """
 
     async def _body() -> None:
@@ -47,22 +67,16 @@ def test_hot_switch_provider_between_decisions(tmp_path: Path) -> None:
 
         bus.subscribe("strategy.decide.response", _sink, source="test-sink")
 
-        strategy = ReActStrategy()
-        # Scoped view — the registry would hand this to the plugin in
-        # production; we synthesise it here for a no-registry unit.
-        ctx = KernelContext(
-            bus=bus,
-            logger=_NullLogger(),
-            config=store.view(prefix="plugin.strategy_react."),
-            state_dir=tmp_path / "state",
-            plugin_name="strategy-react",
-        )
-        ctx.state_dir.mkdir(parents=True, exist_ok=True)
-        await strategy.on_load(ctx)
+        # Seed two provider instances.
+        await store.set("providers.instance-a.plugin", "llm-openai")
+        await store.set("providers.instance-a.model", "m-a")
+        await store.set("providers.instance-b.plugin", "llm-openai")
+        await store.set("providers.instance-b.model", "m-b")
+        await store.set("provider", "instance-a")
 
-        # Pin the initial provider via the live store.
-        await store.set("plugin.strategy_react.provider", "provider-a")
-        await store.set("plugin.strategy_react.model", "m-a")
+        strategy = ReActStrategy()
+        ctx = _ctx_with_providers(bus, store, tmp_path, "strategy-react")
+        await strategy.on_load(ctx)
 
         req1 = new_event(
             "strategy.decide.request",
@@ -73,9 +87,8 @@ def test_hot_switch_provider_between_decisions(tmp_path: Path) -> None:
         await strategy.on_event(req1, ctx)
         await asyncio.sleep(0.05)
 
-        # Flip providers live — no restart.
-        await store.set("plugin.strategy_react.provider", "provider-b")
-        await store.set("plugin.strategy_react.model", "m-b")
+        # Hot-switch the active instance.
+        await store.set("provider", "instance-b")
 
         req2 = new_event(
             "strategy.decide.request",
@@ -89,9 +102,9 @@ def test_hot_switch_provider_between_decisions(tmp_path: Path) -> None:
         responses = [ev for ev in captured if ev.kind == "strategy.decide.response"]
         assert len(responses) >= 2, f"expected 2 responses, got {responses!r}"
         first, second = responses[0], responses[1]
-        assert first.payload.get("provider") == "provider-a"
+        assert first.payload.get("provider") == "instance-a"
         assert first.payload.get("model") == "m-a"
-        assert second.payload.get("provider") == "provider-b"
+        assert second.payload.get("provider") == "instance-b"
         assert second.payload.get("model") == "m-b"
 
         await strategy.on_unload(ctx)
@@ -102,15 +115,14 @@ def test_hot_switch_provider_between_decisions(tmp_path: Path) -> None:
 
 
 def test_llm_openai_rebuilds_client_on_config_updated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """AC-15: llm_openai rebuilds its ``AsyncOpenAI`` client on hot config change.
+    """AC-15 (D4b): llm_openai rebuilds a per-instance client on ``providers.<id>.*`` edits.
 
-    A stubbed SDK constructor records every call; we set a new
-    ``plugin.llm_openai.base_url`` on the store and assert the plugin
-    re-instantiated with the new URL.
+    A stubbed ``AsyncOpenAI`` constructor records every call. Seeding
+    ``providers.prod.*`` with an initial ``base_url`` builds one
+    client at ``on_load``; overwriting ``providers.prod.base_url``
+    and delivering ``config.updated`` rebuilds only that instance.
+    Unrelated keys (``plugin.other.*``) must NOT rebuild.
     """
-    # The package ``__init__`` reexports ``plugin = OpenAIProvider()``
-    # which shadows the ``plugin`` submodule at the package level, so
-    # we import the class from its declaring module directly.
     from yaya.plugins.llm_openai.plugin import OpenAIProvider
 
     async def _body() -> None:
@@ -128,42 +140,33 @@ def test_llm_openai_rebuilds_client_on_config_updated(tmp_path: Path, monkeypatc
 
         monkeypatch.setattr("openai.AsyncOpenAI", _StubClient)
 
-        await store.set("plugin.llm_openai.api_key", "sk-first")
-        await store.set("plugin.llm_openai.base_url", "https://a.example")
+        # Seed one llm-openai instance.
+        await store.set("providers.prod.plugin", "llm-openai")
+        await store.set("providers.prod.api_key", "sk-first")
+        await store.set("providers.prod.base_url", "https://a.example")
 
         provider = OpenAIProvider()
-        ctx = KernelContext(
-            bus=bus,
-            logger=_NullLogger(),
-            config=store.view(prefix="plugin.llm_openai."),
-            state_dir=tmp_path / "state",
-            plugin_name="llm-openai",
-        )
-        ctx.state_dir.mkdir(parents=True, exist_ok=True)
+        ctx = _ctx_with_providers(bus, store, tmp_path, "llm-openai")
         await provider.on_load(ctx)
-        assert calls, "on_load should build the client once"
+        assert calls, "on_load should build one client per owned instance"
         assert calls[-1].get("base_url") == "https://a.example"
 
-        # Live config change — hot-reload path.
+        # Hot-edit the instance's base_url → expect a per-instance rebuild.
+        await store.set("providers.prod.base_url", "https://b.example")
         hot_event = new_event(
             "config.updated",
-            {"key": "plugin.llm_openai.base_url", "prefix_match_hint": "plugin.llm_openai."},
+            {"key": "providers.prod.base_url"},
             session_id="kernel",
             source="kernel-config-store",
         )
-        # The store's set() already emits config.updated on its own; we
-        # mutate the cache first so the scoped view surfaces the new
-        # value when the plugin's handler runs.
-        await store.set("plugin.llm_openai.base_url", "https://b.example")
         await provider.on_event(hot_event, ctx)
-        # The plugin should have rebuilt with the new URL.
         assert calls[-1].get("base_url") == "https://b.example"
 
-        # Non-matching key must NOT rebuild.
+        # Unrelated key → no rebuild.
         before = len(calls)
         unrelated = new_event(
             "config.updated",
-            {"key": "plugin.other.thing", "prefix_match_hint": "plugin.other."},
+            {"key": "plugin.other.thing"},
             session_id="kernel",
             source="kernel-config-store",
         )

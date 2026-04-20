@@ -206,23 +206,23 @@ Scenario: AC-13 non-JSON values are rejected
   When the caller sets a value that is not JSON-encodable
   Then the call raises TypeError
 
-Scenario: AC-14 strategy_react hot-switches provider between decisions
+Scenario: AC-14 strategy_react hot-switches active provider instance between decisions
   Test:
     Package: yaya
     Filter: tests/kernel/test_strategy_hot_provider.py::test_hot_switch_provider_between_decisions
   Level: unit
-  Given ReActStrategy loaded against a live ConfigStore scoped view
-  When the operator flips plugin.strategy_react.provider between two strategy.decide.request events
-  Then the second strategy.decide.response carries the new provider name
+  Given ReActStrategy loaded against a live ConfigStore with two seeded provider instances
+  When the operator flips the kernel-level provider key between two strategy.decide.request events
+  Then the second strategy.decide.response carries the new instance id and its per-instance model
 
-Scenario: AC-15 llm_openai rebuilds the client on config.updated
+Scenario: AC-15 llm_openai rebuilds the per-instance client on providers.<id>.* config.updated
   Test:
     Package: yaya
     Filter: tests/kernel/test_strategy_hot_provider.py::test_llm_openai_rebuilds_client_on_config_updated
   Level: unit
-  Given an OpenAIProvider loaded with a stubbed AsyncOpenAI and an initial base_url
-  When plugin.llm_openai.base_url is set to a new value and config.updated is delivered
-  Then the plugin rebuilds its client with the new base_url and non-matching keys do not rebuild
+  Given an OpenAIProvider loaded with a stubbed AsyncOpenAI and one seeded providers.<id> instance
+  When providers.<id>.base_url is set to a new value and config.updated is delivered
+  Then the plugin rebuilds only that instance's client with the new base_url and non-matching keys do not rebuild
 
 ## Out of Scope
 

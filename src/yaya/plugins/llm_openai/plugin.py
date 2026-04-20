@@ -1,15 +1,24 @@
 """OpenAI LLM-provider plugin implementation.
 
-The plugin is env-driven: ``OPENAI_API_KEY`` is required (a missing
-key flips the plugin to an unconfigured state that surfaces
-``llm.call.error`` per request rather than crashing the kernel) and
-``OPENAI_BASE_URL`` is optional (passed straight through to the SDK
-for self-hosted / proxy deployments).
+The plugin is **instance-scoped**: after #123 (D4b) it maintains one
+:class:`openai.AsyncOpenAI` client per configured ``providers.<id>.*``
+row whose ``plugin`` meta equals ``llm-openai``. Dispatch happens by
+matching ``ev.payload["provider"]`` (an *instance id*, not the plugin
+name) against the plugin's owned-client dict. One plugin process
+therefore backs many operator-configured instances — e.g. "OpenAI
+prod", "Azure OpenAI", "local-LM-Studio" — each with its own
+``api_key``, ``base_url``, and ``model`` fields.
 
 Non-streaming chat completions only at 0.1; streaming is tracked in
 the adapter-plugin spec. Every response event echoes ``request_id``
 so the agent loop's ``_RequestTracker`` correlates concurrent calls
 (lesson #15 in ``docs/wiki/lessons-learned.md``).
+
+Hot-reload is per-instance: a ``config.updated`` event whose key sits
+under ``providers.<id>.`` rebuilds *only* that instance's client.
+Adding a new instance (``providers.<id>.plugin = llm-openai``)
+materialises a new client; removing / re-pointing drops the old one.
+Zero plugin restart in any of these paths.
 
 Per-line ``# pyright: ignore[...]`` pragmas on the SDK-accessor lines
 narrow the suppression to exactly where the OpenAI SDK surface widens
@@ -29,9 +38,12 @@ from yaya.kernel.plugin import Category, KernelContext
 if TYPE_CHECKING:  # pragma: no cover - type-only import.
     from openai import AsyncOpenAI
 
+    from yaya.kernel.providers import InstanceRow
+
 _NAME = "llm-openai"
 _VERSION = "0.1.0"
-_PROVIDER_ID = "openai"
+_PROVIDERS_PREFIX = "providers."
+_DEFAULT_MODEL = "gpt-4o-mini"
 
 
 class OpenAIProvider:
@@ -49,62 +61,77 @@ class OpenAIProvider:
     requires: ClassVar[list[str]] = []
 
     def __init__(self) -> None:
-        self._client: AsyncOpenAI | None = None
-        self._configured: bool = False
+        # Instance-id → live ``AsyncOpenAI`` client. Populated in
+        # :meth:`on_load` from every ``providers.<id>.*`` row whose
+        # ``plugin`` meta equals this plugin's name, and mutated
+        # incrementally by :meth:`_maybe_hot_reload` as operators
+        # edit config.
+        self._clients: dict[str, AsyncOpenAI] = {}
 
     def subscriptions(self) -> list[str]:
         """Subscribe to llm requests and live-config updates.
 
         ``config.updated`` drives the hot-reload path: when a
-        ``plugin.llm_openai.*`` key changes (api_key, base_url) the
-        plugin rebuilds its :class:`AsyncOpenAI` client without a
+        ``providers.<id>.*`` key changes the plugin rebuilds the
+        affected instance's :class:`AsyncOpenAI` client without a
         kernel restart. Non-matching prefixes are filtered in
         :meth:`on_event` so the bus's exact-kind routing stays cheap.
         """
         return ["llm.call.request", "config.updated"]
 
     async def on_load(self, ctx: KernelContext) -> None:
-        """Build an ``AsyncOpenAI`` client from live config + env.
+        """Build one :class:`AsyncOpenAI` client per owned instance.
 
-        A missing ``OPENAI_API_KEY`` is NOT a hard failure — the
-        kernel keeps loading so users with other providers installed
-        still get a working bus. Every incoming ``llm.call.request``
-        for ``provider == "openai"`` then emits ``llm.call.error``.
+        Reads every ``providers.<id>.*`` row whose ``plugin`` meta
+        equals :data:`_NAME` via :attr:`ctx.providers` and seeds
+        :attr:`_clients`. Instances with no ``api_key`` (and no
+        ``OPENAI_API_KEY`` env fallback) are skipped with a WARNING
+        rather than hard-failing, so a partially-configured install
+        still boots and surfaces "no subscriber" on requests naming
+        them.
 
-        Live config (``ctx.config["api_key"]`` / ``["base_url"]``)
-        wins over the ``OPENAI_API_KEY`` / ``OPENAI_BASE_URL`` env
-        vars. The env fallback keeps zero-config `yaya serve` working
-        for developers before they wire a ConfigStore value.
+        If ``ctx.providers`` is ``None`` (kernel booted without a
+        config store — tests, transient stacks) the plugin loads in
+        an empty state; tests that manually set ``self._clients``
+        then run through the dispatch path unchanged.
+
+        One-shot legacy-config warning: if a ``plugin.llm_openai.*``
+        key is still present AND no owned instance exists yet, log
+        a hint pointing operators at the new namespace. Does NOT
+        auto-lift — that is D4a's job (registry bootstrap) and
+        re-doing it here would mask bootstrap regressions.
         """
-        await self._rebuild_client(ctx)
+        providers = ctx.providers
+        self._clients = {}
+        if providers is None:
+            return
+        for inst in providers.instances_for_plugin(_NAME):
+            client = self._build_client(inst, ctx)
+            if client is not None:
+                self._clients[inst.id] = client
+        if not self._clients:
+            self._warn_legacy_keys(ctx)
 
     async def on_event(self, ev: Event, ctx: KernelContext) -> None:
-        """Route ``llm.call.request`` for ``provider == "openai"``.
+        """Route ``llm.call.request`` to the matching instance client.
 
-        ``config.updated`` triggers a client rebuild when the touched
-        key lives under this plugin's namespace; other prefixes are
-        ignored. Non-matching providers on ``llm.call.request`` are
-        ignored so sibling LLM plugins can coexist under the same
-        bus subscription.
+        ``ev.payload["provider"]`` is an *instance id* (D4b); the
+        plugin answers only when that id names one of its owned
+        clients. ``config.updated`` triggers per-instance rebuilds.
+        Non-matching providers on ``llm.call.request`` are ignored so
+        sibling LLM plugins coexist under the same bus subscription.
         """
         if ev.kind == "config.updated":
             await self._maybe_hot_reload(ev, ctx)
             return
         if ev.kind != "llm.call.request":
             return
-        if ev.payload.get("provider") != _PROVIDER_ID:
-            return
-
-        if not self._configured or self._client is None:
-            await ctx.emit(
-                "llm.call.error",
-                {"error": "not_configured", "request_id": ev.id},
-                session_id=ev.session_id,
-            )
+        provider_id = ev.payload.get("provider")
+        if not isinstance(provider_id, str) or provider_id not in self._clients:
             return
 
         try:
-            await self._dispatch(ev, ctx)
+            await self._dispatch(ev, ctx, provider_id)
         except asyncio.CancelledError:
             # Propagate cancellation — lesson #3.
             raise
@@ -112,86 +139,144 @@ class OpenAIProvider:
             await self._emit_error(ctx, ev, exc)
 
     async def on_unload(self, ctx: KernelContext) -> None:
-        """Best-effort ``AsyncOpenAI.close()``; never re-raise cleanup errors."""
-        client, self._client = self._client, None
-        self._configured = False
-        if client is None:
-            return
-        try:
-            await client.close()
-        except Exception as exc:
-            ctx.logger.warning("llm-openai: client close failed: %s", exc)
+        """Drop every owned client; never re-raise cleanup errors.
+
+        Mirrors the rebuild path's leak policy: ``AsyncOpenAI``
+        reclaims its ``httpx`` pool on GC, so we do *not* await
+        ``close()`` (which would tear pools out from under any
+        in-flight ``_dispatch``). See :meth:`_rebuild_instance` for
+        the matching rationale.
+        """
+        self._clients.clear()
+        del ctx  # unused — kept for Plugin protocol conformance.
 
     # -- internals ------------------------------------------------------------
 
-    async def _rebuild_client(self, ctx: KernelContext) -> None:
-        """(Re)build the ``AsyncOpenAI`` client from live config + env.
+    @staticmethod
+    def _build_client(inst: InstanceRow, ctx: KernelContext) -> AsyncOpenAI | None:
+        """Construct one :class:`AsyncOpenAI` client from an instance row.
 
-        Closes a previous client (if any) before opening a new one so
-        a hot-reload swap does not leak a connection pool. Live
-        ``ConfigStore`` values win over the legacy env vars; the env
-        fallback keeps zero-config boots working.
+        Instance ``config["api_key"]`` wins over the ``OPENAI_API_KEY``
+        env var; missing both is not a hard failure — the instance is
+        simply absent from :attr:`_clients` and requests naming it
+        fall through to the bus's "no subscriber" path (silent). The
+        operator sees the WARNING in the plugin log.
         """
-        cfg = ctx.config
-        cfg_api_key = cfg.get("api_key") if cfg else None
-        cfg_base_url = cfg.get("base_url") if cfg else None
-
-        api_key = cfg_api_key if isinstance(cfg_api_key, str) and cfg_api_key else os.environ.get("OPENAI_API_KEY")
-        base_url_val = (
-            cfg_base_url if isinstance(cfg_base_url, str) and cfg_base_url else os.environ.get("OPENAI_BASE_URL")
-        )
-
-        # Swap the client without closing the old pool: a previous
-        # client may still be servicing an in-flight ``_dispatch`` call
-        # when a ``config.updated`` event preempts it via ``await``.
-        # Closing the pool here would surface a spurious
-        # ``llm.call.error`` on that in-flight turn (PR #105 follow-up
-        # #106, F1). ``AsyncOpenAI`` reclaims its ``httpx`` pool on GC
-        # and the leak is bounded by rotations-per-process.
-        self._client = None
-        self._configured = False
-
+        api_key_raw = inst.config.get("api_key")
+        base_url_raw = inst.config.get("base_url")
+        api_key = api_key_raw if isinstance(api_key_raw, str) and api_key_raw else os.environ.get("OPENAI_API_KEY")
+        base_url = base_url_raw if isinstance(base_url_raw, str) and base_url_raw else os.environ.get("OPENAI_BASE_URL")
         if not api_key:
-            ctx.logger.warning("llm-openai: OPENAI_API_KEY not set; calls will error")
-            return
-        # Import lazily so a missing openai install surfaces here, not at
-        # kernel boot for users who do not use this plugin.
+            ctx.logger.warning(
+                "llm-openai: instance %r has no api_key (and OPENAI_API_KEY unset); skipping",
+                inst.id,
+            )
+            return None
+        # Import lazily so a missing openai install surfaces here, not
+        # at kernel boot for users who do not use this plugin.
         from openai import AsyncOpenAI
 
         kwargs: dict[str, Any] = {"api_key": api_key}
-        if base_url_val:
-            kwargs["base_url"] = base_url_val
-        self._client = AsyncOpenAI(**kwargs)
-        self._configured = True
-        ctx.logger.debug("llm-openai client built (base_url=%s)", base_url_val or "<default>")
+        if base_url:
+            kwargs["base_url"] = base_url
+        ctx.logger.debug(
+            "llm-openai: built client for instance %r (base_url=%s)",
+            inst.id,
+            base_url or "<default>",
+        )
+        return AsyncOpenAI(**kwargs)
+
+    @staticmethod
+    def _warn_legacy_keys(ctx: KernelContext) -> None:
+        """Hint when config still uses ``plugin.llm_openai.*`` with no instance.
+
+        The D4a registry bootstrap already lifts those rows into
+        ``providers.llm-openai.*`` on first boot; a non-empty
+        ``plugin.llm_openai.*`` subtree *without* a matching provider
+        instance means either the bootstrap did not run (pre-D4a
+        database) or an operator is still setting keys via the legacy
+        namespace. Log once at WARNING so it is visible without
+        crashing the kernel.
+        """
+        store = ctx.config_store
+        if store is None:
+            return
+        cache = store._cache  # pyright: ignore[reportPrivateUsage]
+        legacy_prefix = "plugin.llm_openai."
+        if any(k.startswith(legacy_prefix) for k in cache):
+            ctx.logger.warning(
+                "llm-openai: legacy plugin.llm_openai.* keys present but no providers.<id>.plugin=llm-openai "
+                "instance is configured; use `yaya config set providers.llm-openai.api_key ...` "
+                "(D4c CRUD lands next)"
+            )
 
     async def _maybe_hot_reload(self, ev: Event, ctx: KernelContext) -> None:
-        """Rebuild the client when a ``plugin.llm_openai.*`` key changed.
+        """React to a ``config.updated`` event scoped to ``providers.<id>.*``.
 
-        The scoped :class:`~yaya.kernel.config_store.ConfigView` handed
-        to this plugin already reflects the new value by the time this
-        handler runs (the store updates its cache before emitting);
-        this method just forces a client re-spin for keys that affect
-        connection identity (``api_key``, ``base_url``).
+        The kernel's :class:`~yaya.kernel.config_store.ConfigStore`
+        already updated its cache before publishing, so the
+        :attr:`ctx.providers` view re-reads the fresh value. This
+        method only decides *which* instance to rebuild — the
+        per-client dict is the authoritative routing key, so changes
+        to ``plugin`` meta (adding / removing this plugin's ownership)
+        must insert or drop entries accordingly.
         """
+        providers = ctx.providers
+        if providers is None:
+            return
         key_raw = ev.payload.get("key")
-        if not isinstance(key_raw, str):
+        if not isinstance(key_raw, str) or not key_raw.startswith(_PROVIDERS_PREFIX):
             return
-        # The registry scopes each plugin's config view to
-        # ``plugin.llm_openai.`` — hot-reload when the touched key
-        # lives inside that namespace.
-        if not key_raw.startswith("plugin.llm_openai."):
+        rest = key_raw[len(_PROVIDERS_PREFIX) :]
+        if "." not in rest:
             return
-        suffix = key_raw[len("plugin.llm_openai.") :]
-        if suffix not in {"api_key", "base_url"}:
+        instance_id, _ = rest.split(".", 1)
+        if not instance_id:
             return
-        await self._rebuild_client(ctx)
+        inst = providers.get_instance(instance_id)
+        if inst is None:
+            # Row removed entirely — drop any client we may have held.
+            self._clients.pop(instance_id, None)
+            return
+        if inst.plugin != _NAME:
+            # Instance either never belonged to us, or was just
+            # re-pointed at a different plugin. Drop the client so
+            # dispatch no longer answers for this id.
+            self._clients.pop(instance_id, None)
+            return
+        # Owned by us → (re)build the client. ``model`` is read live
+        # at dispatch time, so a ``model`` change needs no rebuild;
+        # only fields that affect connection identity do. Rebuilding
+        # unconditionally is the simpler correct path — the stale
+        # client is dropped, not closed, to preserve in-flight calls.
+        self._rebuild_instance(inst, ctx)
 
-    async def _dispatch(self, ev: Event, ctx: KernelContext) -> None:
-        """Invoke chat completions and emit ``llm.call.response``."""
-        assert self._client is not None  # noqa: S101 - guarded by on_event.
+    def _rebuild_instance(self, inst: InstanceRow, ctx: KernelContext) -> None:
+        """Swap the per-instance client without closing the old pool.
+
+        Closing would tear down ``httpx`` out from under any
+        ``_dispatch`` currently awaiting ``chat.completions.create``
+        on the previous client (PR #105 follow-up #106, F1). The old
+        client is released to GC instead; its pool is reclaimed
+        asynchronously, bounded by rotations-per-process.
+        """
+        # Drop the reference first so a failing rebuild does not
+        # leave stale state routing under the instance id.
+        self._clients.pop(inst.id, None)
+        client = self._build_client(inst, ctx)
+        if client is not None:
+            self._clients[inst.id] = client
+
+    async def _dispatch(self, ev: Event, ctx: KernelContext, instance_id: str) -> None:
+        """Invoke chat completions and emit ``llm.call.response``.
+
+        Model selection is a live read against
+        :attr:`ctx.providers` so ``yaya config set providers.<id>.model
+        gpt-4.1`` takes effect on the next turn without a rebuild.
+        """
+        client = self._clients[instance_id]
+        model = self._resolve_model(ctx, instance_id, ev.payload)
         payload = ev.payload
-        model = str(payload.get("model", ""))
         messages = cast("list[dict[str, Any]]", payload.get("messages") or [])
         tools = payload.get("tools")
 
@@ -205,7 +290,7 @@ class OpenAIProvider:
         # The SDK typing union (ChatCompletion | AsyncStream[...]) widens
         # everything past this point to Any — that matches the tests'
         # stub-client pattern and the runtime shape we actually emit.
-        completion: Any = await self._client.chat.completions.create(**create_kwargs)  # pyright: ignore[reportUnknownVariableType]
+        completion: Any = await client.chat.completions.create(**create_kwargs)  # pyright: ignore[reportUnknownVariableType]
 
         choices_raw: Any = completion.choices or []  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
         choices: list[Any] = list(choices_raw) if choices_raw else []  # pyright: ignore[reportUnknownArgumentType]
@@ -237,6 +322,27 @@ class OpenAIProvider:
             session_id=ev.session_id,
         )
 
+    @staticmethod
+    def _resolve_model(ctx: KernelContext, instance_id: str, payload: dict[str, Any]) -> str:
+        """Resolve the model to request against this instance.
+
+        Priority: instance config ``model`` → payload ``model`` →
+        hard-coded :data:`_DEFAULT_MODEL`. The payload read keeps
+        backwards-compat with agent loops that still thread the
+        strategy's ``model`` decision through ``llm.call.request``.
+        """
+        providers = ctx.providers
+        if providers is not None:
+            inst = providers.get_instance(instance_id)
+            if inst is not None:
+                raw = inst.config.get("model")
+                if isinstance(raw, str) and raw:
+                    return raw
+        payload_model = payload.get("model")
+        if isinstance(payload_model, str) and payload_model:
+            return payload_model
+        return _DEFAULT_MODEL
+
     async def _emit_error(
         self,
         ctx: KernelContext,
@@ -244,8 +350,8 @@ class OpenAIProvider:
         exc: BaseException,
     ) -> None:
         """Translate SDK errors into ``llm.call.error`` payloads."""
-        # Import lazily inside the error path so we only depend on the SDK
-        # types when an error actually happens.
+        # Import lazily inside the error path so we only depend on the
+        # SDK types when an error actually happens.
         payload: dict[str, Any] = {"error": str(exc), "request_id": ev.id}
         try:
             from openai import RateLimitError

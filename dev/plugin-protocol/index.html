@@ -888,14 +888,42 @@ the <code>_meta.providers_seeded_at</code> marker. For every currently-loaded
 keep working; a follow-up garbage-collects them once every bundled
 <code>llm-provider</code> reads instance-scoped config. The marker is stamped
 last so a crash mid-bootstrap re-runs cleanly on next boot.</p>
-<p><strong>Plugin iteration pattern</strong> (for the coming D4b migration):</p>
+<p><strong>Dispatch pattern</strong> (the D4b shape used by bundled <code>llm-openai</code> /
+<code>llm-echo</code> after #123). One plugin process owns many instances; the
+<code>provider</code> id inside <code>llm.call.request</code> is an <em>instance id</em>, not a
+plugin name, and the plugin filters its own owned set:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">KernelContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">view</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">providers</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="k">if</span> <span class="n">view</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>        <span class="k">return</span>  <span class="c1"># test/transient context — fall back to ctx.config</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="k">for</span> <span class="n">instance</span> <span class="ow">in</span> <span class="n">view</span><span class="o">.</span><span class="n">instances_for_plugin</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">):</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_instances</span><span class="p">[</span><span class="n">instance</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">_Client</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">instance</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_clients</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_Client</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="k">if</span> <span class="n">view</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>        <span class="k">return</span>  <span class="c1"># test/transient context</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="k">for</span> <span class="n">instance</span> <span class="ow">in</span> <span class="n">view</span><span class="o">.</span><span class="n">instances_for_plugin</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">):</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_clients</span><span class="p">[</span><span class="n">instance</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">_Client</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">instance</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ev</span><span class="p">:</span> <span class="n">Event</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">KernelContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;config.updated&quot;</span><span class="p">:</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_maybe_hot_reload</span><span class="p">(</span><span class="n">ev</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>        <span class="k">return</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">kind</span> <span class="o">!=</span> <span class="s2">&quot;llm.call.request&quot;</span><span class="p">:</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>        <span class="k">return</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    <span class="n">provider_id</span> <span class="o">=</span> <span class="n">ev</span><span class="o">.</span><span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;provider&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>    <span class="k">if</span> <span class="n">provider_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_clients</span><span class="p">:</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>        <span class="k">return</span>  <span class="c1"># sibling plugins own their own ids on this subscription</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>    <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch</span><span class="p">(</span><span class="n">ev</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">provider_id</span><span class="p">)</span>
 </code></pre></div>
+<p><strong>Hot-reload.</strong> On <code>config.updated</code> with a <code>providers.&lt;id&gt;.*</code> key,
+look up the instance via <code>ctx.providers.get_instance(id)</code>:</p>
+<ul>
+<li>absent / <code>plugin</code> meta no longer matches → drop the per-instance state;</li>
+<li>owned → rebuild only that instance's state (do not <code>close()</code> the old
+  client synchronously — let GC reclaim pools so in-flight dispatches
+  finish cleanly).</li>
+</ul>
+<p>Unrelated prefixes (<code>plugin.other.*</code>, kernel keys) are ignored.</p>
+<p><strong>Strategy resolution.</strong> <code>strategy_react</code> resolves the active
+<code>(provider, model)</code> pair via <code>ctx.providers.active_id</code> →
+<code>ctx.providers.get_instance(active_id).config["model"]</code>. Flipping the
+kernel-level <code>provider</code> key hot-switches dispatch on the next decision.</p>
 <h3 id="extension-namespace">Extension namespace<a class="headerlink" href="#extension-namespace" title="Permanent link">&para;</a></h3>
 <p>Plugins may emit and subscribe to events named <code>x.&lt;plugin&gt;.&lt;kind&gt;</code>.
 The kernel routes these through the same bus but <strong>does not interpret

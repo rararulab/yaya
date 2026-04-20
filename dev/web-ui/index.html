@@ -617,6 +617,24 @@ it in <code>IS_MAC</code>.</p>
 <p>A small hint line below the textarea shows the active modifier label.
 The submit button stays for click submission and is disabled while a
 turn is in flight.</p>
+<h3 id="sidebar-collapse-connection-status-issue-114">Sidebar collapse + connection status (issue #114)<a class="headerlink" href="#sidebar-collapse-connection-status-issue-114" title="Permanent link">&para;</a></h3>
+<ul>
+<li>A hamburger button in <code>.yaya-sidebar-top</code> flips <code>&lt;yaya-app&gt;</code>'s
+  <code>sidebarCollapsed</code> state, swapping the grid column between 240px and
+  48px via the <code>.yaya-app.is-collapsed</code> class. The layout transition
+  is <code>200ms ease</code>; <code>@media (prefers-reduced-motion: reduce)</code> disables
+  it. State persists to <code>localStorage["yaya.sidebar.collapsed"]</code>.</li>
+<li>Sidebar-footer <code>.yaya-sidebar-status</code> renders a <code>&lt;span class="yaya-status-dot"&gt;</code>
+  whose color is driven by the <code>data-state</code> attribute:
+  <code>connected</code> → green, <code>connecting</code>/<code>reconnecting</code> → amber,
+  <code>disconnected</code> → red. The initial state is <code>connecting</code> so the
+  handshake never flashes red.</li>
+<li><code>&lt;yaya-chat&gt;</code> publishes transitions via a window-level
+  <code>yaya:connection-status</code> CustomEvent (<code>detail: { status }</code>). The
+  shell subscribes once in <code>connectedCallback</code> so the sidebar stays
+  decoupled from the WS client and tests can drive the dot without
+  standing up a fake WebSocket.</li>
+</ul>
 <h3 id="extending-settings-with-a-new-tab">Extending Settings with a new tab<a class="headerlink" href="#extending-settings-with-a-new-tab" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Add a <code>Tab</code> variant in <code>settings-view.ts</code>

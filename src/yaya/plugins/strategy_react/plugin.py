@@ -5,28 +5,39 @@ snapshot the loop hands it and picks the next step. It carries no
 per-session state of its own — the loop's ``state.messages`` +
 ``state.last_tool_result`` is the authoritative context, so repeated
 turns remain deterministic.
+
+After #123 (D4b) the ``(provider, model)`` pair is resolved per
+decision from :attr:`ctx.providers`: the active instance id comes
+from ``ctx.providers.active_id`` (the ``provider`` kernel-level
+config key), and the model is read live from that instance's
+``config["model"]`` field. Switching ``provider`` to a different
+instance id at runtime takes effect on the next
+``strategy.decide.request`` without a kernel restart. When
+``ctx.providers`` is absent (tests that skip the config store) the
+plugin falls back to an env sniff over ``OPENAI_API_KEY``.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
 
-# ``ctx.config`` is a live :class:`~yaya.kernel.config_store.ConfigView`
-# scoped to this plugin's namespace (``plugin.strategy_react.``), so
-# ``ctx.config["provider"]`` reflects the current ``ConfigStore``
-# value per decision — switching providers at runtime via
-# ``yaya config set plugin.strategy_react.provider anthropic`` takes
-# effect on the next ``strategy.decide.request`` without a restart.
-_DEFAULT_PROVIDER = "openai"
-_FALLBACK_PROVIDER = "echo"
+if TYPE_CHECKING:  # pragma: no cover - type-only import.
+    from yaya.kernel.providers import ProvidersView
+
+# Fallback provider ids used only when ``ctx.providers`` is absent.
+# They mirror the seeded instance ids the D4a bootstrap writes
+# (``providers.llm-openai.plugin = llm-openai`` etc.) so the fallback
+# name matches what a real kernel would resolve to.
+_FALLBACK_OPENAI_PROVIDER = "llm-openai"
+_FALLBACK_ECHO_PROVIDER = "llm-echo"
 _DEFAULT_MODEL = "gpt-4o-mini"
 # The bundled echo provider needs no model id — pick a stable
 # placeholder so the ``llm.call.request`` payload type-checks.
-_FALLBACK_MODEL = "echo"
+_FALLBACK_ECHO_MODEL = "echo"
 
 _NAME = "strategy-react"
 _VERSION = "0.1.0"
@@ -54,11 +65,7 @@ class ReActStrategy:
         return ["strategy.decide.request"]
 
     async def on_load(self, ctx: KernelContext) -> None:
-        """Log the effective configuration on boot.
-
-        Defaults are hard-coded here (see TODO above); swap to
-        ``ctx.config`` once registry P3 lands.
-        """
+        """Log the effective configuration on boot."""
         provider, model = self._provider_and_model(ctx)
         ctx.logger.debug(
             "strategy-react loaded (provider=%s model=%s)",
@@ -99,36 +106,52 @@ class ReActStrategy:
     def _provider_and_model(ctx: KernelContext) -> tuple[str, str]:
         """Return the effective ``(provider, model)`` pair.
 
-        Reads ``ctx.config`` first (for when registry P3 plumbs config),
-        then falls back to an env sniff so a fresh ``yaya serve`` with
-        no API key still round-trips through the bundled ``llm_echo``
-        dev provider. Resolution order:
+        Resolution order:
 
-        1. ``ctx.config["provider"]`` / ``["model"]`` if non-empty strings.
-        2. ``OPENAI_API_KEY`` set → ``("openai", "gpt-4o-mini")``.
-        3. Otherwise → ``("echo", "echo")`` so the bundled echo
-           provider answers the request.
-
-        TODO(#23): replace the env sniff with ``ctx.config`` once the
-        config-loading PR lands. Strategy plugins must not own
-        provider-selection policy long-term.
+        1. ``ctx.providers.active_id`` (the kernel-level ``provider``
+           key) → use that instance id and its ``config["model"]``.
+        2. When no active instance but at least one instance is
+           configured → first instance id, its ``config["model"]``.
+        3. No providers view at all (tests without a config store):
+           env sniff — ``OPENAI_API_KEY`` set → ``(llm-openai,
+           gpt-4o-mini)``, else ``(llm-echo, echo)``.
         """
-        cfg = ctx.config
-        provider_raw = cfg.get("provider") if cfg else None
-        model_raw = cfg.get("model") if cfg else None
-        if isinstance(provider_raw, str) and provider_raw:
-            provider = provider_raw
-        elif os.environ.get("OPENAI_API_KEY"):
-            provider = _DEFAULT_PROVIDER
-        else:
-            provider = _FALLBACK_PROVIDER
+        providers = ctx.providers
+        if providers is not None:
+            resolved = ReActStrategy._resolve_from_providers(providers)
+            if resolved is not None:
+                return resolved
+        # Fallback: no config store or no configured instance. Pick a
+        # seeded name matching what D4a bootstrap would stamp.
+        if os.environ.get("OPENAI_API_KEY"):
+            return _FALLBACK_OPENAI_PROVIDER, _DEFAULT_MODEL
+        return _FALLBACK_ECHO_PROVIDER, _FALLBACK_ECHO_MODEL
+
+    @staticmethod
+    def _resolve_from_providers(providers: ProvidersView) -> tuple[str, str] | None:
+        """Resolve ``(provider, model)`` from a live :class:`ProvidersView`.
+
+        Returns ``None`` when the view is empty — callers then fall
+        through to the env-driven fallback so a test stack without a
+        config store still lands on a deterministic pair.
+        """
+        active_id = providers.active_id
+        instance = None
+        if active_id is not None:
+            instance = providers.get_instance(active_id)
+        if instance is None:
+            all_instances = providers.list_instances()
+            if not all_instances:
+                return None
+            instance = all_instances[0]
+        model_raw = instance.config.get("model")
         if isinstance(model_raw, str) and model_raw:
             model = model_raw
-        elif provider == _FALLBACK_PROVIDER:
-            model = _FALLBACK_MODEL
+        elif instance.plugin == _FALLBACK_ECHO_PROVIDER:
+            model = _FALLBACK_ECHO_MODEL
         else:
             model = _DEFAULT_MODEL
-        return provider, model
+        return instance.id, model
 
 
 def _decide(state: dict[str, Any], *, provider: str, model: str) -> dict[str, Any]:

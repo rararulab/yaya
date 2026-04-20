@@ -8,11 +8,11 @@ Feature: OpenAI LLM provider plugin
     Then the stubbed chat completions create method is called with the request model and messages
     And a llm.call.response event is emitted carrying text tool_calls usage and the originating request id
 
-  Scenario: Missing API key degrades to llm.call.error without crashing the kernel
+  Scenario: Missing API key and no configured instance leaves the request silent
     Given an llm-openai plugin loaded with no OPENAI_API_KEY environment variable
     When a llm.call.request for provider openai is published
-    Then a llm.call.error event is emitted with error not_configured
-    And the response echoes the originating request id
+    Then no llm.call.response event is emitted by the llm-openai plugin
+    And no llm.call.error event is emitted by the llm-openai plugin
 
   Scenario: Error path — unrelated provider id leaves the event uncommented by llm-openai
     Given a configured llm-openai plugin with a stubbed AsyncOpenAI client

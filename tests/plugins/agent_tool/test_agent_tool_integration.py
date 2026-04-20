@@ -86,6 +86,10 @@ async def test_agent_tool_bus_reentry_end_to_end(tmp_path: Path) -> None:
     )
     (tmp_path / "echo").mkdir(parents=True, exist_ok=True)
     await echo.on_load(echo_ctx)
+    # No config store here → echo.on_load found zero owned instances.
+    # Seed the active set manually so the plugin answers for the
+    # `llm-echo` fallback id the strategy resolves to.
+    echo._active_instances.add("llm-echo")
 
     # Subscribe the two bundled plugins directly to the bus with
     # closures that carry the ctx the plugin needs at dispatch time.

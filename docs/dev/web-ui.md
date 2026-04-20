@@ -104,7 +104,6 @@ the chat view in the main area. Settings is a float **modal overlay**
 │  ▸ ⚙ gear  │                                   │
 │  ▸ version │  #/settings  → modal opens over   │
 │            │                chat with tabs:    │
-│            │    · LLM Providers                │
 │            │    · Plugins                      │
 │            │    · Advanced (raw config)        │
 └────────────┴───────────────────────────────────┘
@@ -167,62 +166,61 @@ turn is in flight.
   decoupled from the WS client and tests can drive the dot without
   standing up a fake WebSocket.
 
-### LLM Providers tab (instance-centric, issue #129)
+### Plugins tab (unified surface, issue #141)
 
-Post-D4d the LLM Providers tab renders one row per
-`providers.<id>.*` instance exposed by the D4c HTTP CRUD surface,
-not one row per backing plugin. The same backing plugin can power
-many instances (e.g. one `llm-openai` plugin + three openai rows
-with different models or keys).
+There is one tab per plugin. Before #141 an extra "LLM Providers" tab
+existed to configure instance-scoped llm-provider plugins; users got
+confused between the two surfaces and the Plugins tab's writes were a
+silent no-op for llm-provider plugins (wrong namespace). The tab is
+gone.
+
+llm-provider rows route config through the **default instance** —
+`providers.<plugin-name>.*`, the same namespace the plugin reads via
+`ctx.providers.instances_for_plugin(...)`. Other categories keep the
+plugin-scoped `plugin.<name>.*` path. The `/api/llm-providers` CRUD
+surface is unchanged; power users curate additional instances with
+`yaya config set providers.<custom-id>.plugin <plugin-name>`.
 
 ```
-┌─ LLM Providers ───────────────────────────────────────────┐
-│ [+ Add instance]                                          │
+┌─ Plugins ─────────────────────────────────────────────────┐
+│ [+ Install]                                               │
 │                                                           │
-│ ( ) OpenAI GPT-4          llm-openai · llm-openai    ●    │
-│     [Test connection] [configure]                         │
+│ agent-tool     v0.1.0 · tool        [loaded] ☑ enabled    │
+│   [configure] [Remove]                                    │
 │                                                           │
-│ (•) OpenAI GPT-3.5        llm-openai · llm-openai-2  ●    │
-│     [Test connection] [collapse]                          │
-│     ┌─ expanded row body ─────────────────────────────┐   │
-│     │ Label   [ OpenAI GPT-3.5                    ]  │   │
-│     │ API key [ ••••••••••••••••          ] [show]   │   │
-│     │ Model   [ gpt-3.5-turbo                    ]   │   │
-│     │                                                │   │
-│     │                  [Save] [Reset] [Delete]       │   │
-│     └────────────────────────────────────────────────┘   │
+│ llm-openai     v0.1.0 · llm-provider [loaded] ☑ enabled ● │
+│   [Test connection] [collapse] [Remove]                   │
+│   ┌─ expanded row body ────────────────────────────────┐  │
+│   │ Api Key [ ••••••••••••••••            ] [show]     │  │
+│   │ Base Url [                                    ]    │  │
+│   │ Model    [ gpt-4o                             ]    │  │
+│   └────────────────────────────────────────────────────┘  │
 │                                                           │
-│ ( ) Echo                  llm-echo · llm-echo        ●    │
-│     [Test connection] [configure]                         │
+│ memory-sqlite  v0.1.0 · memory      [loaded] ☑ enabled    │
+│   [configure] [Remove]                                    │
 └───────────────────────────────────────────────────────────┘
 ```
 
-- **Active radio** fires `PATCH /api/llm-providers/active` with
-  `{name: <id>}` (body key still `name` for PR #110 compat; the
-  value is an instance id post-D4c).
-- **Status dot** maps the most recent Test-connection outcome:
-  green (connected), red (failed, error tooltip), grey (untested).
-- **Save** sends a PATCH carrying only the fields that diverge
-  from the server row — partial-write blast-radius minimiser.
-- **Delete** opens an in-modal confirmation; 409 responses from
-  the active-instance / last-of-plugin safety checks surface as
-  an inline row error (`.yaya-row-error`), not a banner.
-- **Test connection** calls `POST /api/llm-providers/<id>/test`
-  with a spinner on the button and caches the result in a local
-  `testResults` map so the dot stays accurate across re-renders.
-- **Add instance** opens a modal: backing plugin dropdown
-  (filtered to `category === "llm-provider"` from `/api/plugins`),
-  auto-suggested instance id (`<plugin>` → `<plugin>-<N>` when
-  taken), client-side validation via `isValidInstanceId`, and the
-  backing plugin's JSON Schema rendered inline so the operator
-  can seed initial config (including API keys) in one submit.
-  400/409 responses from the server render inline inside the
-  modal.
+- **Config writes auto-save** field-by-field via `PATCH /api/config/<key>`;
+  the schema-form has no Save button because every change is persisted
+  immediately. For llm-provider rows the key is
+  `providers.<plugin-name>.<field>`; for other plugins it is
+  `plugin.<name>.<field>`.
+- **Status dot** on llm-provider rows maps the most recent Test-
+  connection outcome: green (connected), red (failed, error tooltip),
+  grey (untested).
+- **Test connection** calls `POST /api/llm-providers/<plugin-name>/test`
+  and flips the dot; a saved config invalidates any prior result so
+  operators re-test against the new values.
+- **Toggle** patches `{enabled}` via `PATCH /api/plugins/<name>`;
+  disabled plugins stop receiving events on the next reload.
+- **Remove** calls `DELETE /api/plugins/<name>` with a native confirm
+  prompt.
 
 ### Extending Settings with a new tab
 
 1. Add a `Tab` variant in `settings-view.ts`
-   (e.g. `type Tab = "llm" | "plugins" | "advanced" | "mytab"`).
+   (e.g. `type Tab = "plugins" | "advanced" | "mytab"`).
 2. Add a `loaded.mytab = false` field and a `loadTab()` branch that
    fetches from the relevant endpoint, tolerating `404`/`501`.
 3. Add a render method (`renderMytab()`) that re-uses

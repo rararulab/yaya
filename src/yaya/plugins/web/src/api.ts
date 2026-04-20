@@ -152,50 +152,6 @@ export function listLlmProviders(show = false): Promise<LlmProviderRow[]> {
 	return request<LlmProviderRow[]>("GET", `/api/llm-providers${suffix}`);
 }
 
-export interface CreateLlmProviderBody {
-	plugin: string;
-	id?: string;
-	label?: string;
-	config?: Record<string, unknown>;
-}
-
-export function createLlmProvider(body: CreateLlmProviderBody): Promise<LlmProviderRow> {
-	return request<LlmProviderRow>("POST", "/api/llm-providers", body);
-}
-
-export interface UpdateLlmProviderBody {
-	label?: string;
-	config?: Record<string, unknown>;
-}
-
-export function updateLlmProvider(id: string, body: UpdateLlmProviderBody): Promise<LlmProviderRow> {
-	return request<LlmProviderRow>("PATCH", `/api/llm-providers/${encodeURIComponent(id)}`, body);
-}
-
-export function deleteLlmProvider(id: string): Promise<void> {
-	return request<void>("DELETE", `/api/llm-providers/${encodeURIComponent(id)}`);
-}
-
-export function setActiveLlmProvider(id: string): Promise<LlmProviderRow[]> {
-	// The server body field is still named ``name`` post-D4c for backwards
-	// compatibility, but the value is an instance id.
-	return request<LlmProviderRow[]>("PATCH", "/api/llm-providers/active", { name: id });
-}
-
 export function testLlmProvider(id: string): Promise<TestConnectionResult> {
 	return request<TestConnectionResult>("POST", `/api/llm-providers/${encodeURIComponent(id)}/test`);
-}
-
-/**
- * Shared client-side validator for instance ids.
- *
- * Mirrors ``yaya.kernel.providers.is_valid_instance_id`` — 3-64
- * lowercase alphanumeric / dash characters, no leading/trailing
- * dashes, no dots. Surfacing an inline error before POST saves a
- * server round-trip and keeps the error message under the author's
- * control.
- */
-export function isValidInstanceId(id: string): boolean {
-	if (id.length < 3 || id.length > 64) return false;
-	return /^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(id);
 }

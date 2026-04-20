@@ -143,11 +143,10 @@ describe("YayaChat toast lifecycle (bug #71 P3)", () => {
 });
 
 /**
- * Keyboard + auto-grow behaviour for the multiline textarea (issue #115).
+ * Keyboard + auto-grow behaviour for the multiline textarea.
  *
- * The shell consults `navigator.platform` at module load to decide
- * whether Cmd+Enter or Ctrl+Enter submits. Tests that need the other
- * platform dynamic-import the module after stubbing `navigator`.
+ * Kimi-style: plain Enter submits; Shift+Enter inserts a newline. IME
+ * composition still suppresses submit so CJK input stays safe.
  */
 interface KeyboardInternals extends Internals {
 	inputValue: string;
@@ -164,20 +163,12 @@ function sends(shell: KeyboardInternals): unknown[] {
 	return captured;
 }
 
-describe("YayaChat multiline input (issue #115)", () => {
-	it("submits on the platform submit-modifier + Enter", () => {
-		// The module picks Cmd (macOS) or Ctrl (other) at load time via
-		// `navigator.platform`. We fire the event with BOTH modifiers set
-		// so the test is platform-agnostic: whichever one the code reads,
-		// it succeeds. The negative-path tests below cover the other key.
+describe("YayaChat multiline input", () => {
+	it("submits on plain Enter (kimi-style)", () => {
 		const shell = makeShell() as unknown as KeyboardInternals;
 		const captured = sends(shell);
 		shell.inputValue = "hello";
-		const ev = new KeyboardEvent("keydown", {
-			key: "Enter",
-			metaKey: true,
-			ctrlKey: true,
-		});
+		const ev = new KeyboardEvent("keydown", { key: "Enter" });
 		let prevented = false;
 		Object.defineProperty(ev, "preventDefault", {
 			value: () => {
@@ -190,20 +181,15 @@ describe("YayaChat multiline input (issue #115)", () => {
 		expect((captured[0] as { type: string }).type).toBe("user.message");
 	});
 
-	it("does not submit on Cmd+Enter during IME composition", () => {
+	it("does not submit on Enter during IME composition", () => {
 		// Pressing Enter during IME composition (Chinese pinyin / Japanese
 		// kana / Korean hangul) commits the candidate — the browser fires
 		// `keydown` with `isComposing: true` (or `keyCode: 229` on older
-		// engines). We must not treat that as a submit, even if modifiers
-		// are present.
+		// engines). Never treat that as a submit.
 		const shell = makeShell() as unknown as KeyboardInternals;
 		const captured = sends(shell);
 		shell.inputValue = "hello";
-		const ev = new KeyboardEvent("keydown", {
-			key: "Enter",
-			metaKey: true,
-			ctrlKey: true,
-		});
+		const ev = new KeyboardEvent("keydown", { key: "Enter" });
 		Object.defineProperty(ev, "isComposing", { value: true });
 		let prevented = false;
 		Object.defineProperty(ev, "preventDefault", {
@@ -216,11 +202,11 @@ describe("YayaChat multiline input (issue #115)", () => {
 		expect(captured).toHaveLength(0);
 	});
 
-	it("plain Enter does not submit — native newline falls through", () => {
+	it("Shift+Enter inserts a newline instead of submitting", () => {
 		const shell = makeShell() as unknown as KeyboardInternals;
 		const captured = sends(shell);
 		shell.inputValue = "hello";
-		const ev = new KeyboardEvent("keydown", { key: "Enter" });
+		const ev = new KeyboardEvent("keydown", { key: "Enter", shiftKey: true });
 		let prevented = false;
 		Object.defineProperty(ev, "preventDefault", {
 			value: () => {
@@ -228,29 +214,16 @@ describe("YayaChat multiline input (issue #115)", () => {
 			},
 		});
 		shell.onKeyDown(ev);
-		// No preventDefault, no send — the native textarea handles the newline.
+		// No preventDefault, no send — textarea handles the newline natively.
 		expect(prevented).toBe(false);
 		expect(captured).toHaveLength(0);
 	});
 
-	it("Shift+Enter does not submit", () => {
-		const shell = makeShell() as unknown as KeyboardInternals;
-		const captured = sends(shell);
-		shell.inputValue = "hello";
-		shell.onKeyDown(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true }));
-		expect(captured).toHaveLength(0);
-	});
-
-	it("empty/whitespace input + submit modifier does not fire a send", () => {
+	it("empty/whitespace input + Enter does not fire a send", () => {
 		const shell = makeShell() as unknown as KeyboardInternals;
 		const captured = sends(shell);
 		shell.inputValue = "   \n  ";
-		const ev = new KeyboardEvent("keydown", {
-			key: "Enter",
-			metaKey: true,
-			ctrlKey: true,
-		});
-		shell.onKeyDown(ev);
+		shell.onKeyDown(new KeyboardEvent("keydown", { key: "Enter" }));
 		expect(captured).toHaveLength(0);
 	});
 

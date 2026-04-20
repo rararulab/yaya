@@ -77,29 +77,6 @@ const THEME_KEY = "yaya.theme";
 /** Maximum visible textarea height in pixels before internal scrolling kicks in. */
 const INPUT_MAX_PX = 240;
 
-/**
- * Detects macOS to pick the correct submit modifier for the chat input.
- *
- * On macOS the submit shortcut is Cmd+Enter (metaKey); on every other
- * platform it is Ctrl+Enter (ctrlKey). We detect once at module load
- * via `navigator.platform` with a `userAgent` fallback so the hint
- * label and the keydown check stay in sync.
- */
-function detectIsMac(): boolean {
-	if (typeof navigator === "undefined") {
-		return false;
-	}
-	const platform = (navigator.platform ?? "").toLowerCase();
-	if (platform.includes("mac")) {
-		return true;
-	}
-	const ua = (navigator.userAgent ?? "").toLowerCase();
-	return ua.includes("mac");
-}
-
-const IS_MAC = detectIsMac();
-const SUBMIT_MODIFIER_LABEL = IS_MAC ? "Cmd" : "Ctrl";
-
 function loadTheme(): "light" | "dark" {
 	const stored = localStorage.getItem(THEME_KEY);
 	if (stored === "light" || stored === "dark") {
@@ -365,19 +342,17 @@ export class YayaChat extends LitElement {
 		if (e.key !== "Enter") {
 			return;
 		}
-		// IME composition: Enter (with or without modifier) commits the
-		// candidate — never treat it as a submit intent. Critical for
-		// Chinese/Japanese/Korean input.
+		// IME composition: Enter commits the candidate — never submit.
+		// Critical for Chinese/Japanese/Korean input.
 		if (e.isComposing || e.keyCode === 229) {
 			return;
 		}
-		const isSubmit = IS_MAC ? e.metaKey : e.ctrlKey;
-		if (isSubmit) {
-			e.preventDefault();
-			this.sendMessage();
+		// Kimi-style: plain Enter submits, Shift+Enter inserts a newline.
+		if (e.shiftKey) {
+			return;
 		}
-		// Plain Enter and Shift+Enter fall through to the textarea's
-		// native newline behaviour — no JS intervention.
+		e.preventDefault();
+		this.sendMessage();
 	}
 
 	private interrupt(): void {
@@ -473,33 +448,35 @@ export class YayaChat extends LitElement {
 				<section class="yaya-composer">
 					<textarea
 						class="yaya-input"
-						rows="1"
-						placeholder="Type a message… (${SUBMIT_MODIFIER_LABEL}+Enter to send, Enter for newline)"
+						rows="3"
+						placeholder="Message yaya…"
 						.value=${this.inputValue}
 						?disabled=${this.inFlight}
 						@input=${(e: Event) => this.onInputEvent(e)}
 						@keydown=${(e: KeyboardEvent) => this.onKeyDown(e)}
 					></textarea>
-					<div class="yaya-composer-row">
-						<div class="yaya-input-hint">
-							<kbd>${SUBMIT_MODIFIER_LABEL}+Enter</kbd> to send ·
-							<kbd>Enter</kbd> for newline
-						</div>
-						${this.inFlight
-							? html`<button
-									class="yaya-btn-danger"
-									@click=${() => this.interrupt()}
-								>
-									Interrupt
-								</button>`
-							: html`<button
-									class="yaya-btn"
-									?disabled=${this.inputValue.trim().length === 0}
-									@click=${() => this.sendMessage()}
-								>
-									Send
-								</button>`}
-					</div>
+					${this.inFlight
+						? html`<button
+								class="yaya-send-btn is-interrupt"
+								aria-label="interrupt"
+								title="Interrupt"
+								@click=${() => this.interrupt()}
+							>
+								<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+									<rect x="4" y="4" width="8" height="8" rx="1" />
+								</svg>
+							</button>`
+						: html`<button
+								class="yaya-send-btn"
+								aria-label="send message"
+								title="Send"
+								?disabled=${this.inputValue.trim().length === 0}
+								@click=${() => this.sendMessage()}
+							>
+								<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<path d="M8 13 V3 M3 8 L8 3 L13 8" />
+								</svg>
+							</button>`}
 				</section>
 
 				<div class="fixed right-4 top-4 flex max-w-xs flex-col gap-2">

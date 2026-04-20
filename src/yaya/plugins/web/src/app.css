@@ -170,21 +170,16 @@ yaya-app {
 	min-height: 32px;
 }
 
-/* Collapsed sidebar-top: stack the hamburger toggle above the logo so
- * both fit inside the 40px (48px col - 2*4px padding) of usable width.
- * Horizontal layout overflows because toggle (32px) + logo mark (28px)
- * + gap exceeds that width. */
+/* Collapsed sidebar-top: only the hamburger toggle remains — the logo
+ * button is hidden entirely so the 48px rail has no branding clutter.
+ * Centering the lone toggle gives a clean icon rail. */
 .yaya-app.is-collapsed .yaya-sidebar-top {
-	flex-direction: column;
-	align-items: center;
 	justify-content: center;
-	gap: 4px;
 	padding: 0;
 }
 
 .yaya-app.is-collapsed .yaya-logo {
-	padding: 0;
-	gap: 0;
+	display: none;
 }
 
 .yaya-app.is-collapsed .yaya-sidebar-footer {
@@ -924,18 +919,18 @@ yaya-settings-modal {
 
 .yaya-input {
 	width: 100%;
-	min-height: 40px;
-	max-height: 240px;
+	min-height: 96px;
+	max-height: 320px;
 	resize: none;
 	overflow-y: auto;
-	padding: 10px 14px;
+	padding: 14px 52px 14px 16px;
 	border: 1px solid var(--yaya-border);
 	border-radius: var(--yaya-radius-lg);
 	background: var(--yaya-main-bg);
 	color: var(--yaya-text-primary);
 	font: inherit;
 	font-size: 14px;
-	line-height: 1.4;
+	line-height: 1.5;
 	box-sizing: border-box;
 	transition: border-color 120ms ease, box-shadow 120ms ease;
 }
@@ -952,26 +947,53 @@ yaya-settings-modal {
 }
 
 .yaya-composer {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
+	position: relative;
 }
 
-.yaya-composer-row {
-	display: flex;
+/* Kimi-style send button: 32px circle pinned to the textarea's inner
+ * bottom-right. The textarea leaves `padding-right: 52px` so text never
+ * slides under the button. */
+.yaya-send-btn {
+	position: absolute;
+	right: 10px;
+	bottom: 10px;
+	width: 32px;
+	height: 32px;
+	display: inline-flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
-	flex-wrap: wrap;
+	justify-content: center;
+	padding: 0;
+	border: 0;
+	border-radius: var(--yaya-radius-pill);
+	background: var(--yaya-accent);
+	color: #ffffff;
+	cursor: pointer;
+	transition: background 120ms ease, box-shadow 120ms ease;
 }
 
-.yaya-input-hint {
-	font-size: 11px;
-	color: var(--yaya-text-secondary);
-	display: flex;
-	gap: 6px;
-	align-items: center;
-	flex-wrap: wrap;
+.yaya-send-btn svg {
+	width: 16px;
+	height: 16px;
+}
+
+.yaya-send-btn:hover {
+	background: var(--yaya-accent-hover);
+	box-shadow: var(--yaya-shadow-md);
+}
+
+.yaya-send-btn[disabled] {
+	opacity: 0.35;
+	cursor: not-allowed;
+	box-shadow: none;
+}
+
+.yaya-send-btn.is-interrupt {
+	background: var(--yaya-status-danger);
+}
+
+.yaya-send-btn.is-interrupt:hover {
+	background: var(--yaya-status-danger);
+	opacity: 0.9;
 }
 
 .yaya-input-hint kbd {

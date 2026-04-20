@@ -904,18 +904,13 @@ export class YayaSettings extends LitElement {
 		return html`<li class="yaya-adv-row">
 			<span class="yaya-adv-key" title=${key}>${key}</span>
 			<span class="yaya-adv-control">
-				${renderControl(
-					key,
-					{},
-					value,
-					{
-						schema: null,
-						values: { [key]: value },
-						revealSecrets: this.revealed,
-						onToggleReveal: (k) => void this.onAdvancedRevealToggle(k),
-						onChange: (k, v) => void this.onConfigPatch(k, v),
-					},
-				)}
+				${renderControl(key, {}, value, {
+					schema: null,
+					values: {},
+					revealSecrets: this.revealed,
+					onToggleReveal: (k) => void this.onAdvancedRevealToggle(k),
+					onChange: (k, v) => void this.onConfigPatch(k, v),
+				})}
 			</span>
 			<button
 				class="yaya-btn-ghost yaya-adv-delete"

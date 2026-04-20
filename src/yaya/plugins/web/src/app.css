@@ -36,7 +36,7 @@
 	--yaya-accent-hover: #167ff7;
 	--yaya-text-primary: rgba(0, 0, 0, 0.9);
 	--yaya-text-secondary: rgba(0, 0, 0, 0.6);
-	--yaya-border: rgba(0, 0, 0, 0.08);
+	--yaya-border: rgba(0, 0, 0, 0.14);
 	--yaya-hover: #f5f5f5;
 	--yaya-active: rgba(23, 131, 255, 0.1);
 
@@ -55,6 +55,15 @@
 	--yaya-status-success: #16c456;
 	--yaya-status-warn: #ffd230;
 	--yaya-status-danger: #ff3849;
+	--yaya-status-idle: #9ca3af;
+
+	--yaya-surface-success: rgba(22, 196, 86, 0.12);
+	--yaya-surface-success-ink: #065f46;
+	--yaya-surface-danger: rgba(255, 56, 73, 0.1);
+	--yaya-surface-danger-ink: #991b1b;
+
+	--yaya-focus-ring: 0 0 0 3px rgba(23, 131, 255, 0.18);
+	--yaya-modal-backdrop: rgba(0, 0, 0, 0.45);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -68,6 +77,17 @@
 		--yaya-border: #262626;
 		--yaya-hover: #262626;
 		--yaya-active: rgba(96, 165, 250, 0.15);
+
+		--yaya-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4),
+			0 5px 16px -4px rgba(0, 0, 0, 0.6);
+		--yaya-shadow-lg: 0 4px 16.4px rgba(0, 0, 0, 0.5);
+
+		--yaya-surface-success: rgba(22, 196, 86, 0.18);
+		--yaya-surface-success-ink: #6ee7b7;
+		--yaya-surface-danger: rgba(255, 56, 73, 0.18);
+		--yaya-surface-danger-ink: #fca5a5;
+
+		--yaya-focus-ring: 0 0 0 3px rgba(96, 165, 250, 0.3);
 	}
 }
 
@@ -81,6 +101,17 @@ html.dark {
 	--yaya-border: #262626;
 	--yaya-hover: #262626;
 	--yaya-active: rgba(96, 165, 250, 0.15);
+
+	--yaya-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4),
+		0 5px 16px -4px rgba(0, 0, 0, 0.6);
+	--yaya-shadow-lg: 0 4px 16.4px rgba(0, 0, 0, 0.5);
+
+	--yaya-surface-success: rgba(22, 196, 86, 0.18);
+	--yaya-surface-success-ink: #6ee7b7;
+	--yaya-surface-danger: rgba(255, 56, 73, 0.18);
+	--yaya-surface-danger-ink: #fca5a5;
+
+	--yaya-focus-ring: 0 0 0 3px rgba(96, 165, 250, 0.3);
 }
 
 body {
@@ -231,7 +262,7 @@ yaya-app {
 	width: 8px;
 	height: 8px;
 	border-radius: 50%;
-	background: #9ca3af;
+	background: var(--yaya-status-idle);
 	flex-shrink: 0;
 }
 
@@ -260,7 +291,7 @@ yaya-app {
 }
 
 .yaya-status-untested {
-	background: #9ca3af; /* grey */
+	background: var(--yaya-status-idle);
 }
 
 .yaya-new-chat,
@@ -400,15 +431,18 @@ yaya-app {
 .yaya-chip {
 	background: transparent;
 	border: 1px solid var(--yaya-border);
-	border-radius: 999px;
+	border-radius: var(--yaya-radius-pill);
 	padding: 6px 14px;
 	color: var(--yaya-text-secondary);
 	cursor: pointer;
 	font-size: 13px;
+	transition: background 120ms ease, color 120ms ease,
+		border-color 120ms ease;
 }
 
 .yaya-chip:hover {
-	border-color: var(--yaya-accent);
+	background: var(--yaya-active);
+	border-color: transparent;
 	color: var(--yaya-accent);
 }
 
@@ -451,7 +485,7 @@ yaya-app {
 
 .yaya-banner {
 	padding: 8px 12px;
-	border-radius: 6px;
+	border-radius: var(--yaya-radius-md);
 	margin-bottom: 12px;
 	font-size: 13px;
 	cursor: pointer;
@@ -463,8 +497,8 @@ yaya-app {
 }
 
 .yaya-banner-error {
-	background: #fee2e2;
-	color: #991b1b;
+	background: var(--yaya-surface-danger);
+	color: var(--yaya-surface-danger-ink);
 }
 
 .yaya-list {
@@ -513,13 +547,13 @@ yaya-app {
 }
 
 .yaya-badge-loaded {
-	background: #d1fae5;
-	color: #065f46;
+	background: var(--yaya-surface-success);
+	color: var(--yaya-surface-success-ink);
 }
 
 .yaya-badge-error {
-	background: #fee2e2;
-	color: #991b1b;
+	background: var(--yaya-surface-danger);
+	color: var(--yaya-surface-danger-ink);
 }
 
 .yaya-toggle,
@@ -552,12 +586,14 @@ yaya-app {
 .yaya-btn,
 .yaya-btn-ghost {
 	padding: 6px 12px;
-	border-radius: 6px;
+	border-radius: var(--yaya-radius-md);
 	font-size: 13px;
 	cursor: pointer;
 	border: 1px solid var(--yaya-border);
 	background: var(--yaya-main-bg);
 	color: var(--yaya-text-primary);
+	transition: background 120ms ease, box-shadow 120ms ease,
+		border-color 120ms ease;
 }
 
 .yaya-btn {
@@ -568,18 +604,28 @@ yaya-app {
 
 .yaya-btn-danger {
 	padding: 6px 12px;
-	border-radius: 6px;
+	border-radius: var(--yaya-radius-md);
 	font-size: 13px;
 	cursor: pointer;
-	border: 1px solid #ef4444;
-	background: #ef4444;
+	border: 1px solid var(--yaya-status-danger);
+	background: var(--yaya-status-danger);
 	color: white;
+	transition: background 120ms ease, box-shadow 120ms ease;
 }
 
-.yaya-btn:hover,
-.yaya-btn-ghost:hover,
+.yaya-btn:hover {
+	background: var(--yaya-accent-hover);
+	border-color: var(--yaya-accent-hover);
+	box-shadow: var(--yaya-shadow-md);
+}
+
+.yaya-btn-ghost:hover {
+	background: var(--yaya-hover);
+}
+
 .yaya-btn-danger:hover {
 	opacity: 0.9;
+	box-shadow: var(--yaya-shadow-md);
 }
 
 .yaya-btn[disabled],
@@ -587,6 +633,7 @@ yaya-app {
 .yaya-btn-danger[disabled] {
 	opacity: 0.5;
 	cursor: not-allowed;
+	box-shadow: none;
 }
 
 .yaya-row-actions {
@@ -597,9 +644,9 @@ yaya-app {
 }
 
 .yaya-row-error {
-	color: #991b1b;
-	background: #fee2e2;
-	border-radius: 6px;
+	color: var(--yaya-surface-danger-ink);
+	background: var(--yaya-surface-danger);
+	border-radius: var(--yaya-radius-md);
 	padding: 8px 10px;
 	font-size: 12px;
 	margin: 8px 0 0;
@@ -615,10 +662,17 @@ yaya-app {
 .yaya-toolbar input[type="text"] {
 	flex: 1;
 	border: 1px solid var(--yaya-border);
-	border-radius: 6px;
-	padding: 6px 10px;
+	border-radius: var(--yaya-radius-lg);
+	padding: 6px 12px;
 	background: var(--yaya-main-bg);
 	color: var(--yaya-text-primary);
+	transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.yaya-toolbar input[type="text"]:focus {
+	outline: none;
+	border-color: var(--yaya-accent);
+	box-shadow: var(--yaya-focus-ring);
 }
 
 .yaya-empty {
@@ -658,13 +712,23 @@ yaya-app {
 .yaya-form-field input[type="number"],
 .yaya-form-field textarea {
 	border: 1px solid var(--yaya-border);
-	border-radius: 6px;
-	padding: 6px 10px;
+	border-radius: var(--yaya-radius-lg);
+	padding: 6px 12px;
 	font: inherit;
 	background: var(--yaya-main-bg);
 	color: var(--yaya-text-primary);
 	width: 100%;
 	box-sizing: border-box;
+	transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.yaya-form-field input[type="text"]:focus,
+.yaya-form-field input[type="password"]:focus,
+.yaya-form-field input[type="number"]:focus,
+.yaya-form-field textarea:focus {
+	outline: none;
+	border-color: var(--yaya-accent);
+	box-shadow: var(--yaya-focus-ring);
 }
 
 .yaya-form-row {
@@ -692,7 +756,7 @@ yaya-app {
 .yaya-modal {
 	position: fixed;
 	inset: 0;
-	background: rgba(0, 0, 0, 0.35);
+	background: var(--yaya-modal-backdrop);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -702,7 +766,8 @@ yaya-app {
 .yaya-modal-card {
 	background: var(--yaya-main-bg);
 	border: 1px solid var(--yaya-border);
-	border-radius: 10px;
+	border-radius: var(--yaya-radius-lg);
+	box-shadow: var(--yaya-shadow-lg);
 	padding: 20px;
 	min-width: 360px;
 	max-width: 90vw;
@@ -725,10 +790,17 @@ yaya-app {
 
 .yaya-modal-card input[type="text"] {
 	border: 1px solid var(--yaya-border);
-	border-radius: 6px;
-	padding: 6px 10px;
+	border-radius: var(--yaya-radius-lg);
+	padding: 6px 12px;
 	background: var(--yaya-main-bg);
 	color: var(--yaya-text-primary);
+	transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.yaya-modal-card input[type="text"]:focus {
+	outline: none;
+	border-color: var(--yaya-accent);
+	box-shadow: var(--yaya-focus-ring);
 }
 
 .yaya-modal-actions {
@@ -763,7 +835,7 @@ yaya-settings-modal {
 }
 
 .yaya-settings-dialog::backdrop {
-	background: rgba(0, 0, 0, 0.45);
+	background: var(--yaya-modal-backdrop);
 }
 
 .yaya-settings-dialog-card {
@@ -833,20 +905,22 @@ yaya-settings-modal {
 	max-height: 240px;
 	resize: none;
 	overflow-y: auto;
-	padding: 8px 12px;
+	padding: 10px 14px;
 	border: 1px solid var(--yaya-border);
-	border-radius: 8px;
+	border-radius: var(--yaya-radius-lg);
 	background: var(--yaya-main-bg);
 	color: var(--yaya-text-primary);
 	font: inherit;
 	font-size: 14px;
 	line-height: 1.4;
 	box-sizing: border-box;
+	transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .yaya-input:focus {
 	outline: none;
 	border-color: var(--yaya-accent);
+	box-shadow: var(--yaya-focus-ring);
 }
 
 .yaya-input:disabled {

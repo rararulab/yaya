@@ -3,6 +3,13 @@ name: "plugin-web-config-api"
 tags: [plugin, adapter, web, api, config]
 ---
 
+> **Superseded note (D4c).** Instance-shaped CRUD for LLM providers
+> moved to `specs/plugin-web-instance-crud.spec` in D4c; the
+> active-switch + test-connection ACs in this spec cover the pre-D4c
+> generic wiring and the post-D4c instance-aware behaviour jointly —
+> the two scenarios at the bottom of Completion Criteria bind to the
+> D4c replacement tests rather than to the pre-D4c plugin-shaped ones.
+
 ## Intent
 
 The bundled `web` adapter gains an HTTP admin API on top of the
@@ -138,20 +145,20 @@ Scenario: Plugin install delegates to the registry
 Scenario: Switching the active LLM provider writes the provider config key
   Test:
     Package: yaya
-    Filter: tests/plugins/web/test_web_config_api.py::test_llm_provider_active_switch
+    Filter: tests/plugins/web/test_web_config_api.py::test_active_switch_happy_path
   Level: integration
-  Given an admin router wired to a stub registry with two LLM provider plugins
-  When a client PATCHes api llm providers active with one provider name
-  Then the store records provider equal to that name and the response is ok
+  Given an admin router wired to a config store seeded with llm provider instances
+  When a client PATCHes api llm providers active with an instance id
+  Then the store records provider equal to that instance id and the response is the refreshed list
 
 Scenario: LLM provider test endpoint round-trips through the bus
   Test:
     Package: yaya
-    Filter: tests/plugins/web/test_web_config_api.py::test_llm_provider_test_roundtrip
+    Filter: tests/plugins/web/test_web_config_api.py::test_instance_test_endpoint_routes_on_bridge_session
   Level: integration
-  Given an admin router wired to a bus where a stub provider echoes llm call response
-  When a client POSTs api llm providers name test
-  Then the response carries ok true and a non negative latency_ms
+  Given an admin router wired to a bus whose stub provider echoes llm call response for an instance id
+  When a client POSTs api llm providers id test
+  Then the llm call request carries a bridge web-api-test session id and the response is ok true with latency_ms
 
 Scenario: llm_openai hot reload preserves in flight calls
   Test:

@@ -486,6 +486,46 @@ async def test_instance_create_auto_generates_id_when_absent(store: ConfigStore,
         assert body["label"] == f"llm-openai ({body['id']})"
 
 
+async def test_instance_create_partial_write_surfaces_error(
+    store: ConfigStore,
+    registry: _StubRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mid-way ConfigStore.set failure bubbles up with operator cleanup guidance.
+
+    ``_write_instance_fields`` has no batch-write primitive; if the
+    second of three set calls raises, the instance is half-written. The
+    handler must surface an error (not a success) and point operators
+    at ``yaya config unset providers.<id>.*``.
+    """
+    real_set = store.set
+    calls: list[str] = []
+
+    async def _flaky_set(key: str, value: Any) -> None:
+        calls.append(key)
+        # Second write (label) raises — leaves plugin key behind.
+        if len(calls) == 2:
+            raise RuntimeError("disk full")
+        await real_set(key, value)
+
+    monkeypatch.setattr(store, "set", _flaky_set)
+
+    app = _build_app(store=store, registry=registry)
+    async with _client(app) as client:
+        resp = await client.post(
+            "/api/llm-providers",
+            json={
+                "id": "openai-partial",
+                "plugin": "llm-openai",
+                "label": "Partial",
+                "config": {"model": "gpt-4o"},
+            },
+        )
+        assert resp.status_code in {400, 500}
+        detail = resp.json()["detail"]
+        assert "yaya config unset providers.openai-partial.*" in detail
+
+
 async def test_instance_patch_merges_config_partial(store: ConfigStore, registry: _StubRegistry) -> None:
     """PATCH merges only the supplied fields; untouched ones survive."""
     await _seed_instances(store)
@@ -506,23 +546,24 @@ async def test_instance_patch_merges_config_partial(store: ConfigStore, registry
         assert await store.get("providers.openai-gpt4.api_key") == "sk-alternativekeyxyz9"
 
 
-async def test_instance_patch_rejects_plugin_change(store: ConfigStore, registry: _StubRegistry) -> None:
-    """PATCH does not accept a ``plugin`` field — pydantic rejects it as unknown.
+async def test_instance_patch_rejects_plugin_in_body(store: ConfigStore, registry: _StubRegistry) -> None:
+    """PATCH body with ``plugin`` is rejected with 422 by pydantic's forbid-extra.
 
-    FastAPI + pydantic accept extra fields by default, but our body
-    model omits ``plugin``; the handler ignores it silently. Verify
-    the instance's ``plugin`` meta field is unchanged after an attempt.
+    Rebinding an instance to a different plugin is explicitly a
+    delete+create — a silent no-op on ``plugin`` would mask client
+    bugs. ``_ProviderPatchBody`` sets ``extra="forbid"`` so the error
+    surfaces at the edge, and the instance's ``plugin`` meta field
+    stays intact.
     """
     await _seed_instances(store)
     app = _build_app(store=store, registry=registry)
     async with _client(app) as client:
-        # Even if the client sends plugin, it is ignored — the meta
-        # field stays intact.
         resp = await client.patch(
             "/api/llm-providers/openai-gpt4",
-            json={"plugin": "llm-echo", "label": "x"},
+            json={"plugin": "llm-echo"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 422
+        # The meta field was not touched.
         assert await store.get("providers.openai-gpt4.plugin") == "llm-openai"
 
 

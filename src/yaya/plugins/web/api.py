@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.plugin import Category
@@ -165,7 +165,14 @@ class _ProviderPatchBody(BaseModel):
     Both fields are optional — the handler merges only those supplied.
     Note the absence of ``plugin`` and ``id``: rebinding an instance to
     a different plugin is explicitly a delete+create, not a patch.
+
+    Extra fields are forbidden so a client bug sending ``plugin`` (a
+    rebinding attempt) surfaces as a 422 instead of silently being
+    dropped — otherwise the operator sees a successful 200 while the
+    backing plugin stays on the old value.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     label: str | None = Field(default=None)
     config: dict[str, Any] | None = Field(default=None)
@@ -560,8 +567,9 @@ async def _write_instance_fields(
     Best-effort across multiple ``ConfigStore.set`` calls: the store
     does not expose a batch write today. If a mid-way failure occurs
     the instance may be partially materialized — operators clean up
-    via ``yaya config unset providers.<id>.*``. Documented in
-    ``specs/plugin-web-instance-crud.spec``.
+    via ``yaya config unset providers.<id>.*``, and callers should
+    surface that cleanup instruction in any 4xx/5xx they emit.
+    Documented in ``specs/plugin-web-instance-crud.spec``.
     """
     prefix = f"{PROVIDERS_PREFIX}{instance_id}."
     if plugin is not None:
@@ -633,6 +641,10 @@ async def _create_instance_handler(
             ),
         )
     view = ProvidersView(store)
+    # TOCTOU: two concurrent POSTs with the same id can both see None +
+    # both write. SQLite serializes writes; last-writer wins. Acceptable
+    # for 127.0.0.1-only surface through 1.0. Compare-and-swap would
+    # need a ConfigStore primitive.
     if view.get_instance(instance_id) is not None:
         raise HTTPException(
             status_code=409,
@@ -647,8 +659,25 @@ async def _create_instance_handler(
             label=label,
             config=body.config,
         )
+    except HTTPException:
+        raise
     except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{exc}; a partial instance may have been written — "
+                f"run `yaya config unset providers.{instance_id}.*` to clean up"
+            ),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"failed to write instance {instance_id!r}: {exc}; "
+                f"a partial instance may have been written — "
+                f"run `yaya config unset providers.{instance_id}.*` to clean up"
+            ),
+        ) from exc
     refreshed = _lookup_instance_or_404(store, instance_id)
     row = _build_instance_row(refreshed, registry, ProvidersView(store).active_id, show_secrets=False)
     return JSONResponse(row, status_code=201)

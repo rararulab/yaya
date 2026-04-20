@@ -73,6 +73,8 @@ remove provider instances without a restart.
 - tests/plugins/web/test_web_config_api.py
 - tests/kernel/test_providers_view.py
 - specs/plugin-web-instance-crud.spec
+- specs/plugin-web-config-api.spec
+- tests/bdd/features/plugin-web-config-api.feature
 - tests/bdd/features/plugin-web-instance-crud.feature
 - docs/dev/plugin-protocol.md
 

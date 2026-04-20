@@ -33,14 +33,14 @@ Feature: Web adapter HTTP admin API
     Then the stub registry records the install call and the response is ok
 
   Scenario: Switching the active LLM provider writes the provider config key
-    Given an admin router wired to a stub registry with two LLM provider plugins
-    When a client PATCHes api llm providers active with one provider name
-    Then the store records provider equal to that name and the response is ok
+    Given an admin router wired to a config store seeded with llm provider instances
+    When a client PATCHes api llm providers active with an instance id
+    Then the store records provider equal to that instance id and the response is the refreshed list
 
   Scenario: LLM provider test endpoint round-trips through the bus
-    Given an admin router wired to a bus where a stub provider echoes llm call response
-    When a client POSTs api llm providers name test
-    Then the response carries ok true and a non negative latency_ms
+    Given an admin router wired to a bus whose stub provider echoes llm call response for an instance id
+    When a client POSTs api llm providers id test
+    Then the llm call request carries a bridge web-api-test session id and the response is ok true with latency_ms
 
   Scenario: llm_openai hot reload preserves in flight calls
     Given a running llm openai plugin with a live client

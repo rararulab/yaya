@@ -44,7 +44,7 @@ Entry element: `<yaya-app>`. Chat view always mounted; settings is a **float mod
 
 Modal pattern: `showModal()` gives us the platform focus trap, ESC handling, and inert backdrop. Backdrop click is detected by `event.target === dialogEl`. The modal dispatches a bubbling `yaya:settings-close` event on native `close` so the shell can clear the hash.
 
-Sidebar (≤240 px, collapsible to 56 px): logo · New chat · Chat nav · recent-chat list · **gear settings button (footer-left) + theme toggle + version (footer-right)**. Theme palette driven by CSS custom properties with a `prefers-color-scheme: dark` media-query override and an explicit `.dark` toggle on `<html>`.
+Sidebar (≤240 px, collapsible to 48 px icon rail via hamburger toggle, persisted to `localStorage["yaya.sidebar.collapsed"]`): hamburger · logo · New chat · Chat nav · recent-chat list · **connection-status dot · gear settings button (footer-left) + theme toggle + version (footer-right)**. The status dot maps `connecting` / `reconnecting` → amber, `connected` → green, `disconnected` → red; `<yaya-chat>` publishes transitions via the window-level `yaya:connection-status` CustomEvent so the sidebar stays decoupled from the WS client. The `@media (prefers-reduced-motion: reduce)` rule disables the 200ms layout transition. Theme palette driven by CSS custom properties with a `prefers-color-scheme: dark` media-query override and an explicit `.dark` toggle on `<html>`.
 
 Settings tabs consume PR B's HTTP config surface:
 
@@ -117,7 +117,9 @@ src/yaya/plugins/web/
 │       ├── ws-client.test.ts
 │       ├── chat-shell.test.ts
 │       ├── store.test.ts
-│       └── schema-form.test.ts
+│       ├── schema-form.test.ts
+│       ├── settings-modal.test.ts
+│       └── sidebar.test.ts
 └── static/             # vite build output — git-tracked, chunk-split
 ```
 

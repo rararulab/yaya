@@ -8,10 +8,11 @@
  *   │  sidebar   │           chat view            │
  *   │  (≤240px)  │                                │
  *   │            │                                │
- *   │  logo      │                                │
+ *   │  hamburger │                                │
  *   │  new chat  │                                │
  *   │  nav       │                                │
  *   │  history   │                                │
+ *   │  ● status  │                                │
  *   │  ⚙ footer  │                                │
  *   └────────────┴────────────────────────────────┘
  *                        ▲
@@ -29,6 +30,15 @@
  * `#/settings`). `#/settings` on load deep-links the modal open. The
  * settings module is imported lazily so chat-only users do not pay
  * for its bundle — Vite splits the module into a separate chunk.
+ *
+ * Sidebar collapse (issue #114): a hamburger toggle flips the layout
+ * between the full 240px sidebar and a 48px icon-only rail. State
+ * persists to `localStorage["yaya.sidebar.collapsed"]` so the
+ * preference survives reloads. A connection-status dot lives in the
+ * sidebar footer so it stays visible in both modes and across views;
+ * `<yaya-chat>` pushes state transitions through a window-level
+ * `yaya:connection-status` CustomEvent so the shell does not need a
+ * direct reference to the WS client.
  */
 
 import { LitElement, html, nothing, type TemplateResult } from "lit";
@@ -36,7 +46,40 @@ import { customElement, query, state } from "lit/decorators.js";
 
 import "./chat-shell.js";
 
+/**
+ * Connection-status values surfaced by the sidebar footer dot.
+ *
+ * `connecting` is the initial state at boot — the WS handshake is in
+ * flight and showing a red "disconnected" would be misleading. Once
+ * the first `ws.connected` frame arrives the state flips to
+ * `connected`; subsequent drops toggle it to `reconnecting` (backoff
+ * is in progress). `disconnected` is the terminal state after a
+ * user-initiated close and is kept for symmetry with the test harness.
+ */
+export type ConnectionStatus =
+	| "connecting"
+	| "connected"
+	| "reconnecting"
+	| "disconnected";
+
 const THEME_KEY = "yaya.theme";
+const SIDEBAR_COLLAPSED_KEY = "yaya.sidebar.collapsed";
+
+function loadSidebarCollapsed(): boolean {
+	try {
+		return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
+
+function persistSidebarCollapsed(collapsed: boolean): void {
+	try {
+		localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+	} catch {
+		// storage quota / disabled — ignore, UI keeps working.
+	}
+}
 
 function loadTheme(): "light" | "dark" {
 	const stored = localStorage.getItem(THEME_KEY);
@@ -168,6 +211,7 @@ export class YayaApp extends LitElement {
 	@state() private sidebarCollapsed = false;
 	@state() private theme: "light" | "dark" = "light";
 	@state() private history: string[] = [];
+	@state() private connectionStatus: ConnectionStatus = "connecting";
 	@query("yaya-settings-modal") private modalEl?: YayaSettingsModal;
 
 	private onHashChange = (): void => {
@@ -185,6 +229,27 @@ export class YayaApp extends LitElement {
 		}
 	};
 
+	private onConnectionStatus = (ev: Event): void => {
+		const detail = (ev as CustomEvent<{ status: ConnectionStatus }>).detail;
+		if (
+			detail &&
+			(detail.status === "connecting" ||
+				detail.status === "connected" ||
+				detail.status === "reconnecting" ||
+				detail.status === "disconnected")
+		) {
+			this.setConnectionStatus(detail.status);
+		}
+	};
+
+	/**
+	 * Publicly settable so tests (and any future non-WS signal source)
+	 * can drive the sidebar dot without synthesising DOM events.
+	 */
+	setConnectionStatus(status: ConnectionStatus): void {
+		this.connectionStatus = status;
+	}
+
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
 	}
@@ -193,7 +258,9 @@ export class YayaApp extends LitElement {
 		super.connectedCallback();
 		this.theme = loadTheme();
 		applyTheme(this.theme);
+		this.sidebarCollapsed = loadSidebarCollapsed();
 		window.addEventListener("hashchange", this.onHashChange);
+		window.addEventListener("yaya:connection-status", this.onConnectionStatus);
 		this.addEventListener("yaya:settings-close", this.onSettingsClose);
 		if (hashWantsSettings()) {
 			// Defer so the modal element is registered first.
@@ -210,7 +277,13 @@ export class YayaApp extends LitElement {
 	override disconnectedCallback(): void {
 		super.disconnectedCallback();
 		window.removeEventListener("hashchange", this.onHashChange);
+		window.removeEventListener("yaya:connection-status", this.onConnectionStatus);
 		this.removeEventListener("yaya:settings-close", this.onSettingsClose);
+	}
+
+	private toggleSidebar(): void {
+		this.sidebarCollapsed = !this.sidebarCollapsed;
+		persistSidebarCollapsed(this.sidebarCollapsed);
 	}
 
 	private async openSettings(): Promise<void> {
@@ -238,7 +311,10 @@ export class YayaApp extends LitElement {
 
 	override render(): TemplateResult {
 		return html`
-			<div class="yaya-app ${this.sidebarCollapsed ? "is-collapsed" : ""}">
+			<div
+				class="yaya-app ${this.sidebarCollapsed ? "is-collapsed" : ""}"
+				data-collapsed=${this.sidebarCollapsed ? "true" : "false"}
+			>
 				${this.renderSidebar()}
 				<main class="yaya-main">
 					<yaya-chat></yaya-chat>
@@ -249,36 +325,70 @@ export class YayaApp extends LitElement {
 	}
 
 	private renderSidebar(): TemplateResult {
+		const statusLabel =
+			this.connectionStatus === "connected"
+				? "Connected"
+				: this.connectionStatus === "reconnecting"
+					? "Reconnecting"
+					: this.connectionStatus === "connecting"
+						? "Connecting"
+						: "Disconnected";
 		return html`
-			<aside class="yaya-sidebar" aria-label="navigation">
+			<aside
+				class="yaya-sidebar"
+				aria-label="navigation"
+				data-collapsed=${this.sidebarCollapsed ? "true" : "false"}
+			>
 				<div class="yaya-sidebar-top">
+					<button
+						class="yaya-sidebar-toggle"
+						@click=${() => this.toggleSidebar()}
+						aria-label=${this.sidebarCollapsed ? "expand sidebar" : "collapse sidebar"}
+						title=${this.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+					>
+						<span aria-hidden="true">☰</span>
+					</button>
 					<button class="yaya-logo" @click=${() => this.newChat()} aria-label="yaya home">
 						<span class="yaya-logo-mark">y</span>
-						<span class="yaya-logo-word">yaya</span>
-					</button>
-					<button class="yaya-sidebar-toggle" @click=${() => {
-						this.sidebarCollapsed = !this.sidebarCollapsed;
-					}} aria-label="toggle sidebar">
-						${this.sidebarCollapsed ? "›" : "‹"}
+						<span class="yaya-logo-word yaya-sidebar-label">yaya</span>
 					</button>
 				</div>
-				<button class="yaya-new-chat" @click=${() => this.newChat()}>
+				<button
+					class="yaya-new-chat"
+					@click=${() => this.newChat()}
+					title="New chat"
+				>
 					<span aria-hidden="true">+</span>
 					<span class="yaya-sidebar-label">New chat</span>
 				</button>
 				<nav class="yaya-nav">
-					<button class="yaya-nav-item is-active" @click=${() => this.newChat()}>
+					<button
+						class="yaya-nav-item is-active"
+						@click=${() => this.newChat()}
+						title="Chat"
+					>
 						<span aria-hidden="true">●</span>
 						<span class="yaya-sidebar-label">Chat</span>
 					</button>
 				</nav>
 				<div class="yaya-history">
-					<div class="yaya-history-title">Recent</div>
+					<div class="yaya-history-title yaya-sidebar-label">Recent</div>
 					${this.history.length === 0
 						? html`<p class="yaya-empty yaya-sidebar-label">No chats yet.</p>`
 						: this.history.map(
-								(h) => html`<button class="yaya-history-item yaya-sidebar-label">${h}</button>`,
+								(h) =>
+									html`<button class="yaya-history-item yaya-sidebar-label" title=${h}>${h}</button>`,
 							)}
+				</div>
+				<div
+					class="yaya-sidebar-status"
+					data-testid="sidebar-status"
+					data-state=${this.connectionStatus}
+					title=${statusLabel}
+					aria-label=${`connection ${statusLabel}`}
+				>
+					<span class="yaya-status-dot" aria-hidden="true"></span>
+					<span class="yaya-sidebar-label">${statusLabel}</span>
 				</div>
 				<div class="yaya-sidebar-footer">
 					<button
@@ -291,10 +401,19 @@ export class YayaApp extends LitElement {
 						<span class="yaya-sidebar-label">Settings</span>
 					</button>
 					<div class="yaya-sidebar-footer-right">
-						<button class="yaya-link" @click=${() => this.toggleTheme()}>
+						<button
+							class="yaya-link"
+							@click=${() => this.toggleTheme()}
+							title=${this.theme === "dark" ? "Light theme" : "Dark theme"}
+							aria-label=${this.theme === "dark" ? "switch to light theme" : "switch to dark theme"}
+						>
+							<span aria-hidden="true">${this.theme === "dark" ? "☀" : "☾"}</span>
 							<span class="yaya-sidebar-label">${this.theme === "dark" ? "Light" : "Dark"}</span>
 						</button>
-						<span class="yaya-version yaya-sidebar-label">v${VERSION}</span>
+						<span
+							class="yaya-version yaya-sidebar-label"
+							title="yaya ${VERSION}"
+						>v${VERSION}</span>
 					</div>
 				</div>
 			</aside>

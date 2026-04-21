@@ -56,7 +56,7 @@ _RETRY_MARKER = "[yaya:react-format-nudge] "
 # strategy authors. ``DOTALL`` on ``Final Answer`` / ``Action Input``
 # lets them span paragraphs.
 _FINAL_RE = re.compile(
-    r"^Final Answer:\s*(?P<answer>.+?)(?:\Z)",
+    r"^Final Answer:\s*(?P<answer>.+?)(?=^Action:|^Thought:|^Final Answer:|\Z)",
     re.MULTILINE | re.DOTALL,
 )
 _ACTION_RE = re.compile(

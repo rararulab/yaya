@@ -119,13 +119,14 @@ _SOURCE = "kernel"
 
 
 def _format_tool_result_for_llm(result_payload: dict[str, Any]) -> str:
-    """Serialise a ``tool.call.result`` payload for an OpenAI ``tool`` message.
+    """Serialise a ``tool.call.result`` payload for a ReAct Observation.
 
-    OpenAI's ``role: "tool"`` message expects a plain ``content``
-    string. We prefer a compact structured JSON so the model can parse
-    fields (stdout / stderr / error) reliably, but fall back to the
-    stdout-only shape when the tool returned a flat ``value`` that
-    already reads well as text.
+    The caller wraps the returned string as
+    ``role="user" content="Observation: <this>"`` before appending it
+    to the conversation. We prefer compact structured JSON so the
+    model can parse fields (stdout / stderr / error) reliably, but
+    fall back to the stdout-only shape when the tool returned a flat
+    ``value`` that already reads well as text.
     """
     import json
 

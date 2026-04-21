@@ -291,6 +291,14 @@ def test_parse_assistant_final_wins_over_action() -> None:
     mixed = "Thought: confused\nAction: bash\nAction Input: {}\nFinal Answer: done"
     out = _parse_assistant(mixed)
     assert out[0] == "final"
+    assert out[1] == "done"
+
+    # Final Answer that precedes an Action should NOT swallow the
+    # trailing Action/Action Input lines into the answer body.
+    final_then_action = "Final Answer: hi\nAction: bash\nAction Input: {}"
+    out2 = _parse_assistant(final_then_action)
+    assert out2[0] == "final"
+    assert out2[1] == "hi"
 
 
 async def test_missing_state_raises(tmp_path: Path) -> None:

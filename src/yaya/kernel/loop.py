@@ -104,7 +104,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from yaya.kernel.bus import EventBus, Subscription
-from yaya.kernel.events import Event, Message, ToolCall, new_event
+from yaya.kernel.events import Event, Message, new_event
 from yaya.kernel.payload import (
     payload_dict,
     payload_int,
@@ -119,13 +119,14 @@ _SOURCE = "kernel"
 
 
 def _format_tool_result_for_llm(result_payload: dict[str, Any]) -> str:
-    """Serialise a ``tool.call.result`` payload for an OpenAI ``tool`` message.
+    """Serialise a ``tool.call.result`` payload for a ReAct Observation.
 
-    OpenAI's ``role: "tool"`` message expects a plain ``content``
-    string. We prefer a compact structured JSON so the model can parse
-    fields (stdout / stderr / error) reliably, but fall back to the
-    stdout-only shape when the tool returned a flat ``value`` that
-    already reads well as text.
+    The caller wraps the returned string as
+    ``role="user" content="Observation: <this>"`` before appending it
+    to the conversation. We prefer compact structured JSON so the
+    model can parse fields (stdout / stderr / error) reliably, but
+    fall back to the stdout-only shape when the tool returned a flat
+    ``value`` that already reads well as text.
     """
     import json
 
@@ -398,7 +399,19 @@ class AgentLoop:
             state.last_tool_result = {"memory_hits": hits}
             return False
         if next_step == "llm":
-            response = await self._call_llm(session_id, decision, state.messages)
+            # A strategy may append corrective or priming messages to
+            # ``state.messages`` before the LLM call (e.g. ReAct's
+            # format-nudge on a parse failure). Apply those first so
+            # the outgoing history reflects them.
+            for m in payload_list_of_dicts(decision.payload, "messages_append"):
+                state.messages.append(cast("Message", m))
+            # ``messages_prepend`` carries transient priming context
+            # (e.g. ReAct's system prompt) that the strategy does NOT
+            # want persisted in ``state.messages``. It rides only on
+            # this single request.
+            prepend = payload_list_of_dicts(decision.payload, "messages_prepend")
+            outgoing: list[Message] = [cast("Message", m) for m in prepend] + list(state.messages)
+            response = await self._call_llm(session_id, decision, outgoing)
             if response.kind == "llm.call.error":
                 await self._emit_kernel_error(
                     session_id,
@@ -407,42 +420,36 @@ class AgentLoop:
                 return True
             state.last_llm_text = payload_str(response.payload, "text") or state.last_llm_text
             state.last_tool_calls = payload_list_of_dicts(response.payload, "tool_calls")
-            # The LLM has now consumed any pending tool or memory
-            # result; clear it so the next strategy decision doesn't
-            # loop forever treating the stale result as "still pending"
-            # (#147).
+            # Clear any pending tool/memory result now that the LLM
+            # has had a chance to consume it (#147).
             state.last_tool_result = None
-            # Preserve tool_calls on the appended message so the strategy
-            # (and any memory plugin replaying messages) can see the
-            # LLM's function-call intent — not just the reasoning text.
-            # Without this the assistant entry only carried ``content``
-            # and the strategy decided ``done`` even when the LLM had
-            # emitted a tool_call (#147).
+            # ReAct strategy drives tool intent through free-form
+            # ``Thought: / Action: / Action Input:`` text inside the
+            # assistant ``content``, not through OpenAI's structured
+            # ``tool_calls`` field. Persisting ``tool_calls`` here
+            # would confuse a text-only replay, so the appended
+            # assistant message carries ``content`` only.
             assistant_msg: Message = {
                 "role": "assistant",
                 "content": state.last_llm_text,
             }
-            if state.last_tool_calls:
-                assistant_msg["tool_calls"] = [cast("ToolCall", tc) for tc in state.last_tool_calls]
             state.messages.append(assistant_msg)
             return False
         if next_step == "tool":
             tool_call = payload_dict(decision.payload, "tool_call")
             result = await self._call_tool(session_id, tool_call)
             state.last_tool_result = dict(result.payload)
-            # Append an OpenAI-style tool message so the next LLM call
-            # sees the tool's output. ``name`` is optional per the
-            # OpenAI spec but MiniMax-M2 and similar providers fall
-            # silent on turn 2 without it (#149).
-            tool_call_id = str(tool_call.get("id", ""))
-            tool_name = str(tool_call.get("name", ""))
+            # ReAct protocol: tool results come back as a ``role="user"``
+            # message whose content begins with ``Observation:`` — the
+            # canonical ReAct shape the system prompt tells the model
+            # to expect. No ``role="tool"`` / ``tool_call_id`` — those
+            # belong to OpenAI function calling, which we no longer
+            # use here.
+            observation = _format_tool_result_for_llm(result.payload)
             tool_msg: Message = {
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "content": _format_tool_result_for_llm(result.payload),
+                "role": "user",
+                "content": f"Observation: {observation}",
             }
-            if tool_name:
-                tool_msg["name"] = tool_name
             state.messages.append(tool_msg)
             return False
         await self._emit_kernel_error(

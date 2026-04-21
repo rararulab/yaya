@@ -1,25 +1,34 @@
-"""ReAct strategy plugin implementation.
+"""ReAct strategy plugin — text-based Thought/Action/Observation loop.
 
-The strategy inspects the :class:`yaya.kernel.events.AgentLoopState`
-snapshot the loop hands it and picks the next step. It carries no
-per-session state of its own — the loop's ``state.messages`` +
-``state.last_tool_result`` is the authoritative context, so repeated
-turns remain deterministic.
+Classical ReAct (Yao et al. 2022): the strategy authors a system
+prompt that constrains the LLM to emit either
+``Thought: ... Action: <tool> Action Input: <json>`` triples or a
+``Thought: ... Final Answer: <user-facing text>`` termination. The
+strategy parses the assistant's latest content for one of those two
+shapes:
 
-After #123 (D4b) the ``(provider, model)`` pair is resolved per
-decision from :attr:`ctx.providers`: the active instance id comes
-from ``ctx.providers.active_id`` (the ``provider`` kernel-level
-config key), and the model is read live from that instance's
-``config["model"]`` field. Switching ``provider`` to a different
-instance id at runtime takes effect on the next
-``strategy.decide.request`` without a kernel restart. When
-``ctx.providers`` is absent (tests that skip the config store) the
-plugin falls back to an env sniff over ``OPENAI_API_KEY``.
+* A valid Action → ``{next: "tool"}`` with a synthesized tool_call.
+* A Final Answer → ``{next: "done"}``.
+* Neither → append one corrective ``role="user"`` nudge and reroll.
+  A second parse failure terminates the turn (no endless retries).
+
+Unlike the previous function-calling implementation, this strategy
+does **not** consume ``assistant.tool_calls`` — tool intent rides in
+free-form text only. Tool results come back as ``role="user"``
+messages whose content starts with ``Observation: …`` (the canonical
+ReAct shape). The loop assembles that shape; this module just reads
+it.
+
+Provider / model resolution is unchanged from D4b: active instance
+id + its ``config["model"]`` from :attr:`ctx.providers`, falling
+back to an env sniff when no config store is wired in.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from yaya.kernel.events import Event
@@ -29,32 +38,44 @@ from yaya.kernel.tool import all_tool_specs
 if TYPE_CHECKING:  # pragma: no cover - type-only import.
     from yaya.kernel.providers import ProvidersView
 
-# Fallback provider ids used only when ``ctx.providers`` is absent.
-# They mirror the seeded instance ids the D4a bootstrap writes
-# (``providers.llm-openai.plugin = llm-openai`` etc.) so the fallback
-# name matches what a real kernel would resolve to.
 _FALLBACK_OPENAI_PROVIDER = "llm-openai"
 _FALLBACK_ECHO_PROVIDER = "llm-echo"
 _DEFAULT_MODEL = "gpt-4o-mini"
-# The bundled echo provider needs no model id — pick a stable
-# placeholder so the ``llm.call.request`` payload type-checks.
 _FALLBACK_ECHO_MODEL = "echo"
 
 _NAME = "strategy-react"
 _VERSION = "0.1.0"
 
+# Marker prefix on the corrective user message. The strategy scans
+# recent messages for this marker to detect whether we've already
+# used our one retry — presence means "don't nudge again, terminate".
+_RETRY_MARKER = "[yaya:react-format-nudge] "
+
+# Regexes for ReAct labels. Anchored with ``re.MULTILINE`` so each
+# label sits at the start of its own line, matching the prompt the
+# strategy authors. ``DOTALL`` on ``Final Answer`` / ``Action Input``
+# lets them span paragraphs.
+_FINAL_RE = re.compile(
+    r"^Final Answer:\s*(?P<answer>.+?)(?=^Action:|^Thought:|^Final Answer:|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_ACTION_RE = re.compile(
+    r"^Action:\s*(?P<name>[^\n]+?)\s*$",
+    re.MULTILINE,
+)
+_ACTION_INPUT_RE = re.compile(
+    r"^Action Input:\s*(?P<body>.*?)(?=^Action:|^Final Answer:|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+# Strip ``` ```json ... ``` ``` fences that some models wrap JSON in.
+_CODE_FENCE_RE = re.compile(
+    r"^```(?:json)?\s*(?P<inner>.*?)\s*```\s*\Z",
+    re.DOTALL,
+)
+
 
 class ReActStrategy:
-    """Bundled ReAct strategy plugin.
-
-    Implements :class:`yaya.kernel.plugin.Plugin` via duck typing — the
-    protocol is ``@runtime_checkable`` so the registry's ``isinstance``
-    guard accepts any object with the required attributes and methods.
-
-    Thread model: single asyncio event loop. The plugin keeps no
-    mutable state across events; every decision is computed from the
-    incoming ``state`` snapshot.
-    """
+    """Bundled ReAct strategy plugin."""
 
     name: str = _NAME
     version: str = _VERSION
@@ -75,30 +96,15 @@ class ReActStrategy:
         )
 
     async def on_event(self, ev: Event, ctx: KernelContext) -> None:
-        """Decide the next step for the turn described by ``ev.payload.state``.
-
-        The loop always publishes ``strategy.decide.request`` with a
-        ``state`` key (see ``yaya.kernel.loop.AgentLoop._decide``); a
-        request missing that key is a protocol violation and raises so
-        the registry's failure accounting surfaces a ``plugin.error``.
-        """
+        """Decide the next step for the turn described by ``ev.payload.state``."""
         if ev.kind != "strategy.decide.request":
             return
         raw_state = ev.payload.get("state")
         if not isinstance(raw_state, dict):
-            # Protocol violation: the loop always publishes with a 'state' key.
             raise ValueError("strategy.decide.request missing 'state' payload")  # noqa: TRY004
 
         provider, model = self._provider_and_model(ctx)
         decision = _decide(cast("dict[str, Any]", raw_state), provider=provider, model=model)
-        # Stamp the loaded tool specs onto every LLM-step decision so
-        # the kernel loop can forward them to the provider. Without
-        # this the LLM has no tool schemas and falls back to
-        # hallucinating command output as plain text (#147).
-        if decision.get("next") == "llm":
-            specs = all_tool_specs()
-            if specs:
-                decision["tools"] = specs
         decision["request_id"] = ev.id
         await ctx.emit(
             "strategy.decide.response",
@@ -109,41 +115,21 @@ class ReActStrategy:
     async def on_unload(self, ctx: KernelContext) -> None:
         """No-op — the strategy holds no resources."""
 
-    # -- helpers --------------------------------------------------------------
-
     @staticmethod
     def _provider_and_model(ctx: KernelContext) -> tuple[str, str]:
-        """Return the effective ``(provider, model)`` pair.
-
-        Resolution order:
-
-        1. ``ctx.providers.active_id`` (the kernel-level ``provider``
-           key) → use that instance id and its ``config["model"]``.
-        2. When no active instance but at least one instance is
-           configured → first instance id, its ``config["model"]``.
-        3. No providers view at all (tests without a config store):
-           env sniff — ``OPENAI_API_KEY`` set → ``(llm-openai,
-           gpt-4o-mini)``, else ``(llm-echo, echo)``.
-        """
+        """Return the effective ``(provider, model)`` pair."""
         providers = ctx.providers
         if providers is not None:
             resolved = ReActStrategy._resolve_from_providers(providers)
             if resolved is not None:
                 return resolved
-        # Fallback: no config store or no configured instance. Pick a
-        # seeded name matching what D4a bootstrap would stamp.
         if os.environ.get("OPENAI_API_KEY"):
             return _FALLBACK_OPENAI_PROVIDER, _DEFAULT_MODEL
         return _FALLBACK_ECHO_PROVIDER, _FALLBACK_ECHO_MODEL
 
     @staticmethod
     def _resolve_from_providers(providers: ProvidersView) -> tuple[str, str] | None:
-        """Resolve ``(provider, model)`` from a live :class:`ProvidersView`.
-
-        Returns ``None`` when the view is empty — callers then fall
-        through to the env-driven fallback so a test stack without a
-        config store still lands on a deterministic pair.
-        """
+        """Resolve ``(provider, model)`` from a live :class:`ProvidersView`."""
         active_id = providers.active_id
         instance = None
         if active_id is not None:
@@ -163,105 +149,203 @@ class ReActStrategy:
         return instance.id, model
 
 
-def _next_pending_tool_call(
-    messages: list[dict[str, Any]],
-    last_assistant: dict[str, Any],
-) -> dict[str, Any] | None:
-    """Return the first tool_call on ``last_assistant`` without a tool reply.
-
-    Walks the messages after ``last_assistant`` and collects the
-    ``tool_call_id``s that already carry a ``role="tool"`` response.
-    Any tool_call whose id is NOT in that set is still pending — we
-    return the first such entry so the loop dispatches it next.
-    Without this pairing the strategy would re-dispatch the first
-    tool_call on every iteration and hit ``max_iterations_exceeded``
-    after a single bash call (#147).
-    """
-    tool_calls_raw: Any = last_assistant.get("tool_calls")
-    if not isinstance(tool_calls_raw, list) or not tool_calls_raw:
-        return None
-    assistant_idx = next(i for i, m in enumerate(messages) if m is last_assistant)
-    satisfied: set[str] = set()
-    for m in messages[assistant_idx + 1 :]:
-        if m.get("role") == "tool":
-            satisfied.add(str(m.get("tool_call_id") or ""))
-    # Iterate the narrowed list. After the isinstance check above
-    # mypy sees ``list[Any]`` and happily reads entries as ``Any``;
-    # pyright keeps the element type unknown so we cast inside the
-    # loop before use.
-    for entry in tool_calls_raw:  # pyright: ignore[reportUnknownVariableType]
-        if not isinstance(entry, dict):
-            continue
-        tc = cast("dict[str, Any]", entry)
-        tc_id = str(tc.get("id") or "")
-        if tc_id and tc_id in satisfied:
-            continue
-        return tc
-    return None
+# ---------------------------------------------------------------------------
+# Pure decision function.
+# ---------------------------------------------------------------------------
 
 
 def _decide(state: dict[str, Any], *, provider: str, model: str) -> dict[str, Any]:
     """Compute the next step from a loop state snapshot.
 
-    Pure function so it is trivially unit-testable without a bus.
-
-    Args:
-        state: The ``AgentLoopState`` dict from ``strategy.decide.request``.
-        provider: Configured LLM provider id (e.g. ``"openai"``).
-        model: Configured model string.
-
-    Returns:
-        A decision payload (less ``request_id``, which the caller adds)
-        per ``docs/dev/plugin-protocol.md``. ``next`` is one of
-        ``"llm" | "tool" | "done"``. Memory steps are not emitted by
-        this seed strategy — the loop supports them, but ReAct 0.1 does
-        not use them.
+    See module docstring for the ReAct protocol this function
+    implements. The caller (``on_event``) stamps ``request_id`` on
+    the returned payload before emitting — this stays pure for
+    testing.
     """
     messages_raw: list[Any] = list(state.get("messages") or [])
     messages: list[dict[str, Any]] = [cast("dict[str, Any]", m) for m in messages_raw if isinstance(m, dict)]
 
-    last_tool_result = state.get("last_tool_result")
-
-    # Find the most recent assistant message (if any).
     last_assistant: dict[str, Any] | None = None
-    for msg in reversed(messages):
+    last_assistant_idx: int = -1
+    for i, msg in enumerate(messages):
         if msg.get("role") == "assistant":
             last_assistant = msg
-            break
+            last_assistant_idx = i
 
-    # A tool just ran → feed its result back into the LLM for another pass.
-    if last_tool_result is not None and last_assistant is None:
-        # Shouldn't happen (we always have an assistant turn before a
-        # tool call), but defensively ask the LLM to interpret it.
-        return {"next": "llm", "provider": provider, "model": model}
+    # First turn — nothing to parse yet.
+    if last_assistant is None:
+        return _llm_decision(provider, model)
 
-    # Find any pending tool_calls on the last assistant message that
-    # have not yet produced a ``role="tool"`` reply further down the
-    # message list. Without this pairing step the strategy would
-    # repeatedly invoke the first tool_call — even after its result
-    # was already appended — and hit ``max_iterations_exceeded`` on
-    # the very first bash call (#147).
-    if last_assistant is not None:
-        pending = _next_pending_tool_call(messages, last_assistant)
-        if pending is not None:
-            return {"next": "tool", "tool_call": pending}
-        tool_calls_raw: Any = last_assistant.get("tool_calls")
-        if isinstance(tool_calls_raw, list) and tool_calls_raw:
-            # Every tool_call has a tool reply → push the results
-            # back to the LLM for summarisation or chaining.
-            return {"next": "llm", "provider": provider, "model": model}
-        # Assistant finished and has nothing to run → done.
-        if last_tool_result is None:
-            return {"next": "done"}
-        # Non-tool source (e.g. memory) surfaced a result without
-        # touching ``tool_calls`` — give the LLM a chance to consume
-        # it. Tool results coming from the loop's tool path clear
-        # ``last_tool_result`` after the follow-up LLM call so this
-        # branch doesn't loop forever.
-        return {"next": "llm", "provider": provider, "model": model}
+    # There are messages after the last assistant (e.g. an Observation
+    # appended by the loop after a tool call). The assistant already
+    # produced its action and has nothing more to say yet — hand back
+    # to the LLM for the next Thought/Action or Final Answer.
+    if last_assistant_idx < len(messages) - 1:
+        return _llm_decision(provider, model)
 
-    # No assistant message yet → ask the LLM.
-    return {"next": "llm", "provider": provider, "model": model}
+    # Parse the assistant's most recent message.
+    content = last_assistant.get("content") or ""
+    if not isinstance(content, str):
+        content = str(content)
+    parsed = _parse_assistant(content)
+
+    if parsed[0] == "final":
+        return {"next": "done"}
+
+    if parsed[0] == "action":
+        _, name, args = parsed
+        step = int(state.get("step") or 0)
+        return {
+            "next": "tool",
+            "tool_call": {
+                "id": f"rx-{step}",
+                "name": str(name),
+                "args": cast("dict[str, Any]", args),
+            },
+        }
+
+    # Parse error. Decide whether we've already nudged once.
+    if _has_recent_retry_marker(messages):
+        # Second failure in a row — give up without spinning the loop.
+        return {"next": "done"}
+
+    reason = str(parsed[1]) if len(parsed) >= 2 else "unparsable response"
+    nudge = (
+        f"{_RETRY_MARKER}Your last message did not follow the ReAct format. "
+        f"{reason}. Please resend using either "
+        "'Thought: ...\\nAction: <tool>\\nAction Input: <json>' "
+        "or 'Thought: ...\\nFinal Answer: <your reply>'."
+    )
+    return {
+        **_llm_decision(provider, model),
+        "messages_append": [{"role": "user", "content": nudge}],
+    }
+
+
+def _llm_decision(provider: str, model: str) -> dict[str, Any]:
+    """Build the common ``next="llm"`` decision with the ReAct system prompt."""
+    system_prompt = _build_system_prompt(all_tool_specs())
+    return {
+        "next": "llm",
+        "provider": provider,
+        "model": model,
+        "messages_prepend": [{"role": "system", "content": system_prompt}],
+    }
+
+
+def _has_recent_retry_marker(messages: list[dict[str, Any]]) -> bool:
+    """Return True if any of the last few user messages carry the nudge marker."""
+    for msg in messages[-4:]:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str) and content.startswith(_RETRY_MARKER):
+            return True
+    return False
+
+
+def _build_system_prompt(tool_specs: list[dict[str, Any]]) -> str:
+    """Compose the ReAct system prompt from the live tool registry.
+
+    Tool specs come in the OpenAI function-calling shape via
+    :func:`~yaya.kernel.tool.all_tool_specs`: each entry is
+    ``{"type": "function", "function": {"name", "description",
+    "parameters"}}``. We render a compact bullet list that the model
+    can reason about without requiring structured tool support on
+    the provider side.
+    """
+    lines: list[str] = [
+        "You are yaya, an assistant that solves tasks by reasoning in the ReAct style.",
+        "",
+        "You have access to the following tools:",
+    ]
+    if not tool_specs:
+        lines.append("- (no tools available)")
+    else:
+        for spec in tool_specs:
+            fn_raw = spec.get("function")
+            if not isinstance(fn_raw, dict):
+                continue
+            fn = cast("dict[str, Any]", fn_raw)
+            name = str(fn.get("name", "?"))
+            desc = str(fn.get("description", "")).strip()
+            params_raw = fn.get("parameters")
+            params: dict[str, Any] = cast("dict[str, Any]", params_raw) if isinstance(params_raw, dict) else {}
+            params_json = json.dumps(params, separators=(",", ":"))
+            if len(params_json) > 240:
+                params_json = params_json[:237] + "..."
+            lines.append(f"- {name}: {desc}")
+            lines.append(f"  schema: {params_json}")
+    lines += [
+        "",
+        "Respond using this EXACT format on each turn. Do not add prose",
+        "outside the labels. Do not use <think> tags; put all reasoning",
+        "after the 'Thought:' label.",
+        "",
+        "Thought: <reason about what to do next>",
+        "Action: <one tool name from the list above>",
+        "Action Input: <a JSON object matching that tool's schema>",
+        "",
+        "After each Action I will give you:",
+        "Observation: <the tool's result as JSON or text>",
+        "",
+        "Continue the Thought/Action/Action Input cycle as needed. When",
+        "you have enough information, emit instead:",
+        "",
+        "Thought: <final reasoning>",
+        "Final Answer: <the user-facing answer>",
+        "",
+        "Never emit both an Action and a Final Answer in the same turn.",
+    ]
+    return "\n".join(lines)
+
+
+ParseResult = tuple[Any, ...]
+
+
+def _parse_assistant(text: str) -> ParseResult:
+    """Classify an assistant message into ``final`` / ``action`` / ``error``.
+
+    Returns one of:
+
+    * ``("final", answer_text)`` — a ``Final Answer:`` was found. The
+      strategy terminates the turn.
+    * ``("action", tool_name, args_dict)`` — a well-formed
+      ``Action:`` / ``Action Input:`` pair was found. Args are parsed
+      as JSON; if Action Input is wrapped in a ```json`` fence the
+      fence is stripped first.
+    * ``("error", reason)`` — neither shape is present or the JSON
+      could not be parsed. The strategy will issue one corrective
+      nudge and reroll; a second error terminates the turn.
+    """
+    # A ``Final Answer`` always wins if present, even when an
+    # accidental ``Action`` appears earlier — the ReAct paper treats
+    # Final Answer as strictly terminal.
+    final = _FINAL_RE.search(text)
+    if final is not None:
+        return ("final", final.group("answer").strip())
+
+    action = _ACTION_RE.search(text)
+    action_input = _ACTION_INPUT_RE.search(text)
+    if action is None or action_input is None:
+        return ("error", "missing Action / Action Input")
+
+    name = action.group("name").strip()
+    if not name:
+        return ("error", "Action name is empty")
+
+    body = action_input.group("body").strip()
+    fence = _CODE_FENCE_RE.match(body)
+    if fence is not None:
+        body = fence.group("inner").strip()
+
+    try:
+        parsed: Any = json.loads(body)
+    except ValueError as exc:
+        return ("error", f"Action Input is not valid JSON ({exc!s})")
+    if not isinstance(parsed, dict):
+        return ("error", f"Action Input must be a JSON object, got {type(parsed).__name__}")
+    return ("action", name, cast("dict[str, Any]", parsed))
 
 
 __all__ = ["ReActStrategy"]

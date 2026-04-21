@@ -8,20 +8,20 @@ Feature: ReAct strategy plugin
     Then a strategy.decide.response is emitted with next llm and the configured provider and model
     And the response echoes the originating request id
 
-  Scenario: Pending tool_calls on the assistant message decide next step is tool with first tool call
-    Given a strategy.decide.request whose last assistant message carries a non-empty tool_calls list
+  Scenario: Assistant message with a well-formed Action decides next step is tool with the parsed tool_call
+    Given a strategy.decide.request whose last assistant message contains a ReAct Action and Action Input
     When the ReAct plugin handles the event
-    Then a strategy.decide.response is emitted with next tool and the first pending tool_call payload
+    Then a strategy.decide.response is emitted with next tool and the parsed tool_call payload
     And the response echoes the originating request id
 
-  Scenario: Tool result just landed decides next step loops back to llm for another pass
-    Given a strategy.decide.request whose last_tool_result is populated after an assistant step
+  Scenario: Observation follows the last assistant message so the next step loops back to llm
+    Given a strategy.decide.request whose state has an Observation user message after the last assistant message
     When the ReAct plugin handles the event
     Then a strategy.decide.response is emitted with next llm and the configured provider and model
     And the response echoes the originating request id
 
-  Scenario: Assistant message without tool_calls or pending tool result decides next step is done
-    Given a strategy.decide.request whose last assistant message has no tool_calls and no pending tool result
+  Scenario: Assistant message with a Final Answer label decides next step is done
+    Given a strategy.decide.request whose last assistant message contains a Final Answer label
     When the ReAct plugin handles the event
     Then a strategy.decide.response is emitted with next done
     And the response echoes the originating request id

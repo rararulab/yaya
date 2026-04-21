@@ -407,24 +407,29 @@ def _strategy_no_assistant(ctx: BDDContext) -> None:
     ctx.extras["strategy_openai_api_key"] = "sk-test"
 
 
-@given("a strategy.decide.request whose last assistant message carries a non-empty tool_calls list")
+@given("a strategy.decide.request whose last assistant message contains a ReAct Action and Action Input")
 def _strategy_tool_call(ctx: BDDContext) -> None:
-    tool_call = {"id": "tc-1", "name": "bash", "args": {"cmd": ["echo", "x"]}}
+    assistant_text = 'Thought: I need to echo x.\nAction: bash\nAction Input: {"cmd": ["echo", "x"]}\n'
     _strategy_payload(
         ctx,
         {
             "state": {
+                "step": 0,
                 "messages": [
                     {"role": "user", "content": "run something"},
-                    {"role": "assistant", "content": "", "tool_calls": [tool_call]},
-                ]
+                    {"role": "assistant", "content": assistant_text},
+                ],
             }
         },
     )
-    ctx.extras["expected_tool_call"] = tool_call
+    ctx.extras["expected_tool_call"] = {
+        "id": "rx-0",
+        "name": "bash",
+        "args": {"cmd": ["echo", "x"]},
+    }
 
 
-@given("a strategy.decide.request whose last_tool_result is populated after an assistant step")
+@given("a strategy.decide.request whose state has an Observation user message after the last assistant message")
 def _strategy_after_tool(ctx: BDDContext) -> None:
     _strategy_payload(
         ctx,
@@ -432,16 +437,19 @@ def _strategy_after_tool(ctx: BDDContext) -> None:
             "state": {
                 "messages": [
                     {"role": "user", "content": "go"},
-                    {"role": "assistant", "content": "thinking", "tool_calls": []},
+                    {
+                        "role": "assistant",
+                        "content": 'Thought: try it.\nAction: bash\nAction Input: {"cmd": ["echo", "x"]}\n',
+                    },
+                    {"role": "user", "content": 'Observation: {"stdout": "x"}'},
                 ],
-                "last_tool_result": {"id": "tc", "ok": True, "value": {"stdout": "x"}},
             }
         },
     )
     ctx.extras["strategy_openai_api_key"] = "sk-test"
 
 
-@given("a strategy.decide.request whose last assistant message has no tool_calls and no pending tool result")
+@given("a strategy.decide.request whose last assistant message contains a Final Answer label")
 def _strategy_done(ctx: BDDContext) -> None:
     _strategy_payload(
         ctx,
@@ -449,7 +457,7 @@ def _strategy_done(ctx: BDDContext) -> None:
             "state": {
                 "messages": [
                     {"role": "user", "content": "hi"},
-                    {"role": "assistant", "content": "hello back"},
+                    {"role": "assistant", "content": "Thought: greet.\nFinal Answer: hello back"},
                 ]
             }
         },
@@ -501,7 +509,7 @@ def _strategy_next_llm(ctx: BDDContext) -> None:
     assert payload["model"] == "gpt-4o-mini"
 
 
-@then("a strategy.decide.response is emitted with next tool and the first pending tool_call payload")
+@then("a strategy.decide.response is emitted with next tool and the parsed tool_call payload")
 def _strategy_next_tool(ctx: BDDContext) -> None:
     payload = _last_payload(ctx)
     assert payload["next"] == "tool"

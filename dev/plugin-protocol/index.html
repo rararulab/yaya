@@ -1368,6 +1368,21 @@ legacy path in the Tool-contract PR.</p>
 <p>Strategies control: which tools to offer, when to call memory, when to
 stop. Strategies <strong>do not</strong> change the ordering of the sequence —
 that is the kernel's contract with adapters.</p>
+<h3 id="cross-turn-history-hydration">Cross-turn history hydration<a class="headerlink" href="#cross-turn-history-hydration" title="Permanent link">&para;</a></h3>
+<p>At the start of every turn the loop hydrates initial <code>messages</code> from
+the session tape (#156). The canonical history already lives on the
+tape — the <code>SessionPersister</code> mirrors every <code>user.message.received</code> /
+<code>assistant.message.done</code> event onto the tape per the Persistence table
+below — so the loop projects <code>kind="message"</code> entries onto
+<code>{role, content}</code> before stamping the incoming user text as the
+trailing message. Compaction anchors
+(<code>kind="anchor"</code> with <code>payload.state.kind == "compaction"</code>) elide the
+pre-anchor prefix and inject the anchor's <code>summary</code> as a
+<code>role="system"</code> message, matching
+<code>yaya.kernel.tape_context.select_messages</code>. When <code>AgentLoop</code> is
+constructed without a <code>session_store</code> (e.g. <code>yaya hello</code>, loop unit
+tests), each turn starts from a single-message state — the 0.1
+fallback.</p>
 <h3 id="correlation-via-event-id">Correlation via event id<a class="headerlink" href="#correlation-via-event-id" title="Permanent link">&para;</a></h3>
 <p>Request/response pairs (<code>strategy.decide.*</code>, <code>llm.call.*</code>,
 <code>memory.query</code> / <code>memory.result</code>, <code>tool.call.request</code> /

@@ -494,21 +494,22 @@ adapter's UI assets are pre-built and shipped in the wheel.</p>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  kernel/             # the kernel — the entire product core lives here
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    bus.py            # event bus: pub/sub, ordering, backpressure
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    registry.py       # plugin discovery, lifecycle, failure accounting
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    loop.py           # fixed agent loop; calls out to strategy / llm / tool / memory
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    plugin.py         # Plugin ABI (Protocol), KernelContext, Category enum
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    events.py         # closed event-kind catalog + TypedDict payloads (authoritative)
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>  plugins/            # bundled plugins — load through the same protocol as third-party
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    web/              # web adapter (FastAPI WS bridge + pi-web-ui static assets)
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>      package.json    # npm: consumes @mariozechner/pi-web-ui
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>      src/            # TypeScript shell (dev-time only)
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>      static/         # build output — ships in the wheel
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    llm_openai/       # seed llm-provider plugin
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>    tool_bash/        # seed tool plugin
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>    strategy_react/   # seed strategy plugin
-<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    memory_sqlite/    # seed memory plugin
-<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>  core/               # shared pure-logic helpers (updater, etc.)
-<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>tests/                # mirrors src/ one-to-one
-<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>specs/                # BDD contracts (agent-spec) per feature
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    loop.py           # fixed agent loop; calls out to strategy / llm / tool / memory;
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>                      #   hydrates cross-turn messages from the session tape at turn start (#156)
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    plugin.py         # Plugin ABI (Protocol), KernelContext, Category enum
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    events.py         # closed event-kind catalog + TypedDict payloads (authoritative)
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>  plugins/            # bundled plugins — load through the same protocol as third-party
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    web/              # web adapter (FastAPI WS bridge + pi-web-ui static assets)
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>      package.json    # npm: consumes @mariozechner/pi-web-ui
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>      src/            # TypeScript shell (dev-time only)
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>      static/         # build output — ships in the wheel
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>    llm_openai/       # seed llm-provider plugin
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>    tool_bash/        # seed tool plugin
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    strategy_react/   # seed strategy plugin
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>    memory_sqlite/    # seed memory plugin
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>  core/               # shared pure-logic helpers (updater, etc.)
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>tests/                # mirrors src/ one-to-one
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>specs/                # BDD contracts (agent-spec) per feature
 </code></pre></div>
 <h2 id="layering-rules">Layering rules<a class="headerlink" href="#layering-rules" title="Permanent link">&para;</a></h2>
 <ul>

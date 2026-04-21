@@ -46,3 +46,13 @@ Feature: Web adapter HTTP admin API
     Given a running llm openai plugin with a live client
     When a config updated event triggers a client rebuild
     Then the previous client is never closed and a fresh client is built
+
+  Scenario: GET api sessions lists persisted tapes for the current workspace
+    Given an admin router wired to a live SessionStore with one appended user message
+    When a client GETs api sessions
+    Then the response lists one row with id entry_count and tape_name populated
+
+  Scenario: GET api sessions returns 503 when the adapter has no session store wired
+    Given an admin router with session_store None and workspace None
+    When a client GETs api sessions
+    Then the response status is 503

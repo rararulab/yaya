@@ -20,7 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover - type-only import, breaks an import cycle
     from yaya.kernel.config_store import ConfigStore
     from yaya.kernel.providers import ProvidersView
     from yaya.kernel.registry import PluginRegistry
-    from yaya.kernel.session import Session
+    from yaya.kernel.session import Session, SessionStore
 
 
 class Category(StrEnum):
@@ -105,6 +105,7 @@ class KernelContext:
         session: Session | None = None,
         registry: PluginRegistry | None = None,
         config_store: ConfigStore | None = None,
+        session_store: SessionStore | None = None,
     ) -> None:
         """Bind the context to a specific plugin.
 
@@ -128,6 +129,7 @@ class KernelContext:
         self._session = session
         self._registry = registry
         self._config_store = config_store
+        self._session_store = session_store
 
     @property
     def bus(self) -> EventBus:
@@ -237,6 +239,21 @@ class KernelContext:
         store (tests injecting a ``KernelConfig`` directly).
         """
         return self._config_store
+
+    @property
+    def session_store(self) -> SessionStore | None:
+        """The live :class:`~yaya.kernel.session.SessionStore`, if any.
+
+        Same escape-hatch caveat as :attr:`registry`: the bundled
+        ``web`` adapter consults this surface to implement
+        ``GET /api/sessions`` so the sidebar can hydrate chat history
+        across restarts. Normal plugin code should emit tape writes
+        through the bus (the kernel's persister subscribes there).
+
+        Returns ``None`` when the kernel was booted without a
+        session store (tests, ``yaya plugin list`` transient stack).
+        """
+        return self._session_store
 
     async def emit(
         self,

@@ -181,6 +181,7 @@ class PluginRegistry:
         session: Session | None = None,
         config_store: ConfigStore | None = None,
         config_db_path: Path | None = None,
+        session_store: Any = None,
     ) -> None:
         """Bind the registry to ``bus``.
 
@@ -222,6 +223,11 @@ class PluginRegistry:
         self._config_store: ConfigStore | None = config_store
         self._config_db_path = config_db_path
         self._owns_config_store = config_store is None
+        # The session store is built and owned by the caller (serve.py);
+        # the registry just holds a reference so it can thread it into
+        # every KernelContext. Typed ``Any`` to avoid the session module
+        # dependency at import time (same rationale as SessionPersister).
+        self._session_store = session_store
 
         # Name → record. Bounded by the install set (not user input), so
         # there is no leak risk even across many discovery cycles.
@@ -738,6 +744,7 @@ class PluginRegistry:
             session=self._session,
             registry=self,
             config_store=self._config_store,
+            session_store=self._session_store,
         )
 
     # -- failure accounting -----------------------------------------------------

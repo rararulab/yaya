@@ -169,6 +169,24 @@ Scenario: llm_openai hot reload preserves in flight calls
   When a config updated event triggers a client rebuild
   Then the previous client is never closed and a fresh client is built
 
+Scenario: GET api sessions lists persisted tapes for the current workspace
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_sessions_list_returns_persisted_tape
+  Level: unit
+  Given an admin router wired to a live SessionStore with one appended user message
+  When a client GETs api sessions
+  Then the response lists one row with id entry_count and tape_name populated
+
+Scenario: GET api sessions returns 503 when the adapter has no session store wired
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_sessions_list_503_when_no_store
+  Level: unit
+  Given an admin router with session_store None and workspace None
+  When a client GETs api sessions
+  Then the response status is 503
+
 ## Out of Scope
 
 - Authentication, authorization, and public-bind support — GOAL.md

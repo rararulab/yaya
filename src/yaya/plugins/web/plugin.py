@@ -309,6 +309,7 @@ class WebAdapter:
         registry_ref = ctx.registry if ctx is not None else None
         store_ref = ctx.config_store if ctx is not None else None
         bus_ref = ctx.bus if ctx is not None else None
+        session_store_ref = ctx.session_store if ctx is not None else None
 
         # FastAPI matches in registration order. Register the legacy
         # ``/api/plugins`` fallback FIRST when no registry is wired so
@@ -329,6 +330,8 @@ class WebAdapter:
                 registry=registry_ref,
                 config_store=store_ref,
                 bus=bus_ref,
+                session_store=session_store_ref,
+                workspace=Path.cwd(),
             )
         )
 

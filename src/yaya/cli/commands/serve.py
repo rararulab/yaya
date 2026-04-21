@@ -43,8 +43,10 @@ from yaya.kernel import (
     LLMSummarizer,
     MemoryTapeStore,
     PluginRegistry,
+    SessionPersister,
     SessionStore,
     install_compaction_manager,
+    install_session_persister,
     load_config,
 )
 
@@ -236,12 +238,13 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
 
     cfg = kernel_config or load_config()
 
-    # ``--resume`` is accepted today and stashed on ``cfg.session.default_id``
-    # so the session-persister hookup that lands in a follow-up PR can pick
-    # it up without another protocol touch. Two input paths feed the same
-    # config slot: the explicit flag (this call) and the marker file written
-    # by ``yaya session resume <id>`` on a previous invocation (lesson #23
-    # — an accepted flag must capture state or warn; silent no-op is banned).
+    # ``--resume`` is accepted today and stashed on ``cfg.session.default_id``.
+    # The persister installed below writes tapes; replay/rehydration of a
+    # prior session is tracked as a separate follow-up (#153 out-of-scope:
+    # UI click-to-resume). Two input paths feed the same config slot: the
+    # explicit flag (this call) and the marker file written by
+    # ``yaya session resume <id>`` on a previous invocation (lesson #23 —
+    # an accepted flag must capture state or warn; silent no-op is banned).
     resume_target = resume or _read_resume_marker()
     if resume_target is not None:
         cfg.session.default_id = resume_target
@@ -303,9 +306,15 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
                 aio_loop.add_signal_handler(sig, _trigger)
 
     bus = EventBus()
-    registry = PluginRegistry(bus, kernel_config=cfg)
+    # Build the session store BEFORE the registry so the adapter
+    # plugin's ``on_load`` (which captures ``ctx.session_store``) sees
+    # a live reference instead of ``None``. Adapter plugins hydrate
+    # chat history from this store; deferring construction would force
+    # a rehydration hook that does not exist today.
+    session_store: SessionStore = _make_session_store(cfg)
+    registry = PluginRegistry(bus, kernel_config=cfg, session_store=session_store)
     loop = AgentLoop(bus)
-    session_store: SessionStore | None = None
+    session_persister: SessionPersister | None = None
     compaction_manager: CompactionManager | None = None
     registry_started = False
     loop_started = False
@@ -316,12 +325,24 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
             registry_started = True
             await loop.start()
             loop_started = True
-            # Compaction wiring runs AFTER registry.start so the
-            # llm-provider lookup has a non-empty load set. Failures
-            # here are non-fatal — the warn/skip path preserves kernel
-            # uptime (lesson #29: broken subsystem taints only itself).
+            # Persister install runs AFTER the loop starts so the
+            # subscription chain lands on a fully-wired bus. Failures
+            # here are fatal: the user explicitly picked a durable
+            # backend, and silently running without persistence would
+            # recreate the #153 bug.
+            session_persister = await install_session_persister(
+                bus=bus,
+                store=session_store,
+                workspace=Path.cwd(),
+                kinds=sorted(PUBLIC_EVENT_KINDS),
+            )
+            # Compaction wiring runs AFTER the persister so the
+            # llm-provider lookup has a non-empty load set and so
+            # compaction tape writes land through the same store.
+            # Failures here are non-fatal — the warn/skip path
+            # preserves kernel uptime (lesson #29: broken subsystem
+            # taints only itself).
             if cfg.compaction.auto:
-                session_store = _make_session_store(cfg)
                 compaction_manager = await _maybe_install_compaction(
                     state,
                     cfg=cfg,
@@ -388,9 +409,14 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
         if compaction_manager is not None:
             with contextlib.suppress(Exception):
                 await compaction_manager.stop()
-        if session_store is not None:
+        # Stop the persister before closing the store — it still has
+        # subscriptions that could fire during registry.stop() and
+        # attempt a write on a closed tape otherwise.
+        if session_persister is not None:
             with contextlib.suppress(Exception):
-                await session_store.close()
+                await session_persister.stop()
+        with contextlib.suppress(Exception):
+            await session_store.close()
         if loop_started:
             await loop.stop()
         if registry_started:

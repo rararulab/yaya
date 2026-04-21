@@ -62,6 +62,32 @@ export type ConnectionStatus =
 	| "reconnecting"
 	| "disconnected";
 
+/**
+ * One row in the `/api/sessions` response — mirrors
+ * `yaya.kernel.session.SessionInfo`.
+ */
+export interface SessionRow {
+	readonly id: string;
+	readonly tape_name: string;
+	readonly created_at: string | null;
+	readonly entry_count: number;
+	readonly last_anchor: string | null;
+}
+
+async function fetchSessions(): Promise<SessionRow[]> {
+	try {
+		const res = await fetch("/api/sessions", {
+			headers: { Accept: "application/json" },
+		});
+		if (!res.ok) return [];
+		const body = (await res.json()) as { sessions?: SessionRow[] };
+		return Array.isArray(body.sessions) ? body.sessions : [];
+	} catch {
+		// Offline / adapter not wired — degrade to empty, UI stays useful.
+		return [];
+	}
+}
+
 const THEME_KEY = "yaya.theme";
 const SIDEBAR_COLLAPSED_KEY = "yaya.sidebar.collapsed";
 
@@ -212,6 +238,7 @@ export class YayaApp extends LitElement {
 	@state() private sidebarCollapsed = false;
 	@state() private theme: "light" | "dark" = "light";
 	@state() private history: string[] = [];
+	@state() private sessions: SessionRow[] = [];
 	@state() private connectionStatus: ConnectionStatus = "connecting";
 	@query("yaya-settings-modal") private modalEl?: YayaSettingsModal;
 
@@ -255,6 +282,10 @@ export class YayaApp extends LitElement {
 		return this;
 	}
 
+	private onTurnFinished = (): void => {
+		void this.refreshSessions();
+	};
+
 	override connectedCallback(): void {
 		super.connectedCallback();
 		this.theme = loadTheme();
@@ -262,6 +293,7 @@ export class YayaApp extends LitElement {
 		this.sidebarCollapsed = loadSidebarCollapsed();
 		window.addEventListener("hashchange", this.onHashChange);
 		window.addEventListener("yaya:connection-status", this.onConnectionStatus);
+		window.addEventListener("yaya:turn-finished", this.onTurnFinished);
 		this.addEventListener("yaya:settings-close", this.onSettingsClose);
 		if (hashWantsSettings()) {
 			// Defer so the modal element is registered first.
@@ -273,13 +305,19 @@ export class YayaApp extends LitElement {
 		} catch {
 			this.history = [];
 		}
+		void this.refreshSessions();
 	}
 
 	override disconnectedCallback(): void {
 		super.disconnectedCallback();
 		window.removeEventListener("hashchange", this.onHashChange);
 		window.removeEventListener("yaya:connection-status", this.onConnectionStatus);
+		window.removeEventListener("yaya:turn-finished", this.onTurnFinished);
 		this.removeEventListener("yaya:settings-close", this.onSettingsClose);
+	}
+
+	private async refreshSessions(): Promise<void> {
+		this.sessions = await fetchSessions();
 	}
 
 	private toggleSidebar(): void {
@@ -374,12 +412,18 @@ export class YayaApp extends LitElement {
 				</nav>
 				<div class="yaya-history">
 					<div class="yaya-history-title yaya-sidebar-label">Recent</div>
-					${this.history.length === 0
-						? html`<p class="yaya-empty yaya-sidebar-label">No chats yet.</p>`
-						: this.history.map(
-								(h) =>
-									html`<button class="yaya-history-item yaya-sidebar-label" title=${h}>${h}</button>`,
-							)}
+					${this.sessions.length > 0
+						? this.sessions.map((s) => {
+								const label = s.last_anchor ?? s.id;
+								const title = `${s.id} · ${s.entry_count} entries${s.created_at ? ` · ${s.created_at}` : ""}`;
+								return html`<button class="yaya-history-item yaya-sidebar-label" title=${title} data-session-id=${s.id}>${label}</button>`;
+							})
+						: this.history.length > 0
+							? this.history.map(
+									(h) =>
+										html`<button class="yaya-history-item yaya-sidebar-label" title=${h}>${h}</button>`,
+								)
+							: html`<p class="yaya-empty yaya-sidebar-label">No chats yet.</p>`}
 				</div>
 				<div
 					class="yaya-sidebar-status"

@@ -128,6 +128,59 @@ async def test_run_serve_registers_signal_handler(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
+async def test_run_serve_installs_session_persister(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``run_serve`` must wire the session persister so tapes land on disk (#153).
+
+    Before the fix, ``yaya serve`` never subscribed the persister and
+    tapes stayed empty across an entire session. We spy on
+    ``install_session_persister`` and assert it is invoked exactly
+    once with the store the command built and a non-empty kinds list.
+    """
+    from yaya.cli.commands import serve as serve_mod
+
+    calls: list[dict[str, object]] = []
+
+    async def _fake_install(*, bus, store, workspace, kinds):  # type: ignore[no-untyped-def]
+        calls.append({
+            "bus": bus,
+            "store": store,
+            "workspace": workspace,
+            "kinds_count": len(kinds),
+        })
+
+        class _Stub:
+            async def stop(self) -> None:
+                return None
+
+        return _Stub()
+
+    monkeypatch.setattr(serve_mod, "install_session_persister", _fake_install)
+
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=True)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=True,
+            strategy="react",
+            dev=False,
+            shutdown_event=shutdown,
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    code = await asyncio.wait_for(task, timeout=5.0)
+    assert code == 0
+
+    assert len(calls) == 1, "persister must install exactly once per serve lifetime"
+    call = calls[0]
+    assert call["store"] is not None
+    assert isinstance(call["kinds_count"], int)
+    assert call["kinds_count"] > 0
+
+
+@pytest.mark.asyncio
 async def test_run_serve_startup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Kernel boot crash surfaces ok=false, exit code 1."""
     from yaya.cli.commands import serve as serve_mod

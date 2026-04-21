@@ -37,10 +37,13 @@ from yaya.kernel.providers import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover - type-only imports, avoid cycles.
+    from pathlib import Path
+
     from yaya.kernel.bus import EventBus
     from yaya.kernel.config_store import ConfigStore
     from yaya.kernel.plugin import Plugin
     from yaya.kernel.registry import PluginRegistry
+    from yaya.kernel.session import SessionStore
 
 __all__ = [
     "SECRET_SUFFIXES",
@@ -252,6 +255,8 @@ def build_admin_router(
     registry: PluginRegistry | None,
     config_store: ConfigStore | None,
     bus: EventBus | None,
+    session_store: SessionStore | None = None,
+    workspace: Path | None = None,
 ) -> APIRouter:
     """Assemble the HTTP admin router.
 
@@ -267,12 +272,50 @@ def build_admin_router(
             absent.
         bus: Event bus used by ``POST /api/llm-providers/{name}/test``
             to fire ``llm.call.request``.
+        session_store: Live session store; ``GET /api/sessions`` returns
+            ``503`` when absent.
+        workspace: Workspace path the session listing is scoped to.
+            Must be provided when ``session_store`` is; tests typically
+            inject a ``tmp_path``.
     """
     router = APIRouter()
     _register_config_routes(router, config_store)
     _register_plugin_routes(router, registry, config_store)
     _register_provider_routes(router, registry, config_store, bus)
+    _register_session_routes(router, session_store, workspace)
     return router
+
+
+def _register_session_routes(
+    router: APIRouter,
+    session_store: SessionStore | None,
+    workspace: Path | None,
+) -> None:
+    """Attach ``GET /api/sessions`` so the sidebar can hydrate history."""
+
+    @router.get("/api/sessions")
+    async def _sessions_list() -> JSONResponse:
+        """Return persisted sessions (newest first) for the current workspace.
+
+        Each row carries ``{id, tape_name, created_at, entry_count,
+        last_anchor}``. Sorted by ``created_at`` descending so the UI
+        can render in display order without additional work.
+        """
+        store = cast("SessionStore", _require(session_store, "session store"))
+        ws = cast("Path", _require(workspace, "session workspace"))
+        infos = await store.list_sessions(ws)
+        rows = [
+            {
+                "id": info.session_id,
+                "tape_name": info.tape_name,
+                "created_at": info.created_at,
+                "entry_count": info.entry_count,
+                "last_anchor": info.last_anchor,
+            }
+            for info in infos
+        ]
+        rows.sort(key=lambda r: r["created_at"] or "", reverse=True)
+        return JSONResponse({"sessions": rows})
 
 
 def _require(obj: Any, label: str) -> Any:

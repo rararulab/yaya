@@ -292,6 +292,9 @@ export class YayaChat extends LitElement {
 		this.messages = [...this.messages, msg];
 		this.streamingMessage = null;
 		this.inFlight = false;
+		// Let the sidebar re-fetch /api/sessions so the Recent list
+		// picks up the tape that landed on this turn.
+		window.dispatchEvent(new CustomEvent("yaya:turn-finished"));
 	}
 
 	// -- outbound ---------------------------------------------------------

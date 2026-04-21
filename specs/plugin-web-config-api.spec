@@ -187,6 +187,15 @@ Scenario: GET api sessions returns 503 when the adapter has no session store wir
   When a client GETs api sessions
   Then the response status is 503
 
+Scenario: Session list rows include a preview sourced from the first user message
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_sessions_list_row_includes_user_message_preview
+  Level: unit
+  Given a SessionStore with a tape whose first message is from a user
+  When a client GETs api sessions
+  Then the row carries a preview field equal to the user message content
+
 ## Out of Scope
 
 - Authentication, authorization, and public-bind support — GOAL.md

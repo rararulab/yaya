@@ -56,3 +56,8 @@ Feature: Web adapter HTTP admin API
     Given an admin router with session_store None and workspace None
     When a client GETs api sessions
     Then the response status is 503
+
+  Scenario: Session list rows include a preview sourced from the first user message
+    Given a SessionStore with a tape whose first message is from a user
+    When a client GETs api sessions
+    Then the row carries a preview field equal to the user message content

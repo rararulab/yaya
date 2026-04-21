@@ -311,6 +311,7 @@ def _register_session_routes(
                 "created_at": info.created_at,
                 "entry_count": info.entry_count,
                 "last_anchor": info.last_anchor,
+                "preview": info.preview,
             }
             for info in infos
         ]

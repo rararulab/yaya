@@ -884,13 +884,16 @@ yaya-app {
 }
 
 /* Collapsed-by-default tool-output block. Click the summary row to
- * reveal the <console-block>. The transcript stays scannable — raw
- * stdout/stderr is an opt-in detail, not the default. */
+ * reveal the <console-block>. Matches the assistant bubble's
+ * ``max-w-[75%]`` + left-align (``margin-right: auto``) so the
+ * tool card threads into the assistant's turn visually rather than
+ * spanning the full transcript column (#149). */
 .yaya-tool-block {
 	border: 1px solid var(--yaya-border);
 	border-radius: var(--yaya-radius-md);
 	background: var(--yaya-sidebar-bg);
-	margin: 4px 0;
+	margin: 4px auto 4px 0;
+	max-width: 75%;
 	font-size: 12px;
 }
 
@@ -986,11 +989,11 @@ yaya-chat {
 	gap: 8px;
 }
 
-/* Dock the composer at the bottom of the main column. A top border
- * separates it from the scrolling transcript so long conversations
- * don't bleed into the input. */
+/* Dock the composer at the bottom of the main column. No top
+ * divider — kimi-style composers rely on the input's own border
+ * and the dock's background to separate it from the transcript
+ * (#149). */
 .yaya-chat-dock {
-	border-top: 1px solid var(--yaya-border);
 	padding: 12px 16px 16px;
 	background: var(--yaya-main-bg);
 }

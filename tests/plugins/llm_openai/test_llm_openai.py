@@ -796,3 +796,52 @@ def test_tool_call_to_dict_non_dict_non_pydantic_fallback() -> None:
     tc = _FakeAttrToolCall(call_id="call_q", name="bash")
     out = _tool_call_to_dict(tc)
     assert out == {"id": "call_q", "name": "bash", "args": {}}
+
+
+# ---------------------------------------------------------------------------
+# _strip_reasoning_tags — inline <think> removal (#149).
+# ---------------------------------------------------------------------------
+
+
+def test_strip_reasoning_tags_passthrough_when_no_think() -> None:
+    from yaya.plugins.llm_openai.plugin import _strip_reasoning_tags
+
+    assert _strip_reasoning_tags("hello world") == "hello world"
+    assert _strip_reasoning_tags("") == ""
+
+
+def test_strip_reasoning_tags_single_block() -> None:
+    from yaya.plugins.llm_openai.plugin import _strip_reasoning_tags
+
+    raw = "<think>plan the command</think>\n\nok."
+    assert _strip_reasoning_tags(raw) == "ok."
+
+
+def test_strip_reasoning_tags_multiline_block_is_removed_entirely() -> None:
+    from yaya.plugins.llm_openai.plugin import _strip_reasoning_tags
+
+    raw = "<think>\nline1\nline2\n</think>\n\nfinal answer"
+    assert _strip_reasoning_tags(raw) == "final answer"
+
+
+def test_strip_reasoning_tags_multiple_blocks() -> None:
+    from yaya.plugins.llm_openai.plugin import _strip_reasoning_tags
+
+    raw = "<think>first</think> A <think>second</think> B"
+    assert _strip_reasoning_tags(raw) == "A  B"
+
+
+def test_strip_reasoning_tags_only_thinking_collapses_to_empty() -> None:
+    """A content field that's nothing but reasoning comes back empty.
+
+    This is the pattern that caused #149 — turn-one assistant content
+    was ``"<think>...</think>\\n\\n"`` followed by only tool_calls,
+    so stripping the think block yields an empty string. The loop
+    tolerates empty ``last_llm_text`` via its ``or state.last_llm_text``
+    fallback, but at least the replayed history no longer echoes
+    reasoning tags back to the model.
+    """
+    from yaya.plugins.llm_openai.plugin import _strip_reasoning_tags
+
+    raw = "<think>planning</think>\n\n"
+    assert _strip_reasoning_tags(raw) == ""

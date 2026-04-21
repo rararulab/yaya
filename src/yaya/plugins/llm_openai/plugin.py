@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -329,7 +330,15 @@ class OpenAIProvider:
         choices: list[Any] = list(choices_raw) if choices_raw else []  # pyright: ignore[reportUnknownArgumentType]
         choice: Any = choices[0] if choices else None
         message: Any = choice.message if choice is not None else None
-        text: str = getattr(message, "content", "") or ""
+        raw_text: str = getattr(message, "content", "") or ""
+        # Strip inline ``<think>...</think>`` reasoning blocks that
+        # MiniMax / DeepSeek-R1 style models embed in ``content``.
+        # Replaying those tags verbatim in the next
+        # ``llm.call.request`` history leaves the model echoing only
+        # more reasoning on turn 2 with no visible output — the chat
+        # then looks single-round because ``assistant.message.done``
+        # falls back to turn 1's thinking-only text (#149).
+        text: str = _strip_reasoning_tags(raw_text)
         raw_tool_calls_obj: Any = getattr(message, "tool_calls", None) or []
         raw_tool_calls: list[Any] = list(raw_tool_calls_obj) if raw_tool_calls_obj else []
         tool_calls = [_tool_call_to_dict(tc) for tc in raw_tool_calls]
@@ -401,6 +410,29 @@ class OpenAIProvider:
             payload,
             session_id=ev.session_id,
         )
+
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _strip_reasoning_tags(text: str) -> str:
+    """Remove inline ``<think>...</think>`` blocks from LLM content.
+
+    MiniMax-M2, DeepSeek-R1, and related models stream their chain-
+    of-thought inline as ``<think>...</think>`` inside the chat
+    completion's ``content`` field. That text is useful for UI
+    reasoning panels but toxic when replayed back into the next
+    ``llm.call.request`` — the model sees its own thinking markers
+    in history and stops producing visible output.
+
+    Strip the tags here so every downstream consumer (loop replay,
+    assistant.message.done, UI bubble) sees the post-reasoning text
+    only. Preserving the reasoning for the UI is a later enhancement;
+    the priority is unblocking the multi-turn conversation (#149).
+    """
+    if "<think>" not in text:
+        return text
+    return _THINK_RE.sub("", text).strip()
 
 
 def _tool_call_to_dict(tc: Any) -> dict[str, Any]:

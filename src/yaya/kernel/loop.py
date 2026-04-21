@@ -431,15 +431,18 @@ class AgentLoop:
             result = await self._call_tool(session_id, tool_call)
             state.last_tool_result = dict(result.payload)
             # Append an OpenAI-style tool message so the next LLM call
-            # sees the tool's output. Without this the LLM loops back
-            # with no visibility into what bash did — at best it
-            # hallucinates; at worst it retries the same call (#147).
+            # sees the tool's output. ``name`` is optional per the
+            # OpenAI spec but MiniMax-M2 and similar providers fall
+            # silent on turn 2 without it (#149).
             tool_call_id = str(tool_call.get("id", ""))
+            tool_name = str(tool_call.get("name", ""))
             tool_msg: Message = {
                 "role": "tool",
                 "tool_call_id": tool_call_id,
                 "content": _format_tool_result_for_llm(result.payload),
             }
+            if tool_name:
+                tool_msg["name"] = tool_name
             state.messages.append(tool_msg)
             return False
         await self._emit_kernel_error(

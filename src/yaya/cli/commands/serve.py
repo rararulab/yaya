@@ -313,7 +313,7 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
     # a rehydration hook that does not exist today.
     session_store: SessionStore = _make_session_store(cfg)
     registry = PluginRegistry(bus, kernel_config=cfg, session_store=session_store)
-    loop = AgentLoop(bus)
+    loop = AgentLoop(bus, session_store=session_store, workspace=Path.cwd())
     session_persister: SessionPersister | None = None
     compaction_manager: CompactionManager | None = None
     registry_started = False

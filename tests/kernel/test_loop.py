@@ -728,6 +728,315 @@ async def test_memory_query_with_nonnumeric_k_defaults_to_5() -> None:
 # ---------------------------------------------------------------------------
 
 
+async def test_turn_with_no_tape_behaves_like_before() -> None:
+    """#156 regression: without a session_store the turn state is one user message.
+
+    Guards the 0.1 fallback — ``yaya hello`` and bundled unit tests
+    construct ``AgentLoop(bus)`` with no store, and must keep starting
+    turns with exactly the incoming user message (no crash, no extra
+    history pulled from thin air).
+    """
+    bus = EventBus()
+    observed: list[list[dict[str, Any]]] = []
+
+    async def record_decide(ev: Event) -> None:
+        state = ev.payload.get("state", {})
+        msgs = state.get("messages", []) if isinstance(state, dict) else []
+        observed.append(list(msgs))
+        await bus.publish(
+            new_event(
+                "strategy.decide.response",
+                {"next": "done", "request_id": ev.id},
+                session_id=ev.session_id,
+                source="fake-strategy",
+            )
+        )
+
+    bus.subscribe("strategy.decide.request", record_decide, source="fake-strategy")
+
+    loop = AgentLoop(bus, LoopConfig(step_timeout_s=2.0))
+    await loop.start()
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "solo"},
+            session_id="s-nohist",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert observed == [[{"role": "user", "content": "solo"}]]
+
+
+@dataclass
+class _FakeSession:
+    """Stub :class:`~yaya.kernel.session.Session` returning pre-scripted entries.
+
+    The real Session reads from a :class:`~republic.TapeEntry` store; we
+    just need ``entries()`` to return objects with ``kind`` / ``payload``
+    so ``_project_entries_to_messages`` sees tape-shaped data. Using a
+    lightweight stand-in keeps the test free of filesystem / republic
+    wiring — the hydration contract is stable on the object shape.
+    """
+
+    scripted: list[Any]
+
+    async def entries(self) -> list[Any]:
+        return list(self.scripted)
+
+
+@dataclass
+class _FakeEntry:
+    kind: str
+    payload: dict[str, Any]
+
+
+@dataclass
+class _FakeStore:
+    """Minimal ``SessionStore`` duck: ``open(workspace, session_id) -> Session``."""
+
+    session: _FakeSession
+
+    async def open(self, _workspace: Any, _session_id: str) -> _FakeSession:
+        return self.session
+
+
+async def test_turn_loads_prior_messages_from_tape() -> None:
+    """#156 AC-01: prior user + assistant messages ride into the turn's state.
+
+    A session with one completed exchange on the tape should yield a
+    three-message state on the next turn: prior user → prior assistant
+    → new user message. The persister race path is not exercised here
+    (tape is scripted before the turn runs).
+    """
+    tape: list[_FakeEntry] = [
+        _FakeEntry("anchor", {"name": "session/start", "state": {"owner": "human"}}),
+        _FakeEntry("message", {"role": "user", "content": "hi"}),
+        _FakeEntry("message", {"role": "assistant", "content": "hello"}),
+    ]
+    store = _FakeStore(_FakeSession(tape))
+
+    bus = EventBus()
+    observed: list[list[dict[str, Any]]] = []
+
+    async def record_decide(ev: Event) -> None:
+        state = ev.payload.get("state", {})
+        msgs = state.get("messages", []) if isinstance(state, dict) else []
+        observed.append(list(msgs))
+        await bus.publish(
+            new_event(
+                "strategy.decide.response",
+                {"next": "done", "request_id": ev.id},
+                session_id=ev.session_id,
+                source="fake-strategy",
+            )
+        )
+
+    bus.subscribe("strategy.decide.request", record_decide, source="fake-strategy")
+
+    loop = AgentLoop(
+        bus,
+        LoopConfig(step_timeout_s=2.0),
+        session_store=store,
+        workspace="/fake/ws",
+    )
+    await loop.start()
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "what did I say?"},
+            session_id="s-hist",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert observed == [
+        [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+            {"role": "user", "content": "what did I say?"},
+        ]
+    ]
+
+
+async def test_turn_skips_history_before_latest_compaction_anchor() -> None:
+    """#156 AC-02: compaction anchor elides the pre-anchor prefix.
+
+    Tape shape: msg-A, msg-B, compaction-anchor, msg-C. The hydrated
+    turn state must drop msg-A and msg-B, inject the compaction summary
+    as a ``role="system"`` message, keep msg-C, and append the new
+    user message. Mirrors the contract in
+    :func:`yaya.kernel.tape_context.select_messages`.
+    """
+    tape: list[_FakeEntry] = [
+        _FakeEntry("anchor", {"name": "session/start", "state": {"owner": "human"}}),
+        _FakeEntry("message", {"role": "user", "content": "msg-A"}),
+        _FakeEntry("message", {"role": "assistant", "content": "msg-B"}),
+        _FakeEntry(
+            "anchor",
+            {
+                "name": "compaction",
+                "state": {"kind": "compaction", "summary": "prior chat summarised"},
+            },
+        ),
+        _FakeEntry("message", {"role": "user", "content": "msg-C"}),
+    ]
+    store = _FakeStore(_FakeSession(tape))
+
+    bus = EventBus()
+    observed: list[list[dict[str, Any]]] = []
+
+    async def record_decide(ev: Event) -> None:
+        state = ev.payload.get("state", {})
+        msgs = state.get("messages", []) if isinstance(state, dict) else []
+        observed.append(list(msgs))
+        await bus.publish(
+            new_event(
+                "strategy.decide.response",
+                {"next": "done", "request_id": ev.id},
+                session_id=ev.session_id,
+                source="fake-strategy",
+            )
+        )
+
+    bus.subscribe("strategy.decide.request", record_decide, source="fake-strategy")
+
+    loop = AgentLoop(
+        bus,
+        LoopConfig(step_timeout_s=2.0),
+        session_store=store,
+        workspace="/fake/ws",
+    )
+    await loop.start()
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "follow up"},
+            session_id="s-compact",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert observed == [
+        [
+            {"role": "system", "content": "[compacted history]\nprior chat summarised"},
+            {"role": "user", "content": "msg-C"},
+            {"role": "user", "content": "follow up"},
+        ]
+    ]
+
+
+async def test_turn_deduplicates_trailing_current_user_message() -> None:
+    """#156 edge case: the persister may race ahead and add the current msg.
+
+    If the tape already contains the incoming user message as its
+    trailing entry (because the persister ran before the turn task read
+    the tape), the loop must not surface it twice. The fresh message
+    from ``user_ev.payload`` is the single source of truth for the new
+    turn; historical duplicates higher up the tape are legitimate and
+    preserved.
+    """
+    tape: list[_FakeEntry] = [
+        _FakeEntry("message", {"role": "user", "content": "follow up"}),  # persister race
+    ]
+    store = _FakeStore(_FakeSession(tape))
+
+    bus = EventBus()
+    observed: list[list[dict[str, Any]]] = []
+
+    async def record_decide(ev: Event) -> None:
+        state = ev.payload.get("state", {})
+        msgs = state.get("messages", []) if isinstance(state, dict) else []
+        observed.append(list(msgs))
+        await bus.publish(
+            new_event(
+                "strategy.decide.response",
+                {"next": "done", "request_id": ev.id},
+                session_id=ev.session_id,
+                source="fake-strategy",
+            )
+        )
+
+    bus.subscribe("strategy.decide.request", record_decide, source="fake-strategy")
+
+    loop = AgentLoop(
+        bus,
+        LoopConfig(step_timeout_s=2.0),
+        session_store=store,
+        workspace="/fake/ws",
+    )
+    await loop.start()
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "follow up"},
+            session_id="s-dedup",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert observed == [[{"role": "user", "content": "follow up"}]]
+
+
+async def test_turn_hydration_failure_falls_back_to_single_message() -> None:
+    """#156: a raising store must not poison the session worker."""
+
+    class _BoomStore:
+        async def open(self, _workspace: Any, _session_id: str) -> Any:
+            raise RuntimeError("tape unavailable")
+
+    bus = EventBus()
+    observed: list[list[dict[str, Any]]] = []
+
+    async def record_decide(ev: Event) -> None:
+        state = ev.payload.get("state", {})
+        msgs = state.get("messages", []) if isinstance(state, dict) else []
+        observed.append(list(msgs))
+        await bus.publish(
+            new_event(
+                "strategy.decide.response",
+                {"next": "done", "request_id": ev.id},
+                session_id=ev.session_id,
+                source="fake-strategy",
+            )
+        )
+
+    bus.subscribe("strategy.decide.request", record_decide, source="fake-strategy")
+
+    loop = AgentLoop(
+        bus,
+        LoopConfig(step_timeout_s=2.0),
+        session_store=_BoomStore(),
+        workspace="/fake/ws",
+    )
+    await loop.start()
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "still works"},
+            session_id="s-boom",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert observed == [[{"role": "user", "content": "still works"}]]
+
+
 async def test_assistant_done_carries_last_llm_tool_calls() -> None:
     """When the LLM response includes tool_calls, they propagate to done."""
     bus = EventBus()

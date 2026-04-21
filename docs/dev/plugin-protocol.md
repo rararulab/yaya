@@ -685,6 +685,23 @@ Strategies control: which tools to offer, when to call memory, when to
 stop. Strategies **do not** change the ordering of the sequence —
 that is the kernel's contract with adapters.
 
+### Cross-turn history hydration
+
+At the start of every turn the loop hydrates initial `messages` from
+the session tape (#156). The canonical history already lives on the
+tape — the `SessionPersister` mirrors every `user.message.received` /
+`assistant.message.done` event onto the tape per the Persistence table
+below — so the loop projects `kind="message"` entries onto
+`{role, content}` before stamping the incoming user text as the
+trailing message. Compaction anchors
+(`kind="anchor"` with `payload.state.kind == "compaction"`) elide the
+pre-anchor prefix and inject the anchor's `summary` as a
+`role="system"` message, matching
+`yaya.kernel.tape_context.select_messages`. When `AgentLoop` is
+constructed without a `session_store` (e.g. `yaya hello`, loop unit
+tests), each turn starts from a single-message state — the 0.1
+fallback.
+
 ### Correlation via event id
 
 Request/response pairs (`strategy.decide.*`, `llm.call.*`,

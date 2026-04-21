@@ -19,21 +19,29 @@ testable and deterministic.
   `strategy.decide.response` per request, echoing the originating
   event's `id` back as `request_id` so the loop's `_RequestTracker`
   can correlate.
-- When the most-recent assistant message carries a non-empty
-  `tool_calls` list, the decision is `{"next": "tool", "tool_call":
-  <first>}`; the kernel runs tool calls sequentially, so only the
-  first is surfaced per turn.
+- Implements classical ReAct (Yao et al. 2022): the strategy injects a
+  system prompt via `messages_prepend` that constrains the LLM to emit
+  either a `Thought: ... Action: <tool> Action Input: <json>` triple or
+  a `Thought: ... Final Answer: <text>` termination. Tool intent rides
+  in free-form assistant text; the strategy does not consume
+  `assistant.tool_calls`.
+- When the most-recent assistant message parses to a valid Action, the
+  decision is `{"next": "tool", "tool_call": {"id", "name", "args"}}`
+  with a synthesized id; only the first Action per turn is surfaced.
+- When the most-recent assistant message parses to a Final Answer the
+  decision is `{"next": "done"}`.
 - When no assistant message has been produced yet on the turn, the
   decision is `{"next": "llm", "provider": <configured>, "model":
-  <configured>}` using the hardcoded `openai` / `gpt-4o-mini`
-  defaults — `ctx.config` is consulted first for when registry P3
-  plumbs per-plugin config.
-- When the most-recent assistant message exists and has no pending
-  tool_calls AND no unconsumed tool result, the turn ends with
-  `{"next": "done"}`.
-- After a tool result lands, the decision loops back to
-  `{"next": "llm", ...}` so the LLM can read the tool output and
-  continue the turn.
+  <configured>, "messages_prepend": [<ReAct system prompt>]}`.
+- After any message lands on top of the last assistant message (an
+  Observation appended by the loop, for example), the decision loops
+  back to `{"next": "llm", ...}` so the LLM can read the observation
+  and continue the turn.
+- When the assistant message fails to parse into either shape, the
+  strategy appends one corrective `role="user"` nudge (marked with
+  `[yaya:react-format-nudge] `) via `messages_append` and re-rolls.
+  A second consecutive parse failure terminates the turn with
+  `{"next": "done"}` — no endless retries.
 
 ## Boundaries
 
@@ -68,32 +76,32 @@ Scenario: No assistant message yet decides next step is llm with configured prov
   Then a strategy.decide.response is emitted with next llm and the configured provider and model
   And the response echoes the originating request id
 
-Scenario: Pending tool_calls on the assistant message decide next step is tool with first tool call
+Scenario: Assistant message with a well-formed Action decides next step is tool with the parsed tool_call
   Test:
     Package: yaya
-    Filter: tests/plugins/strategy_react/test_strategy_react.py::test_assistant_with_tool_calls_returns_tool
+    Filter: tests/plugins/strategy_react/test_strategy_react.py::test_assistant_with_react_action_returns_tool
   Level: unit
-  Given a strategy.decide.request whose last assistant message carries a non-empty tool_calls list
+  Given a strategy.decide.request whose last assistant message contains a ReAct Action and Action Input
   When the ReAct plugin handles the event
-  Then a strategy.decide.response is emitted with next tool and the first pending tool_call payload
+  Then a strategy.decide.response is emitted with next tool and the parsed tool_call payload
   And the response echoes the originating request id
 
-Scenario: Tool result just landed decides next step loops back to llm for another pass
+Scenario: Observation follows the last assistant message so the next step loops back to llm
   Test:
     Package: yaya
-    Filter: tests/plugins/strategy_react/test_strategy_react.py::test_after_tool_result_returns_llm
+    Filter: tests/plugins/strategy_react/test_strategy_react.py::test_post_observation_returns_llm
   Level: unit
-  Given a strategy.decide.request whose last_tool_result is populated after an assistant step
+  Given a strategy.decide.request whose state has an Observation user message after the last assistant message
   When the ReAct plugin handles the event
   Then a strategy.decide.response is emitted with next llm and the configured provider and model
   And the response echoes the originating request id
 
-Scenario: Assistant message without tool_calls or pending tool result decides next step is done
+Scenario: Assistant message with a Final Answer label decides next step is done
   Test:
     Package: yaya
-    Filter: tests/plugins/strategy_react/test_strategy_react.py::test_assistant_without_tool_calls_returns_done
+    Filter: tests/plugins/strategy_react/test_strategy_react.py::test_assistant_with_final_answer_returns_done
   Level: unit
-  Given a strategy.decide.request whose last assistant message has no tool_calls and no pending tool result
+  Given a strategy.decide.request whose last assistant message contains a Final Answer label
   When the ReAct plugin handles the event
   Then a strategy.decide.response is emitted with next done
   And the response echoes the originating request id

@@ -1,14 +1,19 @@
-"""Tests for the ReAct strategy plugin.
+"""Tests for the ReAct strategy plugin (text Thought/Action/Observation).
 
-AC-bindings from ``specs/plugin-strategy_react.spec`` and
-``specs/plugin-instance-dispatch.spec``:
+Classical ReAct — the strategy parses ``Thought: / Action: /
+Action Input:`` triples (or ``Thought: / Final Answer:``) from the
+assistant's free-form text. It does NOT look at
+``assistant.tool_calls``; tool intent rides in prose only (#151).
+
+AC-bindings:
 
 * no assistant yet → ``test_no_assistant_yet_returns_llm``
-* pending tool_calls → ``test_assistant_with_tool_calls_returns_tool``
-* after tool result → ``test_after_tool_result_returns_llm``
-* assistant done → ``test_assistant_without_tool_calls_returns_done``
-* missing state → ``test_missing_state_raises``
-* model from instance → ``test_provider_and_model_reads_instance_config``
+* well-formed Action → ``test_assistant_with_react_action_returns_tool``
+* Final Answer → ``test_assistant_with_final_answer_returns_done``
+* post-Observation → ``test_post_observation_returns_llm``
+* malformed → nudge → ``test_malformed_assistant_triggers_nudge``
+* second malformed → terminate → ``test_second_malformed_terminates``
+* parser robustness → ``test_parse_assistant_*``
 """
 
 from __future__ import annotations
@@ -102,33 +107,34 @@ async def test_no_assistant_yet_returns_llm(tmp_path: Path, monkeypatch: pytest.
     assert "request_id" in got
 
 
-async def test_assistant_with_tool_calls_returns_tool(tmp_path: Path) -> None:
-    """Assistant with tool_calls → tool with the first call."""
+async def test_assistant_with_react_action_returns_tool(tmp_path: Path) -> None:
+    """Well-formed ReAct Action → tool with synthesized call id."""
     bus = EventBus()
-    tool_call = {"id": "tc-1", "name": "bash", "args": {"cmd": ["echo", "x"]}}
+    react_text = 'Thought: I should echo the value.\nAction: bash\nAction Input: {"cmd": ["echo", "x"]}'
     captured = await _drive(
         bus,
         react_plugin,
         tmp_path,
         {
             "state": {
+                "step": 2,
                 "messages": [
                     {"role": "user", "content": "run something"},
-                    {"role": "assistant", "content": "", "tool_calls": [tool_call]},
+                    {"role": "assistant", "content": react_text},
                 ],
             }
         },
-        session_id="sess-tool-1",
+        session_id="sess-action-1",
     )
     assert len(captured) == 1
     got = captured[0].payload
     assert got["next"] == "tool"
-    assert got["tool_call"] == tool_call
+    assert got["tool_call"] == {"id": "rx-2", "name": "bash", "args": {"cmd": ["echo", "x"]}}
     assert "request_id" in got
 
 
-async def test_after_tool_result_returns_llm(tmp_path: Path) -> None:
-    """Assistant then tool result → back to llm."""
+async def test_post_observation_returns_llm(tmp_path: Path) -> None:
+    """Assistant Action followed by an Observation user msg → llm for next turn."""
     bus = EventBus()
     captured = await _drive(
         bus,
@@ -136,14 +142,18 @@ async def test_after_tool_result_returns_llm(tmp_path: Path) -> None:
         tmp_path,
         {
             "state": {
+                "step": 3,
                 "messages": [
                     {"role": "user", "content": "go"},
-                    {"role": "assistant", "content": "thinking", "tool_calls": []},
+                    {
+                        "role": "assistant",
+                        "content": "Thought: run it.\nAction: bash\nAction Input: {}",
+                    },
+                    {"role": "user", "content": 'Observation: {"ok": true}'},
                 ],
-                "last_tool_result": {"id": "tc", "ok": True, "value": {"stdout": "x"}},
             }
         },
-        session_id="sess-after-tool",
+        session_id="sess-post-obs",
     )
     assert len(captured) == 1
     got = captured[0].payload
@@ -151,8 +161,8 @@ async def test_after_tool_result_returns_llm(tmp_path: Path) -> None:
     assert "request_id" in got
 
 
-async def test_assistant_without_tool_calls_returns_done(tmp_path: Path) -> None:
-    """Assistant with no tool_calls and no pending tool result → done."""
+async def test_assistant_with_final_answer_returns_done(tmp_path: Path) -> None:
+    """``Final Answer:`` in the last assistant → done."""
     bus = EventBus()
     captured = await _drive(
         bus,
@@ -162,16 +172,125 @@ async def test_assistant_without_tool_calls_returns_done(tmp_path: Path) -> None
             "state": {
                 "messages": [
                     {"role": "user", "content": "hi"},
-                    {"role": "assistant", "content": "hello back"},
+                    {
+                        "role": "assistant",
+                        "content": "Thought: greet back.\nFinal Answer: hello!",
+                    },
                 ],
             }
         },
-        session_id="sess-done-1",
+        session_id="sess-final",
     )
     assert len(captured) == 1
     got = captured[0].payload
     assert got["next"] == "done"
     assert "request_id" in got
+
+
+async def test_malformed_assistant_triggers_nudge(tmp_path: Path) -> None:
+    """Assistant text without an Action/Final Answer → llm + corrective nudge."""
+    bus = EventBus()
+    captured = await _drive(
+        bus,
+        react_plugin,
+        tmp_path,
+        {
+            "state": {
+                "messages": [
+                    {"role": "user", "content": "compute"},
+                    {"role": "assistant", "content": "I'll just answer directly: 42"},
+                ],
+            }
+        },
+        session_id="sess-nudge",
+    )
+    assert len(captured) == 1
+    got = captured[0].payload
+    assert got["next"] == "llm"
+    append = got.get("messages_append")
+    assert isinstance(append, list) and len(append) == 1
+    nudge = append[0]
+    assert nudge["role"] == "user"
+    assert nudge["content"].startswith("[yaya:react-format-nudge] ")
+
+
+async def test_second_malformed_terminates(tmp_path: Path) -> None:
+    """If a nudge is already in the recent history, a second parse failure → done."""
+    bus = EventBus()
+    captured = await _drive(
+        bus,
+        react_plugin,
+        tmp_path,
+        {
+            "state": {
+                "messages": [
+                    {"role": "user", "content": "compute"},
+                    {"role": "assistant", "content": "garbage"},
+                    {
+                        "role": "user",
+                        "content": "[yaya:react-format-nudge] please resend",
+                    },
+                    {"role": "assistant", "content": "still garbage"},
+                ],
+            }
+        },
+        session_id="sess-terminate",
+    )
+    assert len(captured) == 1
+    got = captured[0].payload
+    assert got["next"] == "done"
+
+
+def test_parse_assistant_final_answer() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant("Thought: done\nFinal Answer: the answer is 42")
+    assert out == ("final", "the answer is 42")
+
+
+def test_parse_assistant_well_formed_action() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant('Thought: ok\nAction: bash\nAction Input: {"cmd": ["ls"]}')
+    assert out == ("action", "bash", {"cmd": ["ls"]})
+
+
+def test_parse_assistant_action_input_in_code_fence() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant('Thought: ok\nAction: bash\nAction Input: ```json\n{"cmd": ["echo", "hi"]}\n```')
+    assert out == ("action", "bash", {"cmd": ["echo", "hi"]})
+
+
+def test_parse_assistant_missing_labels_reports_error() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant("just some prose with no labels at all")
+    assert out[0] == "error"
+
+
+def test_parse_assistant_invalid_json_reports_error() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant("Thought: x\nAction: bash\nAction Input: not-json")
+    assert out[0] == "error"
+
+
+def test_parse_assistant_non_object_input_rejected() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant('Thought: x\nAction: bash\nAction Input: ["cmd","ls"]')
+    assert out[0] == "error"
+    assert "JSON object" in out[1]
+
+
+def test_parse_assistant_final_wins_over_action() -> None:
+    """Paper treats Final Answer as strictly terminal."""
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    mixed = "Thought: confused\nAction: bash\nAction Input: {}\nFinal Answer: done"
+    out = _parse_assistant(mixed)
+    assert out[0] == "final"
 
 
 async def test_missing_state_raises(tmp_path: Path) -> None:
@@ -271,66 +390,7 @@ async def test_provider_and_model_unknown_active_falls_back_to_first(tmp_path: P
         await store.close()
 
 
-# ---------------------------------------------------------------------------
-# Tool-call pairing (#147) — strategy must detect satisfied tool_calls so it
-# doesn't re-invoke the same tool on every loop iteration.
-# ---------------------------------------------------------------------------
-
-
-async def test_satisfied_tool_call_routes_to_llm_not_tool(tmp_path: Path) -> None:
-    """Once a tool reply is appended, next should be ``llm`` — not the same tool again."""
-    bus = EventBus()
-    captured = await _drive(
-        bus,
-        react_plugin,
-        tmp_path,
-        {
-            "state": {
-                "messages": [
-                    {"role": "user", "content": "run"},
-                    {
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [{"id": "tc-1", "name": "bash", "args": {}}],
-                    },
-                    {"role": "tool", "tool_call_id": "tc-1", "content": '{"ok": true}'},
-                ],
-            }
-        },
-        session_id="sess-satisfied",
-    )
-    assert len(captured) == 1
-    got = captured[0].payload
-    assert got["next"] == "llm"
-    assert "request_id" in got
-
-
-async def test_unsatisfied_tool_call_picks_first_pending(tmp_path: Path) -> None:
-    """With two tool_calls and only one satisfied, pick the pending one."""
-    bus = EventBus()
-    captured = await _drive(
-        bus,
-        react_plugin,
-        tmp_path,
-        {
-            "state": {
-                "messages": [
-                    {"role": "user", "content": "run"},
-                    {
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [
-                            {"id": "tc-1", "name": "bash", "args": {}},
-                            {"id": "tc-2", "name": "bash", "args": {"cmd": ["pwd"]}},
-                        ],
-                    },
-                    {"role": "tool", "tool_call_id": "tc-1", "content": '{"ok": true}'},
-                ],
-            }
-        },
-        session_id="sess-pending",
-    )
-    assert len(captured) == 1
-    got = captured[0].payload
-    assert got["next"] == "tool"
-    assert got["tool_call"]["id"] == "tc-2"
+# Tool-call pairing tests (previously here) were function-calling
+# specific and no longer apply — ReAct pairing is handled implicitly
+# by "message after last assistant → llm" (covered by
+# test_post_observation_returns_llm).

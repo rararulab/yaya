@@ -14,11 +14,13 @@ ReAct strategy plugin — observe → think → act. Drives `strategy.decide.req
 - No third-party AI agent frameworks (AGENT.md §4). Stdlib + `yaya.kernel.*` only.
 
 ## Interaction (patterns)
+- Classical ReAct (Yao et al. 2022): the strategy injects a system prompt via `decision.messages_prepend` constraining the LLM to emit `Thought: / Action: / Action Input: <json>` triples or `Thought: / Final Answer: <text>` termination. Tool intent rides in free-form assistant text; `assistant.tool_calls` is **not** consumed.
 - Next-step rules (evaluated top-down):
-  1. Most-recent assistant msg carries `tool_calls` → `{"next": "tool", "tool_call": <first>}`.
-  2. Assistant msg exists without tool_calls, no pending tool result → `{"next": "done"}`.
-  3. Assistant just consumed a tool result → `{"next": "llm", provider, model}` for another pass.
-  4. No assistant msg yet → `{"next": "llm", provider, model}`.
+  1. No assistant msg yet → `{"next": "llm", provider, model, messages_prepend: [system ReAct prompt]}`.
+  2. Any message lands after the last assistant (e.g. `role=user content="Observation: ..."` appended by the loop) → `{"next": "llm", ...}` for another pass.
+  3. Last assistant parses to a valid Action → `{"next": "tool", "tool_call": {"id": "rx-<step>", "name", "args"}}`.
+  4. Last assistant parses to a Final Answer → `{"next": "done"}`.
+  5. Parse failure → append one `[yaya:react-format-nudge] ` corrective user msg via `messages_append` and re-roll. A second consecutive failure terminates with `{"next": "done"}`.
 - Do NOT emit `memory.*` requests from this strategy at 0.1 — memory is out of scope for the seed ReAct.
 - Do NOT keep per-session state here; the loop's `state` snapshot is the source of truth.
 

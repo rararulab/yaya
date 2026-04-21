@@ -142,6 +142,51 @@ def _format_tool_result_for_llm(result_payload: dict[str, Any]) -> str:
     return json.dumps({"ok": True, "value": value})
 
 
+def _project_entries_to_messages(entries: list[Any]) -> list[Message]:
+    """Project raw tape entries onto a cross-turn ``messages`` list.
+
+    Only ``kind="message"`` entries contribute; tool calls / results /
+    observational events are skipped because the loop's ReAct format
+    folds tool outputs into ``role="user"`` ``Observation:`` messages
+    which the persister already records as ``message`` entries. When a
+    compaction anchor (``kind="anchor"`` with
+    ``payload.state.kind == "compaction"``) is encountered, every
+    previously-accumulated message is discarded and the anchor's
+    ``summary`` is injected as a ``role="system"`` message — same
+    contract as :func:`yaya.kernel.tape_context.select_messages` so
+    turn history and context-selector output stay consistent.
+
+    Kept module-level so unit tests can exercise it without spinning
+    up a full :class:`AgentLoop`.
+    """
+    messages: list[Message] = []
+    for entry in entries:
+        kind = cast("Any", getattr(entry, "kind", None))
+        raw_payload: Any = getattr(entry, "payload", None)
+        payload: dict[str, Any] = dict(cast("dict[str, Any]", raw_payload)) if isinstance(raw_payload, dict) else {}
+        if kind == "anchor":
+            state_value: Any = payload.get("state")
+            if isinstance(state_value, dict):
+                state: dict[str, Any] = cast("dict[str, Any]", state_value)
+                if state.get("kind") == "compaction":
+                    summary_raw: Any = state.get("summary", "")
+                    summary = summary_raw if isinstance(summary_raw, str) else str(summary_raw)
+                    messages = []
+                    messages.append({
+                        "role": "system",
+                        "content": f"[compacted history]\n{summary}" if summary else "[compacted history]",
+                    })
+            continue
+        if kind != "message":
+            continue
+        role: Any = payload.get("role")
+        content: Any = payload.get("content", "")
+        if not isinstance(role, str) or not isinstance(content, str):
+            continue
+        messages.append({"role": role, "content": content})
+    return messages
+
+
 @dataclass(slots=True)
 class LoopConfig:
     """Tunables for the agent loop.
@@ -251,13 +296,31 @@ class AgentLoop:
     loops; instantiate inside the loop that owns ``bus``.
     """
 
-    def __init__(self, bus: EventBus, config: LoopConfig | None = None) -> None:
+    def __init__(
+        self,
+        bus: EventBus,
+        config: LoopConfig | None = None,
+        *,
+        session_store: Any = None,
+        workspace: Any = None,
+    ) -> None:
         """Bind the loop to a bus.
 
         Args:
             bus: The running kernel event bus. The loop subscribes only
                 after :meth:`start` so tests can wire stubs first.
             config: Tunables; defaults per :class:`LoopConfig`.
+            session_store: Optional :class:`~yaya.kernel.session.SessionStore`
+                used to hydrate cross-turn conversation history at the
+                start of each turn. Typed as :data:`Any` to keep the
+                kernel import graph acyclic (mirrors the pattern in
+                :class:`~yaya.kernel.session_persister.SessionPersister`).
+                When ``None`` — the default, used by ``yaya hello`` and
+                the loop unit tests — each turn starts from a fresh
+                single-message state, preserving 0.1 semantics.
+            workspace: Workspace path passed to
+                :meth:`SessionStore.open` when hydrating history. Only
+                consulted when ``session_store`` is not ``None``.
         """
         self._bus = bus
         self._config = config or LoopConfig()
@@ -265,6 +328,8 @@ class AgentLoop:
         self._subs: list[Subscription] = []
         self._turns: dict[str, asyncio.Task[None]] = {}
         self._started = False
+        self._session_store = session_store
+        self._workspace = workspace
 
     # -- lifecycle --------------------------------------------------------------
 
@@ -348,6 +413,55 @@ class AgentLoop:
 
     # -- turn body --------------------------------------------------------------
 
+    async def _load_history(self, session_id: str, user_text: str) -> list[Message]:
+        """Hydrate cross-turn history for ``session_id`` ahead of the turn.
+
+        Behaviour:
+
+        * When no ``session_store`` was wired, return the 0.1 single-
+          message state so tests and ``yaya hello`` keep working.
+        * Otherwise open the session, read every ``kind="message"`` tape
+          entry, and project it to ``{role, content}``. If the tape
+          contains one or more compaction anchors (written by
+          :func:`yaya.kernel.compaction.compact_session`), only entries
+          **after the most recent** compaction anchor are kept and the
+          anchor's ``summary`` is injected as a leading ``role="system"``
+          message — this mirrors the selection in
+          :func:`yaya.kernel.tape_context.select_messages` and keeps the
+          cross-turn view in agreement with compaction's contract.
+        * The persister mirrors the incoming ``user.message.received``
+          event onto the tape on the same session worker, so the current
+          user message may already appear as the trailing entry when the
+          turn task reads the tape. Drop that duplicate and append the
+          fresh message from ``user_ev`` unconditionally so the outgoing
+          history always ends with the exact text the turn is handling.
+
+        Failures fall back to the 0.1 behaviour (log + single-message
+        state) — a hydration crash must not take the session down.
+        """
+        fallback: list[Message] = [{"role": "user", "content": user_text}]
+        store = self._session_store
+        if store is None or self._workspace is None:
+            return fallback
+        try:
+            session = await store.open(self._workspace, session_id)
+            entries = await session.entries()
+        except Exception:
+            _logger.exception(
+                "agent loop failed to hydrate history for session %r; falling back to single-message turn state",
+                session_id,
+            )
+            return fallback
+
+        messages = _project_entries_to_messages(entries)
+        # The persister's write may have landed before our read; avoid
+        # surfacing the current user message twice. A trailing match is
+        # the only possible duplicate (tape is append-only).
+        if messages and messages[-1].get("role") == "user" and messages[-1].get("content") == user_text:
+            messages.pop()
+        messages.append({"role": "user", "content": user_text})
+        return messages
+
     async def _run_turn(self, user_ev: Event) -> None:
         """Execute one full turn for ``user_ev``.
 
@@ -356,9 +470,9 @@ class AgentLoop:
         terminates the turn without emitting ``assistant.message.done``.
         """
         session_id = user_ev.session_id
-        state = _TurnState(
-            messages=[{"role": "user", "content": payload_str(user_ev.payload, "text")}],
-        )
+        user_text = payload_str(user_ev.payload, "text")
+        initial_messages = await self._load_history(session_id, user_text)
+        state = _TurnState(messages=initial_messages)
 
         try:
             for step in range(self._config.max_iterations):

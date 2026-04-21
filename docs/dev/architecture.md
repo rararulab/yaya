@@ -47,7 +47,8 @@ src/yaya/
   kernel/             # the kernel — the entire product core lives here
     bus.py            # event bus: pub/sub, ordering, backpressure
     registry.py       # plugin discovery, lifecycle, failure accounting
-    loop.py           # fixed agent loop; calls out to strategy / llm / tool / memory
+    loop.py           # fixed agent loop; calls out to strategy / llm / tool / memory;
+                      #   hydrates cross-turn messages from the session tape at turn start (#156)
     plugin.py         # Plugin ABI (Protocol), KernelContext, Category enum
     events.py         # closed event-kind catalog + TypedDict payloads (authoritative)
   plugins/            # bundled plugins — load through the same protocol as third-party

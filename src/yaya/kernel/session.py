@@ -777,10 +777,32 @@ class SessionStore:
         On first open the tape is seeded with a
         ``anchor(name="session/start")`` so :meth:`Session.context`
         selectors always find a boundary.
+
+        Resume-by-suffix escape hatch. The sidebar's ``/api/sessions``
+        row carries a ``session_id`` field that is actually the hashed
+        tape suffix (``md5(original_session_id)[:16]``) — the original
+        session id is not recoverable from the on-disk tape name. To
+        let the web adapter's ``?session=<id>`` query param resume the
+        right tape without changing the list-sessions contract, this
+        method falls back to a direct tape-name match when the derived
+        ``tape_name_for(workspace, session_id)`` has no tape on disk
+        but ``<ws_prefix>__<session_id>`` does. In that case the
+        resolved ``Session`` still reports the caller's ``session_id``
+        (so event routing and the persister's session cache remain
+        consistent) while pointing at the pre-existing tape.
         """
         if self._closed:
             raise RuntimeError("SessionStore is closed")
         tape_name = tape_name_for(workspace, session_id)
+        existing_tapes = set(await self._manager.list_tapes())
+        if tape_name not in existing_tapes:
+            ws_prefix = hashlib.md5(
+                str(workspace.resolve()).encode("utf-8"),
+                usedforsecurity=False,
+            ).hexdigest()[:16]
+            candidate = f"{ws_prefix}__{session_id}"
+            if candidate in existing_tapes:
+                tape_name = candidate
         created_at = self._created_at.setdefault(tape_name, datetime.now(UTC).isoformat())
         session = Session(
             session_id=session_id,

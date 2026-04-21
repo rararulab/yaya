@@ -291,7 +291,7 @@ def _register_session_routes(
     session_store: SessionStore | None,
     workspace: Path | None,
 ) -> None:
-    """Attach ``GET /api/sessions`` so the sidebar can hydrate history."""
+    """Attach the ``/api/sessions*`` routes so the sidebar can hydrate history."""
 
     @router.get("/api/sessions")
     async def _sessions_list() -> JSONResponse:
@@ -317,6 +317,42 @@ def _register_session_routes(
         ]
         rows.sort(key=lambda r: r["created_at"] or "", reverse=True)
         return JSONResponse({"sessions": rows})
+
+    @router.get("/api/sessions/{session_id}/messages")
+    async def _sessions_messages(session_id: str) -> JSONResponse:
+        """Return the projected ``{role, content}`` history for ``session_id``.
+
+        The id accepted here is the same one ``/api/sessions`` emits —
+        i.e. the hashed tape suffix (``md5(original_id)[:16]``). The
+        endpoint resolves that id to the on-disk tape, pulls every
+        entry, and runs it through the loop's canonical projection
+        helper (``project_entries_to_messages``) so the chat pane's
+        history view matches what the agent loop will see on the next
+        turn. Tool-call replay fidelity is deliberately out of scope
+        for v1 — tool observations already appear as
+        ``role="user"`` ``Observation: ...`` messages in the tape
+        since the ReAct strategy persists them that way, so they
+        render as plain user bubbles and stay faithful to what the
+        LLM was shown.
+
+        Returns ``404`` when the id does not resolve to a known tape,
+        ``503`` when the store / workspace pair was not wired.
+        """
+        # Local import avoids a module-level import cycle: ``loop`` pulls
+        # in the full agent machinery which the plugin layer otherwise
+        # does not need at import time.
+        from yaya.kernel.loop import project_entries_to_messages
+
+        store = cast("SessionStore", _require(session_store, "session store"))
+        ws = cast("Path", _require(workspace, "session workspace"))
+        infos = await store.list_sessions(ws)
+        match = next((info for info in infos if info.session_id == session_id), None)
+        if match is None:
+            raise HTTPException(status_code=404, detail=f"session not found: {session_id}")
+        session = await store.open(ws, session_id)
+        entries = await session.entries()
+        messages = project_entries_to_messages(entries)
+        return JSONResponse({"messages": messages})
 
 
 def _require(obj: Any, label: str) -> Any:

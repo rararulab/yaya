@@ -338,9 +338,22 @@ export class YayaApp extends LitElement {
 
 	private newChat(): void {
 		window.dispatchEvent(new CustomEvent("yaya:new-chat"));
-		if (hashWantsSettings()) {
-			history.replaceState(null, "", `${location.pathname}${location.search}#/chat`);
-			this.modalEl?.close();
+		history.replaceState(null, "", `${location.pathname}${location.search}#/chat`);
+		this.modalEl?.close();
+	}
+
+	/**
+	 * Resume a persisted session: update the URL hash so a reload
+	 * sticks with this thread, then notify ``<yaya-chat>`` to tear
+	 * down its socket and hydrate from ``/api/sessions/{id}/messages``.
+	 */
+	private resumeSession(sessionId: string): void {
+		history.replaceState(null, "", `${location.pathname}${location.search}#/chat/${encodeURIComponent(sessionId)}`);
+		window.dispatchEvent(
+			new CustomEvent("yaya:resume-session", { detail: { sessionId } }),
+		);
+		if (this.modalEl?.isOpen) {
+			this.modalEl.close();
 		}
 	}
 
@@ -417,7 +430,12 @@ export class YayaApp extends LitElement {
 						? this.sessions.map((s) => {
 								const label = s.preview ?? s.last_anchor ?? s.id;
 								const tooltip = s.preview ?? `${s.id} · ${s.entry_count} entries${s.created_at ? ` · ${s.created_at}` : ""}`;
-								return html`<button class="yaya-history-item yaya-sidebar-label" title=${tooltip} data-session-id=${s.id}>${label}</button>`;
+								return html`<button
+									class="yaya-history-item yaya-sidebar-label"
+									title=${tooltip}
+									data-session-id=${s.id}
+									@click=${() => this.resumeSession(s.id)}
+								>${label}</button>`;
 							})
 						: this.history.length > 0
 							? this.history.map(

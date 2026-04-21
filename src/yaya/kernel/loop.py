@@ -142,7 +142,7 @@ def _format_tool_result_for_llm(result_payload: dict[str, Any]) -> str:
     return json.dumps({"ok": True, "value": value})
 
 
-def _project_entries_to_messages(entries: list[Any]) -> list[Message]:
+def project_entries_to_messages(entries: list[Any]) -> list[Message]:
     """Project raw tape entries onto a cross-turn ``messages`` list.
 
     Only ``kind="message"`` entries contribute; tool calls / results /
@@ -453,7 +453,7 @@ class AgentLoop:
             )
             return fallback
 
-        messages = _project_entries_to_messages(entries)
+        messages = project_entries_to_messages(entries)
         # The persister's write may have landed before our read; avoid
         # surfacing the current user message twice. A trailing match is
         # the only possible duplicate (tape is append-only).

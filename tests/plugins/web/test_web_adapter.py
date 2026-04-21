@@ -218,6 +218,114 @@ async def test_api_plugins_snapshot(tmp_path: Path) -> None:
     assert "strategy-react" in names
 
 
+async def test_ws_respects_session_query_param_for_existing_tape(tmp_path: Path) -> None:
+    """``?session=<id>`` resumes an existing tape instead of minting a fresh id.
+
+    The adapter is wired with a live ``SessionStore`` pointed at a
+    workspace that already carries one tape. Connecting with the
+    matching ``session=<id>`` query must bind the WS session id to
+    that id so downstream events route to the right tape. A plain
+    connection (no query param) keeps the ``ws-<uuid>`` behaviour.
+    """
+    from yaya.kernel.session import SessionStore
+
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        seeded = await store.open(tmp_path, "ws-seed")
+        await seeded.append_message("user", "hello", source="bdd")
+        infos = await store.list_sessions(tmp_path)
+        assert infos, "tape should be listable"
+        sid = infos[0].session_id
+
+        plugin = WebAdapter()
+        bus = EventBus()
+        ctx = KernelContext(
+            bus=bus,
+            logger=logging.getLogger("plugin.web-test-resume"),
+            config={},
+            state_dir=tmp_path,
+            plugin_name=plugin.name,
+            session_store=store,
+        )
+        plugin._ctx = ctx
+        plugin._app = plugin._build_app()
+
+        import os
+
+        prev_cwd = Path.cwd()
+        os.chdir(tmp_path)
+        try:
+            with TestClient(plugin._app) as client, client.websocket_connect(f"/ws?session={sid}") as ws:
+                ws.send_json({"type": "user.message", "text": "resume"})
+                deadline = 2.0
+                waited = 0.0
+                while not plugin._clients and waited < deadline:
+                    await asyncio.sleep(0.02)
+                    waited += 0.02
+                assert plugin._clients
+                bound_ids = list(plugin._clients.keys())
+                assert bound_ids == [sid], f"expected WS to bind to {sid!r}, got {bound_ids!r}"
+        finally:
+            os.chdir(prev_cwd)
+    finally:
+        await store.close()
+
+
+async def test_ws_falls_back_when_session_query_param_is_unknown(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unknown ``?session=`` id mints a fresh WS session and logs INFO.
+
+    Operators need to see "stale tab tried to resume a deleted tape"
+    without the adapter 500ing on bad client input.
+    """
+    from yaya.kernel.session import SessionStore
+
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        plugin = WebAdapter()
+        bus = EventBus()
+        ctx = KernelContext(
+            bus=bus,
+            logger=logging.getLogger("plugin.web-test-resume-unknown"),
+            config={},
+            state_dir=tmp_path,
+            plugin_name=plugin.name,
+            session_store=store,
+        )
+        plugin._ctx = ctx
+        plugin._app = plugin._build_app()
+
+        import os
+
+        prev_cwd = Path.cwd()
+        os.chdir(tmp_path)
+        caplog.set_level(logging.INFO, logger="plugin.web-test-resume-unknown")
+        try:
+            with (
+                TestClient(plugin._app) as client,
+                client.websocket_connect("/ws?session=does-not-exist") as ws,
+            ):
+                ws.send_json({"type": "user.message", "text": "orphan"})
+                deadline = 2.0
+                waited = 0.0
+                while not plugin._clients and waited < deadline:
+                    await asyncio.sleep(0.02)
+                    waited += 0.02
+                assert plugin._clients
+                bound_ids = list(plugin._clients.keys())
+                assert len(bound_ids) == 1
+                assert bound_ids[0].startswith("ws-"), f"expected fresh ws-* id, got {bound_ids!r}"
+        finally:
+            os.chdir(prev_cwd)
+        assert any("unknown session" in rec.getMessage() for rec in caplog.records), (
+            f"expected INFO log for unknown session; got {[r.getMessage() for r in caplog.records]}"
+        )
+    finally:
+        await store.close()
+
+
 async def test_on_unload_stops_server(tmp_path: Path) -> None:
     """A live uvicorn server is shut down by on_unload within the budget."""
     # Pick a free port so parallel test runs don't clash.

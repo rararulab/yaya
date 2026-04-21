@@ -95,6 +95,50 @@ function applyTheme(theme: "light" | "dark"): void {
 	localStorage.setItem(THEME_KEY, theme);
 }
 
+/**
+ * Shape of each row returned by ``GET /api/sessions/{id}/messages``.
+ *
+ * Mirrors the projection the agent loop uses on every turn
+ * (``project_entries_to_messages`` in ``yaya.kernel.loop``). Only
+ * ``user`` and ``assistant`` rows render as chat bubbles;
+ * ``system`` rows (compaction markers) are dropped during hydration
+ * because the next turn's prompt already carries the summary.
+ */
+interface HistoryMessage {
+	role: "user" | "assistant" | "system";
+	content: string;
+}
+
+async function fetchSessionMessages(sessionId: string): Promise<HistoryMessage[]> {
+	const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
+		headers: { Accept: "application/json" },
+	});
+	if (!res.ok) {
+		throw new Error(`HTTP ${res.status}`);
+	}
+	const body = (await res.json()) as { messages?: HistoryMessage[] };
+	return Array.isArray(body.messages) ? body.messages : [];
+}
+
+/**
+ * Return the session id encoded in ``#/chat/<id>``, or ``null``.
+ *
+ * The chat shell consults this on mount so a page reload that
+ * arrives with a ``#/chat/<id>`` fragment auto-resumes the same
+ * thread without an extra user click.
+ */
+function parseSessionHash(): string | null {
+	const match = window.location.hash.match(/^#\/chat\/(.+)$/);
+	if (!match || !match[1]) {
+		return null;
+	}
+	try {
+		return decodeURIComponent(match[1]);
+	} catch {
+		return match[1];
+	}
+}
+
 function emptyUsage(): AssistantChatMessage["usage"] {
 	return {
 		input: 0,
@@ -119,31 +163,112 @@ export class YayaChat extends LitElement {
 
 	private ws: WsClient | null = null;
 	private nextToastId = 1;
+	private currentSessionId: string | null = null;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
 	}
 
 	private onNewChat = (): void => {
+		this.resetChatState();
+		this.currentSessionId = null;
+		this.reopenSocket(null);
+	};
+
+	/**
+	 * Resume a persisted session: clear chat state, hydrate from the
+	 * projected history endpoint, then re-open the socket bound to
+	 * ``sessionId`` so the next user turn continues the thread. On
+	 * fetch failure the UI falls back to a fresh chat with a toast so
+	 * a stale sidebar row never leaves the UI stuck.
+	 */
+	private onResumeSession = async (ev: Event): Promise<void> => {
+		const detail = (ev as CustomEvent<{ sessionId: string }>).detail;
+		if (!detail || typeof detail.sessionId !== "string") {
+			return;
+		}
+		const sessionId = detail.sessionId;
+		let rows: HistoryMessage[];
+		try {
+			rows = await fetchSessionMessages(sessionId);
+		} catch (err) {
+			this.pushToast("error", `Could not load history: ${err instanceof Error ? err.message : String(err)}`);
+			this.resetChatState();
+			this.currentSessionId = null;
+			this.reopenSocket(null);
+			return;
+		}
+		this.resetChatState();
+		this.currentSessionId = sessionId;
+		this.hydrateMessages(rows);
+		this.reopenSocket(sessionId);
+	};
+
+	private resetChatState(): void {
 		this.messages = [];
 		this.streamingMessage = null;
 		this.inFlight = false;
 		this.toolCallsById = new Map();
 		this.pendingToolCalls = new Set();
 		this.inputValue = "";
-	};
+	}
+
+	private hydrateMessages(rows: HistoryMessage[]): void {
+		const hydrated: ChatMessage[] = [];
+		for (const row of rows) {
+			if (row.role === "user") {
+				hydrated.push({ role: "user", content: row.content, timestamp: Date.now() });
+			} else if (row.role === "assistant") {
+				hydrated.push({
+					role: "assistant",
+					content: [{ type: "text", text: row.content }],
+					api: "responses",
+					provider: "kernel",
+					model: "kernel",
+					usage: emptyUsage(),
+					stopReason: "stop",
+					timestamp: Date.now(),
+				});
+			}
+			// ``role="system"`` compacted-history markers are not rendered
+			// in chat — the next turn's prompt already includes the
+			// summary. Keeping them out of the transcript avoids a
+			// cryptic "[compacted history]" bubble.
+		}
+		this.messages = hydrated;
+	}
+
+	private reopenSocket(sessionId: string | null): void {
+		this.ws?.close();
+		const url = sessionId ? `${defaultWsUrl()}?session=${encodeURIComponent(sessionId)}` : defaultWsUrl();
+		this.ws = new WsClient({ url });
+		this.ws.onFrame((f) => this.onFrame(f));
+		publishConnectionStatus("connecting");
+		this.ws.connect();
+	}
 
 	override connectedCallback(): void {
 		super.connectedCallback();
 		applyTheme(loadTheme());
-		this.ws = new WsClient({ url: defaultWsUrl() });
-		this.ws.onFrame((f) => this.onFrame(f));
-		// Surface the initial handshake as `connecting` so the sidebar
-		// dot does not flash red between mount and the first
-		// `ws.connected` frame.
-		publishConnectionStatus("connecting");
-		this.ws.connect();
+		const initialSession = parseSessionHash();
+		this.currentSessionId = initialSession;
+		this.reopenSocket(initialSession);
 		window.addEventListener("yaya:new-chat", this.onNewChat);
+		window.addEventListener("yaya:resume-session", this.onResumeSession as EventListener);
+		if (initialSession) {
+			// Fire-and-forget hydration; failure surfaces via the toast
+			// the same way a sidebar click does.
+			void fetchSessionMessages(initialSession).then(
+				(rows) => {
+					this.hydrateMessages(rows);
+				},
+				(err: unknown) => {
+					this.pushToast("error", `Could not load history: ${err instanceof Error ? err.message : String(err)}`);
+					this.currentSessionId = null;
+					this.reopenSocket(null);
+				},
+			);
+		}
 	}
 
 	override disconnectedCallback(): void {
@@ -151,6 +276,7 @@ export class YayaChat extends LitElement {
 		this.ws?.close();
 		this.ws = null;
 		window.removeEventListener("yaya:new-chat", this.onNewChat);
+		window.removeEventListener("yaya:resume-session", this.onResumeSession as EventListener);
 	}
 
 	private fillPrompt(text: string): void {

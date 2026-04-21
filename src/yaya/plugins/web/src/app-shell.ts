@@ -72,6 +72,7 @@ export interface SessionRow {
 	readonly created_at: string | null;
 	readonly entry_count: number;
 	readonly last_anchor: string | null;
+	readonly preview: string | null;
 }
 
 async function fetchSessions(): Promise<SessionRow[]> {
@@ -414,9 +415,9 @@ export class YayaApp extends LitElement {
 					<div class="yaya-history-title yaya-sidebar-label">Recent</div>
 					${this.sessions.length > 0
 						? this.sessions.map((s) => {
-								const label = s.last_anchor ?? s.id;
-								const title = `${s.id} · ${s.entry_count} entries${s.created_at ? ` · ${s.created_at}` : ""}`;
-								return html`<button class="yaya-history-item yaya-sidebar-label" title=${title} data-session-id=${s.id}>${label}</button>`;
+								const label = s.preview ?? s.last_anchor ?? s.id;
+								const tooltip = s.preview ?? `${s.id} · ${s.entry_count} entries${s.created_at ? ` · ${s.created_at}` : ""}`;
+								return html`<button class="yaya-history-item yaya-sidebar-label" title=${tooltip} data-session-id=${s.id}>${label}</button>`;
 							})
 						: this.history.length > 0
 							? this.history.map(

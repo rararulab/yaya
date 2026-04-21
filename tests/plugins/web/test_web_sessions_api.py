@@ -76,6 +76,58 @@ async def test_sessions_list_returns_persisted_tape(tmp_path: Path) -> None:
         await store.close()
 
 
+async def test_sessions_list_row_includes_user_message_preview(tmp_path: Path) -> None:
+    """The row must carry ``preview`` sourced from the first user message (#155)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-preview")
+        await session.append_message("user", "Hello from the preview test", source="bdd")
+        await session.append_message("assistant", "ack", source="bdd")
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get("/api/sessions")
+        row = res.json()["sessions"][0]
+        assert row["preview"] == "Hello from the preview test"
+    finally:
+        await store.close()
+
+
+async def test_sessions_list_preview_truncates_long_user_message(tmp_path: Path) -> None:
+    """Long first-user content is trimmed with a trailing ellipsis (#155)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-long")
+        await session.append_message("user", "x" * 500, source="bdd")
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get("/api/sessions")
+        preview = res.json()["sessions"][0]["preview"]
+        assert preview is not None
+        assert preview.endswith("…")
+        assert len(preview) <= 80
+
+    finally:
+        await store.close()
+
+
+async def test_sessions_list_preview_null_when_only_assistant_messages(tmp_path: Path) -> None:
+    """A tape with no user message yet reports ``preview: null`` (#155)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-no-user")
+        await session.append_message("assistant", "hi there", source="bdd")
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get("/api/sessions")
+        row = res.json()["sessions"][0]
+        assert row["preview"] is None
+    finally:
+        await store.close()
+
+
 async def test_sessions_list_503_when_no_store() -> None:
     """Missing store returns 503 — same degrade path as the other admin routes."""
     app = _build_app(session_store=None, workspace=None)

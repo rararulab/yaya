@@ -125,6 +125,9 @@ class SessionInfo(BaseModel):
         entry_count: Total entries visible on the tape at snapshot time.
         last_anchor: Name of the most recent ``anchor`` entry, or
             ``None`` when the tape has none yet.
+        preview: First user-message content trimmed to a display-
+            friendly length. ``None`` when the tape has no user
+            message yet. Powers the web sidebar's Recent list.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -134,6 +137,7 @@ class SessionInfo(BaseModel):
     created_at: str
     entry_count: int
     last_anchor: str | None
+    preview: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -809,6 +813,7 @@ class SessionStore:
             entries = list(await self._manager.query_tape(name).all())
             anchors = [e for e in entries if e.kind == "anchor"]
             last_anchor = str(anchors[-1].payload.get("name")) if anchors else None
+            preview = _first_user_message_preview(entries)
             created_at = self._created_at.setdefault(name, datetime.now(UTC).isoformat())
             # Session id is not recoverable from the hashed tape name;
             # surface the tape-name suffix so operators can still
@@ -821,6 +826,7 @@ class SessionStore:
                     created_at=created_at,
                     entry_count=len(entries),
                     last_anchor=last_anchor,
+                    preview=preview,
                 )
             )
         return infos
@@ -850,6 +856,38 @@ class SessionStore:
 # ---------------------------------------------------------------------------
 # Module-level helpers.
 # ---------------------------------------------------------------------------
+
+
+_PREVIEW_MAX_CHARS = 80
+"""Upper bound on :attr:`SessionInfo.preview` content length."""
+
+
+def _first_user_message_preview(entries: Iterable[TapeEntry]) -> str | None:
+    """Return a display-ready preview of the first user message.
+
+    Walks ``entries`` in tape order and returns the first ``message``
+    entry whose ``role`` is ``user``, trimmed to
+    :data:`_PREVIEW_MAX_CHARS` with a trailing ellipsis on truncation.
+    Returns ``None`` when the tape has no user message yet — the
+    typical freshly-opened tape only carries a ``session/start``
+    anchor.
+    """
+    for entry in entries:
+        if entry.kind != "message":
+            continue
+        payload = entry.payload or {}
+        if payload.get("role") != "user":
+            continue
+        content = payload.get("content", "")
+        if not isinstance(content, str):
+            continue
+        stripped = content.strip()
+        if not stripped:
+            continue
+        if len(stripped) <= _PREVIEW_MAX_CHARS:
+            return stripped
+        return stripped[: _PREVIEW_MAX_CHARS - 1].rstrip() + "…"
+    return None
 
 
 async def _ensure_bootstrap_anchor(

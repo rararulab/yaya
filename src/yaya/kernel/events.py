@@ -108,10 +108,18 @@ class Attachment(TypedDict, total=False):
 
 
 class Message(TypedDict, total=False):
-    """Single chat-style message passed to an LLM provider."""
+    """Single chat-style message passed to an LLM provider.
+
+    ``tool_calls`` is populated on assistant messages when the LLM
+    requests a function call (OpenAI tool-calling convention).
+    ``tool_call_id`` is populated on ``role="tool"`` messages that
+    carry the result back to the LLM on the next turn.
+    """
 
     role: str
     content: str
+    tool_calls: list[ToolCall]
+    tool_call_id: str
 
 
 class ToolCall(TypedDict, total=False):

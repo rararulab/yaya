@@ -444,10 +444,62 @@ def registered_tools() -> dict[str, type[Tool]]:
     return dict(_tool_registry)
 
 
+# Schema-only companion registry for legacy ``on_event``-dispatching
+# tool plugins (e.g. bundled ``tool_bash``). Those plugins already
+# own their execution path via bus subscription and do not subclass
+# :class:`Tool`, but they still need to surface an OpenAI function
+# spec so strategy plugins can advertise the tool to the LLM. Keeping
+# the schema registry separate from ``_tool_registry`` avoids a
+# phantom Tool subclass whose ``run`` would never be called.
+_legacy_tool_specs: dict[str, dict[str, Any]] = {}
+
+
+def register_tool_spec(name: str, spec: dict[str, Any]) -> None:
+    """Register a bare JSON-schema spec for a legacy tool plugin.
+
+    Use this from a legacy tool plugin's ``on_load`` when the plugin
+    handles ``tool.call.request`` via ``on_event`` rather than a
+    :class:`Tool` subclass. ``spec`` is the ``{"name", "description",
+    "parameters"}`` dict in the same shape :meth:`Tool.openai_function_spec`
+    returns — strategies consume both registries via
+    :func:`all_tool_specs`.
+    """
+    _legacy_tool_specs[name] = spec
+
+
+def unregister_tool_spec(name: str) -> bool:
+    """Remove a legacy spec registration. Idempotent; mirrors :func:`unregister_tool`."""
+    return _legacy_tool_specs.pop(name, None) is not None
+
+
+def all_tool_specs() -> list[dict[str, Any]]:
+    """Enumerate every loaded tool's OpenAI-style function spec.
+
+    Returns the ``[{"type": "function", "function": <spec>}, ...]``
+    shape the OpenAI chat completions endpoint expects inside its
+    ``tools`` array — Anthropic's Messages API accepts the same shape
+    under a different key, so strategy plugins can hand the output
+    straight to any vendor-specific provider plugin.
+
+    Ordering is stable: class-registered tools first (in insertion
+    order on :attr:`_tool_registry`), then schema-only legacy
+    registrations. Names are unique across both paths by construction;
+    a collision is a plugin-author bug surfaced by
+    :func:`register_tool` / :func:`mark_legacy_tool` WARNINGs.
+    """
+    specs: list[dict[str, Any]] = []
+    for tool_cls in _tool_registry.values():
+        specs.append({"type": "function", "function": tool_cls.openai_function_spec()})
+    for spec in _legacy_tool_specs.values():
+        specs.append({"type": "function", "function": spec})
+    return specs
+
+
 def _clear_tool_registry() -> None:
     """Reset both registries. Test-only; not part of the plugin ABI."""
     _tool_registry.clear()
     _legacy_tool_names.clear()
+    _legacy_tool_specs.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -687,11 +739,14 @@ __all__ = [
     "ToolError",
     "ToolOk",
     "ToolReturnValue",
+    "all_tool_specs",
     "dispatch",
     "get_tool",
     "install_dispatcher",
     "mark_legacy_tool",
     "register_tool",
+    "register_tool_spec",
     "registered_tools",
     "unregister_tool",
+    "unregister_tool_spec",
 ]

@@ -389,10 +389,21 @@ export class YayaChat extends LitElement {
 		const blocks: TemplateResult[] = [];
 		for (const tc of this.toolCallsById.values()) {
 			const variant = tc.ok === false ? "error" : "default";
-			blocks.push(html`<div class="mb-2">
-				<div class="text-xs text-muted-foreground mb-1">tool: ${tc.name}${tc.ok === undefined ? " (running…)" : ""}</div>
-				<console-block .content=${tc.output} .variant=${variant}></console-block>
-			</div>`);
+			const statusLabel =
+				tc.ok === undefined ? "running…" : tc.ok ? "ok" : "error";
+			// Collapsed-by-default tool output: the transcript stays
+			// scannable and users opt into the raw console only when
+			// they care about it. Native <details> gives us the toggle
+			// affordance for free with no ARIA glue.
+			blocks.push(html`<details class="yaya-tool-block">
+				<summary class="yaya-tool-block-summary">
+					<span class="yaya-tool-block-name">tool: ${tc.name}</span>
+					<span class="yaya-tool-block-status" data-status=${statusLabel}>${statusLabel}</span>
+				</summary>
+				<div class="yaya-tool-block-body">
+					<console-block .content=${tc.output} .variant=${variant}></console-block>
+				</div>
+			</details>`);
 		}
 		return blocks;
 	}
@@ -404,79 +415,82 @@ export class YayaChat extends LitElement {
 		const quickStart = ["Summarize a file", "Generate a plan", "Review code diff"];
 
 		return html`
-			<div class="yaya-chat mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
-				${empty
-					? html`<section class="yaya-hero">
-							<h1 class="yaya-hero-title">yaya</h1>
-							<p class="yaya-hero-sub">A kernel-style agent that grows itself.</p>
-							<div class="yaya-chips">
-								${quickStart.map(
-									(q) => html`<button class="yaya-chip" @click=${() => this.fillPrompt(q)}>${q}</button>`,
-								)}
-							</div>
-						</section>`
-					: nothing}
-
-				<section class="flex flex-col gap-2">
-					${this.messages.map((m) => {
-						if (m.role === "user") {
-							const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("");
-							return html`<yaya-bubble role="user" content=${text}></yaya-bubble>`;
-						}
-						if (m.role === "assistant") {
-							const text = m.content
-								.filter((c): c is TextContent => c.type === "text")
-								.map((c) => c.text)
-								.join("");
-							return text ? html`<yaya-bubble role="assistant" content=${text}></yaya-bubble>` : nothing;
-						}
-						// `toolResult` bubbles render via the console blocks below.
-						return nothing;
-					})}
-					${this.streamingMessage
-						? html`<yaya-bubble
-								role="assistant"
-								content=${this.streamingMessage.content
+			<div class="yaya-chat">
+				<section class="yaya-chat-scroll">
+					<div class="yaya-chat-scroll-inner">
+						${empty
+							? html`<section class="yaya-hero">
+									<h1 class="yaya-hero-title">yaya</h1>
+									<p class="yaya-hero-sub">A kernel-style agent that grows itself.</p>
+									<div class="yaya-chips">
+										${quickStart.map(
+											(q) => html`<button class="yaya-chip" @click=${() => this.fillPrompt(q)}>${q}</button>`,
+										)}
+									</div>
+								</section>`
+							: nothing}
+						${this.messages.map((m) => {
+							if (m.role === "user") {
+								const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("");
+								return html`<yaya-bubble role="user" content=${text}></yaya-bubble>`;
+							}
+							if (m.role === "assistant") {
+								const text = m.content
 									.filter((c): c is TextContent => c.type === "text")
 									.map((c) => c.text)
-									.join("")}
-							></yaya-bubble>`
-						: nothing}
-					${this.renderToolBlocks()}
+									.join("");
+								return text ? html`<yaya-bubble role="assistant" content=${text}></yaya-bubble>` : nothing;
+							}
+							// `toolResult` bubbles render via the console blocks below.
+							return nothing;
+						})}
+						${this.streamingMessage
+							? html`<yaya-bubble
+									role="assistant"
+									content=${this.streamingMessage.content
+										.filter((c): c is TextContent => c.type === "text")
+										.map((c) => c.text)
+										.join("")}
+								></yaya-bubble>`
+							: nothing}
+						${this.renderToolBlocks()}
+					</div>
 				</section>
 
-				<section class="yaya-composer">
-					<textarea
-						class="yaya-input"
-						rows="3"
-						placeholder="Message yaya…"
-						.value=${this.inputValue}
-						?disabled=${this.inFlight}
-						@input=${(e: Event) => this.onInputEvent(e)}
-						@keydown=${(e: KeyboardEvent) => this.onKeyDown(e)}
-					></textarea>
-					${this.inFlight
-						? html`<button
-								class="yaya-send-btn is-interrupt"
-								aria-label="interrupt"
-								title="Interrupt"
-								@click=${() => this.interrupt()}
-							>
-								<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-									<rect x="4" y="4" width="8" height="8" rx="1" />
-								</svg>
-							</button>`
-						: html`<button
-								class="yaya-send-btn"
-								aria-label="send message"
-								title="Send"
-								?disabled=${this.inputValue.trim().length === 0}
-								@click=${() => this.sendMessage()}
-							>
-								<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-									<path d="M8 13 V3 M3 8 L8 3 L13 8" />
-								</svg>
-							</button>`}
+				<section class="yaya-chat-dock">
+					<div class="yaya-chat-dock-inner yaya-composer">
+						<textarea
+							class="yaya-input"
+							rows="3"
+							placeholder="Message yaya…"
+							.value=${this.inputValue}
+							?disabled=${this.inFlight}
+							@input=${(e: Event) => this.onInputEvent(e)}
+							@keydown=${(e: KeyboardEvent) => this.onKeyDown(e)}
+						></textarea>
+						${this.inFlight
+							? html`<button
+									class="yaya-send-btn is-interrupt"
+									aria-label="interrupt"
+									title="Interrupt"
+									@click=${() => this.interrupt()}
+								>
+									<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+										<rect x="4" y="4" width="8" height="8" rx="1" />
+									</svg>
+								</button>`
+							: html`<button
+									class="yaya-send-btn"
+									aria-label="send message"
+									title="Send"
+									?disabled=${this.inputValue.trim().length === 0}
+									@click=${() => this.sendMessage()}
+								>
+									<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<path d="M8 13 V3 M3 8 L8 3 L13 8" />
+									</svg>
+								</button>`}
+					</div>
 				</section>
 
 				<div class="fixed right-4 top-4 flex max-w-xs flex-col gap-2">

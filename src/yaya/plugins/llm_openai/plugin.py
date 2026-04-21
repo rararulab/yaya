@@ -404,19 +404,60 @@ class OpenAIProvider:
 
 
 def _tool_call_to_dict(tc: Any) -> dict[str, Any]:
-    """Normalize an SDK tool-call object to the kernel's ``ToolCall`` shape."""
-    # The SDK exposes either a pydantic model (with ``model_dump``) or a
-    # dict already in tests. Try ``model_dump`` first, fall back to dict().
+    """Normalize an SDK tool-call object to the kernel's ``ToolCall`` shape.
+
+    The OpenAI SDK dumps ``{id, type, function: {name, arguments}}``
+    where ``arguments`` is a JSON string. The kernel's
+    :class:`~yaya.kernel.events.ToolCall` is flat — ``{id, name, args}``
+    with ``args`` as a parsed ``dict``. This function bridges the two
+    shapes so strategies and :meth:`AgentLoop._call_tool` see a
+    uniform payload (#147). Dicts already in kernel shape (tests,
+    legacy paths) fall through unchanged.
+    """
+    import json
+
+    data: dict[str, Any] | None
     dump: Any = getattr(tc, "model_dump", None)
     if callable(dump):
-        data: Any = dump()
-        if isinstance(data, dict):
-            return cast("dict[str, Any]", data)
-    if isinstance(tc, dict):
-        return cast("dict[str, Any]", tc)
+        dumped: Any = dump()
+        data = cast("dict[str, Any]", dumped) if isinstance(dumped, dict) else None
+    elif isinstance(tc, dict):
+        data = cast("dict[str, Any]", tc)
+    else:
+        data = None
+
+    if data is not None:
+        # Already in kernel shape — accept as-is.
+        if "name" in data and "args" in data:
+            return data
+        # SDK shape with nested function descriptor.
+        fn_any: Any = data.get("function")
+        fn: dict[str, Any] = cast("dict[str, Any]", fn_any) if isinstance(fn_any, dict) else {}
+        raw_args_any: Any = fn.get("arguments")
+        args: dict[str, Any]
+        if isinstance(raw_args_any, dict):
+            args = cast("dict[str, Any]", raw_args_any)
+        elif isinstance(raw_args_any, str):
+            try:
+                parsed: Any = json.loads(raw_args_any)
+            except ValueError:
+                parsed = None
+            args = cast("dict[str, Any]", parsed) if isinstance(parsed, dict) else {}
+        else:
+            args = {}
+        return {
+            "id": str(data.get("id", "")),
+            "name": str(fn.get("name", "")),
+            "args": args,
+        }
+
+    # Non-dict, non-pydantic fallback — best-effort attribute read.
+    fn_obj: Any = getattr(tc, "function", None)  # pyright: ignore[reportUnknownArgumentType]
+    tc_id: Any = getattr(tc, "id", "")  # pyright: ignore[reportUnknownArgumentType]
+    fn_name: Any = getattr(fn_obj, "name", "") if fn_obj is not None else ""
     return {
-        "id": getattr(tc, "id", ""),
-        "name": getattr(getattr(tc, "function", None), "name", ""),
+        "id": str(tc_id),
+        "name": str(fn_name),
         "args": {},
     }
 

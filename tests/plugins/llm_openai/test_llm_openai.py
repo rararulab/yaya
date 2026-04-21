@@ -704,3 +704,95 @@ async def test_on_unload_tolerates_missing_clients(tmp_path: Path) -> None:
     bus = EventBus()
     ctx = _make_ctx(bus, tmp_path, plugin)
     await plugin.on_unload(ctx)
+
+
+# ---------------------------------------------------------------------------
+# _tool_call_to_dict — normalise SDK / kernel / fallback shapes (#147).
+# ---------------------------------------------------------------------------
+
+
+class _FakeFn:
+    def __init__(self, name: str, arguments: str) -> None:
+        self.name = name
+        self.arguments = arguments
+
+
+class _FakePydanticToolCall:
+    """Shadow of the SDK's ChatCompletionMessageToolCall pydantic model.
+
+    Has ``model_dump`` returning the SDK's nested shape:
+    ``{id, type, function: {name, arguments}}`` where ``arguments``
+    is a JSON string.
+    """
+
+    def __init__(self, call_id: str, name: str, arguments: str) -> None:
+        self._id = call_id
+        self._name = name
+        self._args = arguments
+
+    def model_dump(self) -> dict[str, Any]:
+        return {
+            "id": self._id,
+            "type": "function",
+            "function": {"name": self._name, "arguments": self._args},
+        }
+
+
+class _FakeAttrToolCall:
+    """SDK-like object that is not a pydantic model — attribute access only."""
+
+    def __init__(self, call_id: str, name: str) -> None:
+        self.id = call_id
+        self.function = _FakeFn(name, "")
+
+
+def test_tool_call_to_dict_sdk_pydantic_shape_with_string_arguments() -> None:
+    """Normalises ``{id, type, function: {name, arguments}}`` with JSON-string args."""
+    from yaya.plugins.llm_openai.plugin import _tool_call_to_dict
+
+    tc = _FakePydanticToolCall(
+        call_id="call_abc",
+        name="bash",
+        arguments='{"cmd": ["ls", "-la"]}',
+    )
+    out = _tool_call_to_dict(tc)
+    assert out == {"id": "call_abc", "name": "bash", "args": {"cmd": ["ls", "-la"]}}
+
+
+def test_tool_call_to_dict_sdk_shape_with_malformed_json_falls_back_to_empty_args() -> None:
+    """Parsing failure leaves ``args`` empty so downstream dispatch is defensive."""
+    from yaya.plugins.llm_openai.plugin import _tool_call_to_dict
+
+    tc = _FakePydanticToolCall(call_id="call_x", name="bash", arguments="{not-json")
+    out = _tool_call_to_dict(tc)
+    assert out == {"id": "call_x", "name": "bash", "args": {}}
+
+
+def test_tool_call_to_dict_kernel_shape_is_preserved_unchanged() -> None:
+    """A dict already in ``{id, name, args}`` shape round-trips."""
+    from yaya.plugins.llm_openai.plugin import _tool_call_to_dict
+
+    kernel_shape: dict[str, Any] = {"id": "call_y", "name": "bash", "args": {"cmd": ["pwd"]}}
+    assert _tool_call_to_dict(kernel_shape) == kernel_shape
+
+
+def test_tool_call_to_dict_sdk_dict_with_dict_arguments() -> None:
+    """Some providers hand back ``arguments`` already as a dict — accept it."""
+    from yaya.plugins.llm_openai.plugin import _tool_call_to_dict
+
+    raw: dict[str, Any] = {
+        "id": "call_z",
+        "type": "function",
+        "function": {"name": "bash", "arguments": {"cmd": ["echo", "hi"]}},
+    }
+    out = _tool_call_to_dict(raw)
+    assert out == {"id": "call_z", "name": "bash", "args": {"cmd": ["echo", "hi"]}}
+
+
+def test_tool_call_to_dict_non_dict_non_pydantic_fallback() -> None:
+    """Bare attribute-only object uses ``getattr`` and empty args."""
+    from yaya.plugins.llm_openai.plugin import _tool_call_to_dict
+
+    tc = _FakeAttrToolCall(call_id="call_q", name="bash")
+    out = _tool_call_to_dict(tc)
+    assert out == {"id": "call_q", "name": "bash", "args": {}}

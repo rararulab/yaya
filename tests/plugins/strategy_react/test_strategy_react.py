@@ -269,3 +269,68 @@ async def test_provider_and_model_unknown_active_falls_back_to_first(tmp_path: P
         assert (provider, model) == ("only", "gpt-only")
     finally:
         await store.close()
+
+
+# ---------------------------------------------------------------------------
+# Tool-call pairing (#147) — strategy must detect satisfied tool_calls so it
+# doesn't re-invoke the same tool on every loop iteration.
+# ---------------------------------------------------------------------------
+
+
+async def test_satisfied_tool_call_routes_to_llm_not_tool(tmp_path: Path) -> None:
+    """Once a tool reply is appended, next should be ``llm`` — not the same tool again."""
+    bus = EventBus()
+    captured = await _drive(
+        bus,
+        react_plugin,
+        tmp_path,
+        {
+            "state": {
+                "messages": [
+                    {"role": "user", "content": "run"},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [{"id": "tc-1", "name": "bash", "args": {}}],
+                    },
+                    {"role": "tool", "tool_call_id": "tc-1", "content": '{"ok": true}'},
+                ],
+            }
+        },
+        session_id="sess-satisfied",
+    )
+    assert len(captured) == 1
+    got = captured[0].payload
+    assert got["next"] == "llm"
+    assert "request_id" in got
+
+
+async def test_unsatisfied_tool_call_picks_first_pending(tmp_path: Path) -> None:
+    """With two tool_calls and only one satisfied, pick the pending one."""
+    bus = EventBus()
+    captured = await _drive(
+        bus,
+        react_plugin,
+        tmp_path,
+        {
+            "state": {
+                "messages": [
+                    {"role": "user", "content": "run"},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {"id": "tc-1", "name": "bash", "args": {}},
+                            {"id": "tc-2", "name": "bash", "args": {"cmd": ["pwd"]}},
+                        ],
+                    },
+                    {"role": "tool", "tool_call_id": "tc-1", "content": '{"ok": true}'},
+                ],
+            }
+        },
+        session_id="sess-pending",
+    )
+    assert len(captured) == 1
+    got = captured[0].payload
+    assert got["next"] == "tool"
+    assert got["tool_call"]["id"] == "tc-2"

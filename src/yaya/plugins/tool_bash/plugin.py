@@ -19,11 +19,44 @@ from typing import Any, ClassVar, cast
 
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.tool import register_tool_spec, unregister_tool_spec
 
 _NAME = "tool-bash"
 _VERSION = "0.1.0"
 _TOOL_NAME = "bash"
 DEFAULT_TIMEOUT_S: float = 30.0
+
+# OpenAI-compatible function spec surfaced through
+# ``yaya.kernel.tool.all_tool_specs`` so strategy plugins can
+# advertise the bash tool to the LLM. The dispatch path is still the
+# legacy ``on_event`` handler below — this spec is schema-only.
+_BASH_TOOL_SPEC: dict[str, Any] = {
+    "name": _TOOL_NAME,
+    "description": (
+        "Run an argv-list shell command in a subprocess. "
+        "Use this whenever the user asks for filesystem inspection, "
+        "running a CLI tool, or anything that requires a real shell. "
+        "Pass the command as a list of strings (no shell metacharacters); "
+        "the first element is the executable, the rest are arguments. "
+        "Returns the process stdout / stderr / exit code."
+    ),
+    "parameters": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["cmd"],
+        "properties": {
+            "cmd": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    'Argv list. Example: ["ls", "-la", "/tmp"]. '
+                    "Never pass a single shell string — the tool does "
+                    "not expand metacharacters."
+                ),
+            },
+        },
+    },
+}
 
 
 class BashTool:
@@ -49,8 +82,16 @@ class BashTool:
         return ["tool.call.request"]
 
     async def on_load(self, ctx: KernelContext) -> None:
-        """No I/O; log a DEBUG so boots are traceable."""
+        """No I/O; log a DEBUG so boots are traceable.
+
+        Also publish the tool's OpenAI function spec through
+        :func:`~yaya.kernel.tool.register_tool_spec` so strategy
+        plugins can enumerate the bash tool via
+        :func:`~yaya.kernel.tool.all_tool_specs`. Dispatch stays on
+        this plugin's ``on_event`` handler.
+        """
         ctx.logger.debug("tool-bash loaded (timeout=%.1fs)", self.timeout_s)
+        register_tool_spec(_TOOL_NAME, _BASH_TOOL_SPEC)
 
     async def on_event(self, ev: Event, ctx: KernelContext) -> None:
         """Dispatch ``tool.call.request`` for ``name == "bash"``."""
@@ -82,7 +123,8 @@ class BashTool:
         await self._run(ctx, ev, call_id, cmd_list)
 
     async def on_unload(self, ctx: KernelContext) -> None:
-        """No resources; no-op."""
+        """Drop the spec registration so hot-reload doesn't leak it."""
+        unregister_tool_spec(_TOOL_NAME)
 
     # -- internals ------------------------------------------------------------
 

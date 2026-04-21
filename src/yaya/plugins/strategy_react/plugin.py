@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from yaya.kernel.events import Event
 from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.tool import all_tool_specs
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import.
     from yaya.kernel.providers import ProvidersView
@@ -90,6 +91,14 @@ class ReActStrategy:
 
         provider, model = self._provider_and_model(ctx)
         decision = _decide(cast("dict[str, Any]", raw_state), provider=provider, model=model)
+        # Stamp the loaded tool specs onto every LLM-step decision so
+        # the kernel loop can forward them to the provider. Without
+        # this the LLM has no tool schemas and falls back to
+        # hallucinating command output as plain text (#147).
+        if decision.get("next") == "llm":
+            specs = all_tool_specs()
+            if specs:
+                decision["tools"] = specs
         decision["request_id"] = ev.id
         await ctx.emit(
             "strategy.decide.response",
@@ -154,6 +163,43 @@ class ReActStrategy:
         return instance.id, model
 
 
+def _next_pending_tool_call(
+    messages: list[dict[str, Any]],
+    last_assistant: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Return the first tool_call on ``last_assistant`` without a tool reply.
+
+    Walks the messages after ``last_assistant`` and collects the
+    ``tool_call_id``s that already carry a ``role="tool"`` response.
+    Any tool_call whose id is NOT in that set is still pending — we
+    return the first such entry so the loop dispatches it next.
+    Without this pairing the strategy would re-dispatch the first
+    tool_call on every iteration and hit ``max_iterations_exceeded``
+    after a single bash call (#147).
+    """
+    tool_calls_raw: Any = last_assistant.get("tool_calls")
+    if not isinstance(tool_calls_raw, list) or not tool_calls_raw:
+        return None
+    assistant_idx = next(i for i, m in enumerate(messages) if m is last_assistant)
+    satisfied: set[str] = set()
+    for m in messages[assistant_idx + 1 :]:
+        if m.get("role") == "tool":
+            satisfied.add(str(m.get("tool_call_id") or ""))
+    # Iterate the narrowed list. After the isinstance check above
+    # mypy sees ``list[Any]`` and happily reads entries as ``Any``;
+    # pyright keeps the element type unknown so we cast inside the
+    # loop before use.
+    for entry in tool_calls_raw:  # pyright: ignore[reportUnknownVariableType]
+        if not isinstance(entry, dict):
+            continue
+        tc = cast("dict[str, Any]", entry)
+        tc_id = str(tc.get("id") or "")
+        if tc_id and tc_id in satisfied:
+            continue
+        return tc
+    return None
+
+
 def _decide(state: dict[str, Any], *, provider: str, model: str) -> dict[str, Any]:
     """Compute the next step from a loop state snapshot.
 
@@ -189,20 +235,29 @@ def _decide(state: dict[str, Any], *, provider: str, model: str) -> dict[str, An
         # tool call), but defensively ask the LLM to interpret it.
         return {"next": "llm", "provider": provider, "model": model}
 
-    # Assistant present + pending tool_calls → run the first one.
+    # Find any pending tool_calls on the last assistant message that
+    # have not yet produced a ``role="tool"`` reply further down the
+    # message list. Without this pairing step the strategy would
+    # repeatedly invoke the first tool_call — even after its result
+    # was already appended — and hit ``max_iterations_exceeded`` on
+    # the very first bash call (#147).
     if last_assistant is not None:
-        tool_calls = last_assistant.get("tool_calls")
-        if isinstance(tool_calls, list) and tool_calls:
-            first = cast("Any", tool_calls[0])
-            if isinstance(first, dict):
-                return {
-                    "next": "tool",
-                    "tool_call": cast("dict[str, Any]", first),
-                }
+        pending = _next_pending_tool_call(messages, last_assistant)
+        if pending is not None:
+            return {"next": "tool", "tool_call": pending}
+        tool_calls_raw: Any = last_assistant.get("tool_calls")
+        if isinstance(tool_calls_raw, list) and tool_calls_raw:
+            # Every tool_call has a tool reply → push the results
+            # back to the LLM for summarisation or chaining.
+            return {"next": "llm", "provider": provider, "model": model}
         # Assistant finished and has nothing to run → done.
         if last_tool_result is None:
             return {"next": "done"}
-        # Assistant just consumed a tool result → loop again via LLM.
+        # Non-tool source (e.g. memory) surfaced a result without
+        # touching ``tool_calls`` — give the LLM a chance to consume
+        # it. Tool results coming from the loop's tool path clear
+        # ``last_tool_result`` after the follow-up LLM call so this
+        # branch doesn't loop forever.
         return {"next": "llm", "provider": provider, "model": model}
 
     # No assistant message yet → ask the LLM.

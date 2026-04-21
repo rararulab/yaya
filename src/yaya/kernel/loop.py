@@ -101,10 +101,10 @@ import asyncio
 import contextvars
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from yaya.kernel.bus import EventBus, Subscription
-from yaya.kernel.events import Event, Message, new_event
+from yaya.kernel.events import Event, Message, ToolCall, new_event
 from yaya.kernel.payload import (
     payload_dict,
     payload_int,
@@ -116,6 +116,29 @@ _logger = logging.getLogger(__name__)
 
 _SOURCE = "kernel"
 """All loop-emitted events carry ``source="kernel"`` — the loop is kernel code."""
+
+
+def _format_tool_result_for_llm(result_payload: dict[str, Any]) -> str:
+    """Serialise a ``tool.call.result`` payload for an OpenAI ``tool`` message.
+
+    OpenAI's ``role: "tool"`` message expects a plain ``content``
+    string. We prefer a compact structured JSON so the model can parse
+    fields (stdout / stderr / error) reliably, but fall back to the
+    stdout-only shape when the tool returned a flat ``value`` that
+    already reads well as text.
+    """
+    import json
+
+    if result_payload.get("ok") is False:
+        return json.dumps({"ok": False, "error": result_payload.get("error", "unknown")})
+    value: Any = result_payload.get("value")
+    if isinstance(value, dict):
+        typed_value = cast("dict[str, Any]", value)
+        if {"stdout", "stderr", "returncode"} <= set(typed_value.keys()):
+            return json.dumps(typed_value)
+    if isinstance(value, str):
+        return value
+    return json.dumps({"ok": True, "value": value})
 
 
 @dataclass(slots=True)
@@ -384,12 +407,40 @@ class AgentLoop:
                 return True
             state.last_llm_text = payload_str(response.payload, "text") or state.last_llm_text
             state.last_tool_calls = payload_list_of_dicts(response.payload, "tool_calls")
-            state.messages.append({"role": "assistant", "content": state.last_llm_text})
+            # The LLM has now consumed any pending tool or memory
+            # result; clear it so the next strategy decision doesn't
+            # loop forever treating the stale result as "still pending"
+            # (#147).
+            state.last_tool_result = None
+            # Preserve tool_calls on the appended message so the strategy
+            # (and any memory plugin replaying messages) can see the
+            # LLM's function-call intent — not just the reasoning text.
+            # Without this the assistant entry only carried ``content``
+            # and the strategy decided ``done`` even when the LLM had
+            # emitted a tool_call (#147).
+            assistant_msg: Message = {
+                "role": "assistant",
+                "content": state.last_llm_text,
+            }
+            if state.last_tool_calls:
+                assistant_msg["tool_calls"] = [cast("ToolCall", tc) for tc in state.last_tool_calls]
+            state.messages.append(assistant_msg)
             return False
         if next_step == "tool":
             tool_call = payload_dict(decision.payload, "tool_call")
             result = await self._call_tool(session_id, tool_call)
             state.last_tool_result = dict(result.payload)
+            # Append an OpenAI-style tool message so the next LLM call
+            # sees the tool's output. Without this the LLM loops back
+            # with no visibility into what bash did — at best it
+            # hallucinates; at worst it retries the same call (#147).
+            tool_call_id = str(tool_call.get("id", ""))
+            tool_msg: Message = {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": _format_tool_result_for_llm(result.payload),
+            }
+            state.messages.append(tool_msg)
             return False
         await self._emit_kernel_error(
             session_id,

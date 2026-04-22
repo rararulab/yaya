@@ -118,6 +118,49 @@ async function fetchSessionFrames(sessionId: string): Promise<HistoryFrame[]> {
 }
 
 /**
+ * Provider availability snapshot returned by ``GET /api/sessions/{id}``.
+ *
+ * Mirrors the backend's ``_provider_availability`` shape. ``available``
+ * is ``null`` when no historical provider was recorded (legacy tape
+ * pre-#163) OR when no config store was wired — both cases suppress
+ * the banner.
+ */
+interface ProviderAvailability {
+	available: boolean | null;
+	active: string | null;
+	known_providers: string[];
+}
+
+interface SessionDetail {
+	id: string;
+	provider: string | null;
+	model: string | null;
+	provider_availability?: ProviderAvailability;
+}
+
+/**
+ * Fetch ``GET /api/sessions/{id}`` — the superset row carrying the
+ * ``provider_availability`` snapshot the resume banner consults.
+ *
+ * Missing / non-2xx responses resolve to ``null`` so a resume path
+ * can continue without a banner when the backend is on an older
+ * build that does not expose the endpoint yet.
+ */
+async function fetchSessionDetail(sessionId: string): Promise<SessionDetail | null> {
+	try {
+		const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+			headers: { Accept: "application/json" },
+		});
+		if (!res.ok) {
+			return null;
+		}
+		return (await res.json()) as SessionDetail;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Return the session id encoded in ``#/chat/<id>``, or ``null``.
  *
  * The chat shell consults this on mount so a page reload that
@@ -157,6 +200,21 @@ export class YayaChat extends LitElement {
 	@state() private inputValue = "";
 	@state() private pendingToolCalls: Set<string> = new Set();
 	@state() private toolCallsById: Map<string, ToolCallState> = new Map();
+	/**
+	 * Inline banner state for "historical provider is unavailable" (#163).
+	 *
+	 * ``null`` when the banner is hidden. Populated by the resume flow
+	 * when ``GET /api/sessions/{id}`` reports ``provider_availability.
+	 * available === false`` so the user can explicitly confirm a
+	 * switch to the currently-active provider before we open the WS.
+	 */
+	@state() private providerWarning: {
+		sessionId: string;
+		frames: HistoryFrame[];
+		historicalProvider: string | null;
+		historicalModel: string | null;
+		activeProvider: string | null;
+	} | null = null;
 
 	private ws: WsClient | null = null;
 	private nextToastId = 1;
@@ -192,13 +250,64 @@ export class YayaChat extends LitElement {
 			this.pushToast("error", `Could not load history: ${err instanceof Error ? err.message : String(err)}`);
 			this.resetChatState();
 			this.currentSessionId = null;
+			this.providerWarning = null;
 			this.reopenSocket(null);
 			return;
 		}
+		// Historical-provider check (#163): if the tape recorded a
+		// ``turn/provider`` anchor and the provider is no longer
+		// configured, surface an inline banner BEFORE hydration so the
+		// user explicitly chooses to continue with the currently-active
+		// provider or cancel back to a new chat. No silent switch.
+		const detailRow = await fetchSessionDetail(sessionId);
+		const avail = detailRow?.provider_availability;
+		if (avail && avail.available === false) {
+			this.resetChatState();
+			this.providerWarning = {
+				sessionId,
+				frames,
+				historicalProvider: detailRow?.provider ?? null,
+				historicalModel: detailRow?.model ?? null,
+				activeProvider: avail.active,
+			};
+			return;
+		}
 		this.resetChatState();
+		this.providerWarning = null;
 		this.currentSessionId = sessionId;
 		this.hydrateFrames(frames);
 		this.reopenSocket(sessionId);
+	};
+
+	/**
+	 * User accepted the "continue with current provider" confirmation
+	 * on the #163 resume banner. Hydrate frames, open the WS, clear
+	 * the banner — same terminal state as a normal resume.
+	 */
+	private onContinueWithCurrentProvider = (): void => {
+		const pending = this.providerWarning;
+		if (pending === null) {
+			return;
+		}
+		this.providerWarning = null;
+		this.currentSessionId = pending.sessionId;
+		this.hydrateFrames(pending.frames);
+		this.reopenSocket(pending.sessionId);
+	};
+
+	/**
+	 * User cancelled the #163 resume banner. Reset the URL hash to the
+	 * new-chat fragment so a reload lands in an empty state (same
+	 * contract as the #160 fallback when the tape fetch fails).
+	 */
+	private onCancelResume = (): void => {
+		this.providerWarning = null;
+		this.resetChatState();
+		this.currentSessionId = null;
+		if (window.location.hash.startsWith("#/chat/")) {
+			window.location.hash = "#/chat";
+		}
+		this.reopenSocket(null);
 	};
 
 	private resetChatState(): void {
@@ -303,17 +412,13 @@ export class YayaChat extends LitElement {
 		window.addEventListener("yaya:new-chat", this.onNewChat);
 		window.addEventListener("yaya:resume-session", this.onResumeSession as EventListener);
 		if (initialSession) {
-			// Fire-and-forget hydration; failure surfaces via the toast
-			// the same way a sidebar click does.
-			void fetchSessionFrames(initialSession).then(
-				(frames) => {
-					this.hydrateFrames(frames);
-				},
-				(err: unknown) => {
-					this.pushToast("error", `Could not load history: ${err instanceof Error ? err.message : String(err)}`);
-					this.currentSessionId = null;
-					this.reopenSocket(null);
-				},
+			// Reuse the sidebar-click resume path so the #163 provider
+			// banner surfaces the same way on a hash-driven reload.
+			// ``reopenSocket`` already fired against ``initialSession``
+			// above; if the banner trips, ``onResumeSession`` will
+			// reset and re-open against ``null``.
+			void this.onResumeSession(
+				new CustomEvent("yaya:resume-session", { detail: { sessionId: initialSession } }),
 			);
 		}
 	}
@@ -584,6 +689,56 @@ export class YayaChat extends LitElement {
 		return blocks;
 	}
 
+	/**
+	 * Render the inline "historical provider missing" banner (#163).
+	 *
+	 * Not a blocking modal on purpose — the transcript area renders
+	 * below so the user can still read their past messages while
+	 * deciding. Two actions: "Continue with <active>" (hydrate + open
+	 * WS bound to the same session) or "Cancel" (reset to the empty
+	 * new-chat state). No silent provider switch — the choice is
+	 * always explicit.
+	 */
+	private renderProviderWarning(): TemplateResult | typeof nothing {
+		const warning = this.providerWarning;
+		if (warning === null) {
+			return nothing;
+		}
+		const continueLabel = warning.activeProvider
+			? `Continue with ${warning.activeProvider}`
+			: "Continue";
+		const historical = warning.historicalProvider ?? "(unknown)";
+		const modelPart = warning.historicalModel ? ` (${warning.historicalModel})` : "";
+		return html`
+			<div
+				class="yaya-provider-warning"
+				role="alert"
+				aria-live="polite"
+				data-testid="provider-warning"
+			>
+				<p class="yaya-provider-warning-text">
+					This chat originally ran on <strong>${historical}</strong>${modelPart},
+					which is no longer configured. Continue with the active provider or
+					cancel.
+				</p>
+				<div class="yaya-provider-warning-actions">
+					<button
+						class="yaya-provider-warning-continue"
+						@click=${() => this.onContinueWithCurrentProvider()}
+					>
+						${continueLabel}
+					</button>
+					<button
+						class="yaya-provider-warning-cancel"
+						@click=${() => this.onCancelResume()}
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		`;
+	}
+
 	override render(): TemplateResult {
 		// Connection state moved into the sidebar footer dot (#114); the
 		// chat header no longer renders a duplicate indicator.
@@ -594,6 +749,7 @@ export class YayaChat extends LitElement {
 			<div class="yaya-chat">
 				<section class="yaya-chat-scroll">
 					<div class="yaya-chat-scroll-inner">
+						${this.renderProviderWarning()}
 						${empty
 							? html`<section class="yaya-hero">
 									<h1 class="yaya-hero-title">yaya</h1>

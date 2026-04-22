@@ -578,3 +578,73 @@ async def test_archive_raises_when_id_unknown(tmp_path: Path) -> None:
             await store.archive("does-not-exist", workspace=tmp_path)
     finally:
         await store.close()
+
+
+# ---------------------------------------------------------------------------
+# #163 — turn/provider anchor
+# ---------------------------------------------------------------------------
+
+
+async def test_append_turn_provider_persists_on_tape(tmp_path: Path) -> None:
+    """``append_turn_provider`` writes a ``turn/provider`` anchor on the tape (#163)."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "provider-anchor")
+        await session.append_turn_provider("llm-openai", "gpt-4o-mini")
+        entries = await session.entries()
+        anchors = [e for e in entries if e.kind == "anchor"]
+        tp = [a for a in anchors if a.payload.get("name") == "turn/provider"]
+        assert len(tp) == 1
+        state = tp[0].payload.get("state")
+        assert isinstance(state, dict)
+        assert state.get("provider") == "llm-openai"
+        assert state.get("model") == "gpt-4o-mini"
+    finally:
+        await store.close()
+
+
+async def test_list_sessions_surfaces_latest_provider_anchor(tmp_path: Path) -> None:
+    """Stacked turn/provider anchors collapse to the most recent one (#163)."""
+    tapes_dir = tmp_path / "tapes"
+    store = SessionStore(tapes_dir=tapes_dir)
+    try:
+        session = await store.open(tmp_path, "provider-stack")
+        await session.append_message("user", "hi")
+        await session.append_turn_provider("llm-openai", "gpt-4o-mini")
+        await session.append_turn_provider("llm-anthropic", "claude-opus")
+        infos = await store.list_sessions(tmp_path)
+        assert len(infos) == 1
+        assert infos[0].provider == "llm-anthropic"
+        assert infos[0].model == "claude-opus"
+        info = await session.info()
+        assert info.provider == "llm-anthropic"
+        assert info.model == "claude-opus"
+    finally:
+        await store.close()
+
+
+async def test_list_sessions_returns_none_for_session_without_anchor(tmp_path: Path) -> None:
+    """Legacy tapes without a turn/provider anchor surface ``None`` (#163)."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "no-anchor")
+        await session.append_message("user", "hi")
+        infos = await store.list_sessions(tmp_path)
+        assert len(infos) == 1
+        assert infos[0].provider is None
+        assert infos[0].model is None
+    finally:
+        await store.close()
+
+
+async def test_append_turn_provider_rejects_blank(tmp_path: Path) -> None:
+    """Blank provider AND blank model is a no-op — never leak empty anchors (#163)."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "blank-anchor")
+        await session.append_turn_provider("", "")
+        entries = await session.entries()
+        tp = [e for e in entries if e.kind == "anchor" and e.payload.get("name") == "turn/provider"]
+        assert tp == []
+    finally:
+        await store.close()

@@ -121,3 +121,23 @@ Feature: Web adapter HTTP admin API
     Given a SessionStore with one persisted tape carrying a user message
     When a client PATCHes api sessions id with a whitespace only name
     Then the response status is 400
+
+  Scenario: GET api sessions lists rows carrying historical provider and model
+    Given a SessionStore whose tape carries a turn provider anchor
+    When a client GETs api sessions
+    Then the row carries provider and model fields from the most recent anchor
+
+  Scenario: GET api sessions by id reports available true when the historical provider is still configured
+    Given an admin router whose providers view lists the tapes historical provider id
+    When a client GETs api sessions by id
+    Then the response payload reports available true with the historical provider and model
+
+  Scenario: GET api sessions by id reports available false when the historical provider is gone
+    Given an admin router whose providers view does not list the tapes historical provider id
+    When a client GETs api sessions by id
+    Then the response payload reports available false with known providers enumerated
+
+  Scenario: GET api sessions by id returns 404 when the id is unknown
+    Given an admin router wired to an empty SessionStore
+    When a client GETs api sessions by id
+    Then the response status is 404

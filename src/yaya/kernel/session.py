@@ -56,6 +56,8 @@ from republic.tape import (
 from yaya.kernel.tape_context import default_tape_context, select_messages
 
 __all__ = [
+    "RENAME_ANCHOR_NAME",
+    "TURN_PROVIDER_ANCHOR_NAME",
     "MemoryTapeStore",
     "Session",
     "SessionInfo",
@@ -76,6 +78,24 @@ Rename is deliberately modelled as an append-only anchor rather than a
 sidecar file: the tape is the only source of truth, and stacking
 renames simply means "read the latest one wins". ``state`` carries a
 single ``name`` key (#161).
+"""
+
+
+TURN_PROVIDER_ANCHOR_NAME: str = "turn/provider"
+"""Anchor name stamped once per turn identifying the (provider, model) pair.
+
+Every turn the agent loop settles on a concrete ``(provider_instance_id,
+model)`` pair (via the strategy plugin) and writes one anchor on the
+session's tape the first time that pair is actually used in the turn.
+Stacking per-turn anchors lets the UI resume an old session while
+knowing which provider originally drove it — and warn the user before
+the next turn when that provider is no longer configured. ``state``
+carries ``{"provider": <id>, "model": <str>}`` (#163).
+
+One anchor per *turn*, not per LLM call: the loop may fire multiple
+``llm.call.request`` events inside one turn (ReAct thought loop), but
+the provider/model pair is stable across them. Stamping once per call
+would flood the tape.
 """
 
 
@@ -142,6 +162,16 @@ class SessionInfo(BaseModel):
             ``session/renamed`` anchor on the tape. ``None`` when the
             tape has never been renamed. Frontend label priority:
             ``name → preview → last_anchor → session_id`` (#161).
+        provider: Provider-instance id recorded by the most recent
+            ``turn/provider`` anchor on the tape. ``None`` when the
+            tape has no turn-provider anchor yet — either a legacy
+            tape written before #163 landed or a tape that has not
+            yet completed a turn. Used by the web UI to warn on
+            resume when the historical provider is no longer
+            configured.
+        model: Model string paired with :attr:`provider` in the most
+            recent ``turn/provider`` anchor. ``None`` with the same
+            semantics as :attr:`provider`.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -153,6 +183,8 @@ class SessionInfo(BaseModel):
     last_anchor: str | None
     preview: str | None = None
     name: str | None = None
+    provider: str | None = None
+    model: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +555,35 @@ class Session:
             raise ValueError("session name may not be empty")
         await self.handoff(RENAME_ANCHOR_NAME, state={"name": stripped})
 
+    async def append_turn_provider(self, provider_id: str, model: str) -> None:
+        """Stamp a :data:`TURN_PROVIDER_ANCHOR_NAME` anchor for the current turn.
+
+        Persists the ``(provider_instance_id, model)`` pair the agent
+        loop resolved for this turn. The kernel calls this once per
+        turn — not once per LLM call — so the tape accumulates at most
+        ``N`` anchors for ``N`` turns.
+
+        ``provider_id`` and ``model`` are persisted verbatim after
+        ``str()`` coercion; empty strings collapse to no-op writes so
+        malformed plugin payloads cannot leak a blank identifier onto
+        the tape. :meth:`SessionStore.list_sessions` reads the most
+        recent anchor per tape to surface the historical provider to
+        the UI (#163).
+
+        Args:
+            provider_id: Provider-instance id (e.g. ``"llm-openai"``,
+                ``"llm-openai-prod"``).
+            model: Model string the provider was dispatched with.
+        """
+        pid = str(provider_id).strip() if provider_id else ""
+        mdl = str(model).strip() if model else ""
+        if not pid and not mdl:
+            return
+        await self.handoff(
+            TURN_PROVIDER_ANCHOR_NAME,
+            state={"provider": pid, "model": mdl},
+        )
+
     async def append_event(self, name: str, payload: dict[str, Any], **meta: Any) -> None:
         """Append a generic ``event`` entry.
 
@@ -654,6 +715,7 @@ class Session:
         entries = await self.entries()
         anchors = [e for e in entries if e.kind == "anchor"]
         last_anchor = str(anchors[-1].payload.get("name")) if anchors else None
+        provider, model = _latest_turn_provider(entries)
         return SessionInfo(
             session_id=self._session_id,
             tape_name=self._tape_name,
@@ -661,6 +723,8 @@ class Session:
             entry_count=len(entries),
             last_anchor=last_anchor,
             name=_latest_rename_name(entries),
+            provider=provider,
+            model=model,
         )
 
     # -- mutate-as-rewrite ------------------------------------------------------
@@ -876,6 +940,7 @@ class SessionStore:
             # surface the tape-name suffix so operators can still
             # correlate rows.
             sid_suffix = name.split("__", 1)[-1]
+            provider, model = _latest_turn_provider(entries)
             infos.append(
                 SessionInfo(
                     session_id=sid_suffix,
@@ -885,6 +950,8 @@ class SessionStore:
                     last_anchor=last_anchor,
                     preview=preview,
                     name=_latest_rename_name(entries),
+                    provider=provider,
+                    model=model,
                 )
             )
         return infos
@@ -978,6 +1045,37 @@ def _latest_rename_name(entries: Iterable[TapeEntry]) -> str | None:
         if isinstance(candidate, str) and candidate.strip():
             latest = candidate.strip()
     return latest
+
+
+def _latest_turn_provider(entries: Iterable[TapeEntry]) -> tuple[str | None, str | None]:
+    """Return ``(provider, model)`` from the most recent turn-provider anchor.
+
+    Walks ``entries`` in tape order and remembers the ``state`` dict of
+    the last ``anchor`` entry whose ``payload["name"]`` matches
+    :data:`TURN_PROVIDER_ANCHOR_NAME`. Returns ``(None, None)`` when
+    the tape has no such anchor (legacy tapes written before #163, or
+    tapes that have not completed a turn yet).
+
+    Empty strings in either field collapse to ``None`` so a malformed
+    anchor can never leak a blank identifier into the UI.
+    """
+    provider: str | None = None
+    model: str | None = None
+    for entry in entries:
+        if entry.kind != "anchor":
+            continue
+        payload = entry.payload or {}
+        if payload.get("name") != TURN_PROVIDER_ANCHOR_NAME:
+            continue
+        state_raw: Any = payload.get("state") or {}
+        if not isinstance(state_raw, dict):
+            continue
+        state_dict: dict[str, Any] = cast("dict[str, Any]", state_raw)
+        p_raw: Any = state_dict.get("provider")
+        m_raw: Any = state_dict.get("model")
+        provider = p_raw.strip() if isinstance(p_raw, str) and p_raw.strip() else None
+        model = m_raw.strip() if isinstance(m_raw, str) and m_raw.strip() else None
+    return provider, model
 
 
 def _first_user_message_preview(entries: Iterable[TapeEntry]) -> str | None:

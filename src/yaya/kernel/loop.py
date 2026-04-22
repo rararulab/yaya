@@ -282,6 +282,9 @@ class _TurnState:
     last_tool_result: dict[str, Any] | None = None
     last_llm_text: str = ""
     last_tool_calls: list[dict[str, Any]] = field(default_factory=lambda: [])
+    provider_anchor_written: bool = False
+    """Guard flag: stamp the ``turn/provider`` tape anchor at most once per
+    turn even when a ReAct loop makes multiple LLM calls (#163)."""
 
 
 class AgentLoop:
@@ -532,6 +535,19 @@ class AgentLoop:
                     f"llm_error: {payload_str(response.payload, 'error', 'unknown')}",
                 )
                 return True
+            # First successful LLM response in this turn: stamp the
+            # ``turn/provider`` anchor on the tape so a resumed session
+            # knows which provider+model drove it (#163). The strategy
+            # supplied provider/model on the decision; we mirror that
+            # pair onto the tape exactly once per turn — not per call —
+            # so a ReAct-style multi-call turn never floods the tape.
+            if not state.provider_anchor_written:
+                await self._stamp_turn_provider(
+                    session_id,
+                    provider=payload_str(decision.payload, "provider"),
+                    model=payload_str(decision.payload, "model"),
+                )
+                state.provider_anchor_written = True
             state.last_llm_text = payload_str(response.payload, "text") or state.last_llm_text
             state.last_tool_calls = payload_list_of_dicts(response.payload, "tool_calls")
             # Clear any pending tool/memory result now that the LLM
@@ -707,6 +723,38 @@ class AgentLoop:
         except BaseException:
             self._tracker.discard(req.id)
             raise
+
+    async def _stamp_turn_provider(
+        self,
+        session_id: str,
+        *,
+        provider: str,
+        model: str,
+    ) -> None:
+        """Write one ``turn/provider`` anchor onto ``session_id``'s tape.
+
+        The anchor carries ``{provider, model}`` — the loop's
+        authoritative record of which ``(provider_instance, model)``
+        drove a turn. Silently no-ops when no ``session_store`` /
+        ``workspace`` was wired (tests, ``yaya hello``) — the in-memory
+        turn still runs, just without persistence. Errors opening the
+        session or writing the anchor are logged but never propagate:
+        a persistence hiccup must not break the turn (#163).
+        """
+        store = self._session_store
+        workspace = self._workspace
+        if store is None or workspace is None:
+            return
+        if not provider and not model:
+            return
+        try:
+            session = await store.open(workspace, session_id)
+            await session.append_turn_provider(provider, model)
+        except Exception:
+            _logger.exception(
+                "agent loop failed to stamp turn/provider anchor for session %r; continuing",
+                session_id,
+            )
 
     async def _emit_kernel_error(
         self,

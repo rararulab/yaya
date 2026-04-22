@@ -295,7 +295,7 @@ def build_admin_router(
     _register_config_routes(router, config_store)
     _register_plugin_routes(router, registry, config_store)
     _register_provider_routes(router, registry, config_store, bus)
-    _register_session_routes(router, session_store, workspace)
+    _register_session_routes(router, session_store, workspace, config_store)
     return router
 
 
@@ -434,6 +434,12 @@ def _session_row_to_json(info: Any) -> dict[str, Any]:
         "last_anchor": info.last_anchor,
         "preview": info.preview,
         "name": info.name,
+        # ``provider`` / ``model`` land from the most recent
+        # ``turn/provider`` anchor (#163). Legacy tapes predating the
+        # anchor surface ``None`` for both so the UI can suppress the
+        # resume-warning banner without any special-casing.
+        "provider": info.provider,
+        "model": info.model,
     }
 
 
@@ -477,10 +483,50 @@ async def _session_patch_handler(
     return JSONResponse(_session_row_to_json(row))
 
 
+def _provider_availability(
+    historical_provider: str | None,
+    config_store: ConfigStore | None,
+) -> dict[str, Any]:
+    """Return the availability snapshot for a historical provider id.
+
+    The "available" definition for #163 is deliberately permissive:
+    an instance counts as available iff its id still resolves to a
+    row in :class:`~yaya.kernel.providers.ProvidersView`. The recorded
+    ``model`` is **not** checked — users routinely upgrade or flip a
+    model string on the same instance, and treating that as an
+    "unavailable" state would nag legitimate upgrades. The narrower
+    rule (provider plugin must load + config must match) is documented
+    in the #163 PR body and easy to tighten later if we see misuse.
+
+    Returns ``{available, active, known_providers}``:
+
+    * ``available``: True when the historical id appears in the live
+      provider instance list. ``None`` when the config store is not
+      wired — the UI treats unknown as "suppress the banner".
+    * ``active``: the currently active provider instance id so the UI
+      can render "Continue with <active>" on the banner.
+    * ``known_providers``: sorted list of currently-configured ids so
+      the UI can render "historical provider X is gone; you have
+      [A, B, C]" without an extra round trip.
+    """
+    if config_store is None:
+        return {"available": None, "active": None, "known_providers": []}
+    view = ProvidersView(config_store)
+    known = [inst.id for inst in view.list_instances()]
+    known_set = set(known)
+    available = None if historical_provider is None else historical_provider in known_set
+    return {
+        "available": available,
+        "active": view.active_id,
+        "known_providers": known,
+    }
+
+
 def _register_session_routes(
     router: APIRouter,
     session_store: SessionStore | None,
     workspace: Path | None,
+    config_store: ConfigStore | None,
 ) -> None:
     """Attach the ``/api/sessions*`` routes so the sidebar can hydrate history."""
 
@@ -489,8 +535,11 @@ def _register_session_routes(
         """Return persisted sessions (newest first) for the current workspace.
 
         Each row carries ``{id, tape_name, created_at, entry_count,
-        last_anchor}``. Sorted by ``created_at`` descending so the UI
-        can render in display order without additional work.
+        last_anchor, preview, name, provider, model}``. Sorted by
+        ``created_at`` descending so the UI can render in display
+        order without additional work. ``provider`` and ``model`` come
+        from the most recent ``turn/provider`` anchor on the tape and
+        are ``null`` on legacy tapes (#163).
         """
         store = cast("SessionStore", _require(session_store, "session store"))
         ws = cast("Path", _require(workspace, "session workspace"))
@@ -498,6 +547,40 @@ def _register_session_routes(
         rows = [_session_row_to_json(info) for info in infos]
         rows.sort(key=lambda r: r["created_at"] or "", reverse=True)
         return JSONResponse({"sessions": rows})
+
+    @router.get("/api/sessions/{session_id}")
+    async def _sessions_get(session_id: str) -> JSONResponse:
+        """Return one session row plus a provider-availability snapshot (#163).
+
+        Superset of ``GET /api/sessions`` row: carries the row's
+        standard fields plus a ``provider_availability`` object so the
+        chat-shell's resume handler can decide whether to show the
+        "historical provider missing" banner without an extra round
+        trip.
+
+        * ``provider_availability.available`` — True iff the historical
+          provider id still resolves to a configured instance. ``None``
+          for legacy tapes with no recorded provider (UI suppresses
+          the banner).
+        * ``provider_availability.active`` — currently active provider
+          instance id, so the UI can render a "Continue with <active>"
+          confirmation button.
+        * ``provider_availability.known_providers`` — currently
+          configured instance ids; UI surface for the "you have
+          [a, b, c]" hint.
+
+        Returns ``404`` when the id does not resolve to a known tape,
+        ``503`` when the store / workspace pair was not wired.
+        """
+        store = cast("SessionStore", _require(session_store, "session store"))
+        ws = cast("Path", _require(workspace, "session workspace"))
+        infos = await store.list_sessions(ws)
+        match = next((info for info in infos if info.session_id == session_id), None)
+        if match is None:
+            raise HTTPException(status_code=404, detail=f"session not found: {session_id}")
+        row = _session_row_to_json(match)
+        row["provider_availability"] = _provider_availability(match.provider, config_store)
+        return JSONResponse(row)
 
     @router.get("/api/sessions/{session_id}/frames")
     async def _sessions_frames(session_id: str) -> JSONResponse:

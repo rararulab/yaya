@@ -961,10 +961,12 @@ tape rather than starting a fresh session. The flow is:</p>
    dispatches a <code>yaya:resume-session</code> custom event.</li>
 <li><code>&lt;yaya-chat&gt;</code> clears its <code>messages</code> / <code>pendingToolCalls</code> /
    <code>streamingMessage</code> / <code>inFlight</code> state, fetches
-   <code>GET /api/sessions/&lt;id&gt;/messages</code>, and replays each
-   <code>{role, content}</code> row as a chat bubble (<code>system</code> rows from
-   compaction anchors are skipped — the next turn's prompt already
-   carries the summary).</li>
+   <code>GET /api/sessions/&lt;id&gt;/frames</code>, and applies each frame through
+   the same reducer the live WebSocket uses. Historical tool calls
+   land as collapsible cards sourced from the tape's <code>tool_call</code> /
+   <code>tool_result</code> entries. Pre-compaction entries are skipped — the
+   next turn's prompt already carries the summary through the
+   agent-loop projection.</li>
 <li>The existing WebSocket is torn down and a new one opens at
    <code>/ws?session=&lt;id&gt;</code>. The adapter's handshake binds the connection
    to <code>&lt;id&gt;</code> so downstream kernel events route to the same tape the
@@ -973,13 +975,19 @@ tape rather than starting a fresh session. The flow is:</p>
 <li>On the next user turn the agent loop hydrates prior messages
    from the tape (PR #158) and the thread continues seamlessly.</li>
 </ol>
-<p>The <code>GET /api/sessions/{id}/messages</code> endpoint reuses the loop's own
-projection helper (<code>project_entries_to_messages</code> in
-<code>yaya.kernel.loop</code>) so the history view and the agent loop cannot
-drift. Tool-call replay fidelity is out of scope for v1; ReAct
-tool observations are persisted as user <code>"Observation: ..."</code>
-messages on the tape and therefore render correctly as plain
-bubbles without special handling.</p>
+<p>Two endpoints feed this flow:</p>
+<ul>
+<li><code>GET /api/sessions/{id}/messages</code> is the <strong>agent-loop</strong> projection
+  (<code>project_entries_to_messages</code> in <code>yaya.kernel.loop</code>) — stable
+  <code>{role, content}</code> shape consumed by cross-turn hydration in #158.
+  Do not re-shape it for UI reasons.</li>
+<li><code>GET /api/sessions/{id}/frames</code> is the <strong>UI</strong> projection (#162) —
+  a discriminated frame list matching the live WebSocket wire
+  (<code>assistant.done</code> / <code>tool.start</code> / <code>tool.result</code> / <code>user.message</code>)
+  so the chat-shell replays history through the same reducer that
+  handles live events. <code>Observation: ...</code> user messages (if any ever
+  land on tape) are filtered to avoid duplicating the tool card.</li>
+</ul>
 <p>On page load, <code>&lt;yaya-chat&gt;.connectedCallback</code> inspects
 <code>location.hash</code> and auto-resumes <code>#/chat/&lt;id&gt;</code> when present — the
 same code path as the click handler. Fetch failures surface a toast

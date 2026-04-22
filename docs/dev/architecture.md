@@ -19,7 +19,7 @@ See [GOAL.md](../goal.md) for the product anchor and
         │    event bus  ·  plugin registry        │
         │    agent loop (the scheduler)           │
         │    built-in CLI: serve / version /      │
-        │      update / hello / plugin {...}      │
+        │      update / doctor / plugin {...}     │
         └─────┬─────────┬────────────┬────────────┘
               ▼         ▼            ▼
          STRATEGIES  SKILLS      MEMORY
@@ -41,7 +41,7 @@ adapter's UI assets are pre-built and shipped in the wheel.
 src/yaya/
   __init__.py         # versioned public API
   __main__.py         # python -m yaya → cli.app
-  cli/                # Typer entrypoints: serve / version / update / hello / plugin
+  cli/                # Typer entrypoints: serve / version / update / doctor / plugin
     commands/         # one file per subcommand
     output.py         # shared rendering helpers (CLI only — not web UI)
   kernel/             # the kernel — the entire product core lives here

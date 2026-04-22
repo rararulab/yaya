@@ -340,6 +340,25 @@ async def test_patch_session_400_when_name_empty(tmp_path: Path) -> None:
         await store.close()
 
 
+async def test_patch_session_422_when_name_exceeds_max_length(tmp_path: Path) -> None:
+    """PATCH caps ``name`` at 200 chars (#161 review fixup)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-long-name")
+        await session.append_message("user", "hi", source="bdd")
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.patch(f"/api/sessions/{sid}", json={"name": "x" * 201})
+        # Pydantic field validation surfaces as 422 by default.
+        assert res.status_code == 422
+    finally:
+        await store.close()
+
+
 async def test_patch_session_503_when_no_store() -> None:
     """PATCH returns 503 when the store / workspace was not wired (#161)."""
     app = _build_app(session_store=None, workspace=None)

@@ -141,7 +141,11 @@ class _SessionPatchBody(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(..., description="New display name; non-empty after strip.")
+    name: str = Field(
+        ...,
+        max_length=200,
+        description="New display name; non-empty after strip; capped at 200 chars.",
+    )
 
 
 class _ProviderActiveBody(BaseModel):

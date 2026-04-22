@@ -903,6 +903,13 @@ class SessionStore:
         :class:`FileNotFoundError` when neither form resolves to a
         known tape — callers surface that as a ``404`` rather than
         silently archiving an empty tape (#161).
+
+        Dump-then-reset is intentionally **not atomic**: a crash
+        between the archive dump and the live-tape reset leaves both
+        copies on disk. The duplication is recoverable (archive is
+        the source of truth) and the reset runs in microseconds, so
+        the window is negligible for a local-only process. Callers
+        needing atomicity should wrap their own persistence layer.
         """
         if self._closed:
             raise RuntimeError("SessionStore is closed")

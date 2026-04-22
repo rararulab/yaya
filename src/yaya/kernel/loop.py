@@ -58,11 +58,19 @@ Subscription scope
 ------------------
 The loop subscribes to: ``user.message.received``, ``user.interrupt``,
 ``strategy.decide.response``, ``llm.call.response``, ``llm.call.error``,
-``memory.result``, ``tool.call.result``. Each response handler simply
-hands the event to :class:`_RequestTracker`, which resolves the matching
-future by ``payload.request_id``. Responses whose id is not tracked are
-ignored (they may belong to a plugin bypassing the loop, or be late
-arrivals after a cancelled turn).
+``llm.call.delta``, ``memory.result``, ``tool.call.result``. Each
+response handler simply hands the event to :class:`_RequestTracker`,
+which resolves the matching future by ``payload.request_id``. Responses
+whose id is not tracked are ignored (they may belong to a plugin
+bypassing the loop, or be late arrivals after a cancelled turn).
+
+``llm.call.delta`` events are forwarded — not awaited. The tracker
+carries a parallel ``request_id → session_id`` map populated when the
+loop publishes an ``llm.call.request``; each incoming delta is
+re-emitted as ``assistant.message.delta`` on the owning session so
+adapters render the in-flight text. Deltas for unknown ids (late
+arrivals, cross-loop leaks) are dropped silently — same shape as the
+``_on_response`` path.
 
 Interrupt delivery latency
 --------------------------
@@ -222,6 +230,14 @@ class _RequestTracker:
     """
 
     _pending: dict[str, asyncio.Future[Event]] = field(default_factory=lambda: {})
+    _delta_sessions: dict[str, str] = field(default_factory=lambda: {})
+    """Parallel ``request_id → session_id`` map for delta routing (#168).
+
+    Populated by :meth:`track_delta_session` alongside :meth:`track`
+    when the loop publishes an ``llm.call.request``. Entries are
+    cleared on :meth:`resolve` and :meth:`discard` so a late delta
+    arriving after the response no longer has a forwarding target.
+    """
 
     def track(self, request_id: str) -> asyncio.Future[Event]:
         """Register ``request_id`` and return a fresh future to await on."""
@@ -229,6 +245,14 @@ class _RequestTracker:
         fut: asyncio.Future[Event] = loop.create_future()
         self._pending[request_id] = fut
         return fut
+
+    def track_delta_session(self, request_id: str, session_id: str) -> None:
+        """Record the session that owns ``request_id`` for streaming delta routing."""
+        self._delta_sessions[request_id] = session_id
+
+    def delta_session_for(self, request_id: str) -> str | None:
+        """Return the session id for a tracked request, or ``None`` if unknown."""
+        return self._delta_sessions.get(request_id)
 
     def resolve(self, ev: Event) -> None:
         """Resolve the awaiter whose request_id matches ``ev.payload``.
@@ -247,6 +271,7 @@ class _RequestTracker:
             )
             return
         fut = self._pending.pop(request_id, None)
+        self._delta_sessions.pop(request_id, None)
         if fut is None:
             _logger.debug(
                 "untracked response kind=%r request_id=%r (late arrival or cancelled turn)",
@@ -260,11 +285,13 @@ class _RequestTracker:
     def discard(self, request_id: str) -> None:
         """Forget a tracked request without resolving it (e.g. on timeout)."""
         self._pending.pop(request_id, None)
+        self._delta_sessions.pop(request_id, None)
 
     def cancel_all(self) -> None:
         """Cancel every pending future — called on :meth:`AgentLoop.stop`."""
         pending = self._pending
         self._pending = {}
+        self._delta_sessions = {}
         for fut in pending.values():
             if not fut.done():
                 fut.cancel()
@@ -352,6 +379,7 @@ class AgentLoop:
             self._bus.subscribe("strategy.decide.response", self._on_response, source=_SOURCE),
             self._bus.subscribe("llm.call.response", self._on_response, source=_SOURCE),
             self._bus.subscribe("llm.call.error", self._on_response, source=_SOURCE),
+            self._bus.subscribe("llm.call.delta", self._on_llm_delta, source=_SOURCE),
             self._bus.subscribe("memory.result", self._on_response, source=_SOURCE),
             self._bus.subscribe("tool.call.result", self._on_response, source=_SOURCE),
         ])
@@ -413,6 +441,43 @@ class AgentLoop:
     async def _on_response(self, ev: Event) -> None:
         """Route every response kind through the correlation tracker."""
         self._tracker.resolve(ev)
+
+    async def _on_llm_delta(self, ev: Event) -> None:
+        """Forward ``llm.call.delta`` as ``assistant.message.delta`` on the owning session.
+
+        The loop is the only subscriber that knows which session a
+        given ``request_id`` belongs to (the ``llm.call.request`` the
+        loop published carries that binding). Adapters therefore do
+        not need to subscribe to ``llm.call.*`` directly — streaming
+        flows through the single, session-scoped
+        ``assistant.message.delta`` channel they already consume
+        (#168).
+
+        Deltas whose ``request_id`` is unknown are dropped silently:
+        they are either late arrivals after the loop already resolved
+        the response (and cleared the tracker entry) or belong to a
+        provider bypassing the loop. Either way, forwarding them would
+        either confuse adapters or crash here — dropping is the only
+        correct choice.
+        """
+        request_id = ev.payload.get("request_id")
+        if not isinstance(request_id, str):
+            return
+        session_id = self._tracker.delta_session_for(request_id)
+        if session_id is None:
+            return
+        content_raw: Any = ev.payload.get("content", "")
+        content = content_raw if isinstance(content_raw, str) else ""
+        if not content:
+            return
+        await self._bus.publish(
+            new_event(
+                "assistant.message.delta",
+                {"content": content},
+                session_id=session_id,
+                source=_SOURCE,
+            )
+        )
 
     # -- turn body --------------------------------------------------------------
 
@@ -717,6 +782,12 @@ class AgentLoop:
                 (interrupt or supersession).
         """
         fut = self._tracker.track(req.id)
+        # Delta forwarding (#168) needs to know which session owns
+        # each in-flight LLM request so streaming chunks re-surface on
+        # the right WS connection. Stamping for every request kind is
+        # a cheap constant-size dict write; only ``llm.call.delta``
+        # reads it, so non-LLM requests just pay the insert.
+        self._tracker.track_delta_session(req.id, req.session_id)
         try:
             await self._bus.publish(req)
             return await asyncio.wait_for(fut, timeout=self._config.step_timeout_s)

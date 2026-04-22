@@ -1,5 +1,5 @@
 ## Philosophy
-OpenAI LLM-provider plugin built on the official `openai.AsyncOpenAI` SDK (the only LLM SDK allowed by `AGENT.md` §4). **Instance-scoped** (D4b / #123): one plugin process backs many operator-configured records under `providers.<id>.*` — "OpenAI prod", "Azure OpenAI", "local-LM-Studio" each with its own `api_key`, `base_url`, `model`. Non-streaming chat completions at 0.1; streaming follows adapter work.
+OpenAI LLM-provider plugin built on the official `openai.AsyncOpenAI` SDK (the only LLM SDK allowed by `AGENT.md` §4). **Instance-scoped** (D4b / #123): one plugin process backs many operator-configured records under `providers.<id>.*` — "OpenAI prod", "Azure OpenAI", "local-LM-Studio" each with its own `api_key`, `base_url`, `model`. Chat completions stream (#168): `stream=True` + `stream_options={"include_usage": True}`; each content chunk produces an `llm.call.delta`, `<think>` spans are filtered chunk-boundary-safe via `_StreamThinkFilter`, and a trailing `llm.call.response` carries the aggregated text plus usage (or `usage=None` when the upstream ignores `stream_options`).
 
 ## External Reality
 - [`docs/dev/plugin-protocol.md`](../../../../docs/dev/plugin-protocol.md) (LLM-provider row + "Provider instances" section).

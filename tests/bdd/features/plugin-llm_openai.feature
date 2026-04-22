@@ -24,3 +24,9 @@ Feature: OpenAI LLM provider plugin
     Given a configured llm-openai plugin whose stubbed client raises a RateLimitError
     When a llm.call.request for provider openai is published
     Then a llm.call.error event is emitted with the error string and the originating request id
+
+  Scenario: One llm.call.request produces N llm.call.delta events before the final response
+    Given a configured llm-openai plugin whose stubbed client streams N content chunks
+    When a llm.call.request for provider openai is published
+    Then N llm.call.delta events are emitted in order carrying the originating request id
+    And a single llm.call.response event is emitted with the aggregated text and the originating request id

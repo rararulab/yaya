@@ -237,6 +237,61 @@ describe("YayaBubble ReAct thought folding (#167)", () => {
 	});
 });
 
+describe("YayaChat streaming deltas (#168)", () => {
+	it("accumulates successive assistant.delta frames into streamingMessage", () => {
+		const shell = makeShell();
+		shell.onFrame({ type: "assistant.delta", session_id: "ws-x", content: "Hel" });
+		shell.onFrame({ type: "assistant.delta", session_id: "ws-x", content: "lo" });
+		const s = shell.streamingMessage as AssistantChatMessage;
+		expect(s).not.toBeNull();
+		const text = s.content
+			.filter((c): c is { type: "text"; text: string } => c.type === "text")
+			.map((c) => c.text)
+			.join("");
+		expect(text).toBe("Hello");
+	});
+
+	it("clears streamingMessage on assistant.done after a stream of deltas", () => {
+		const shell = makeShell();
+		shell.onFrame({ type: "assistant.delta", session_id: "ws-x", content: "Hi" });
+		shell.onFrame({
+			type: "assistant.done",
+			session_id: "ws-x",
+			content: "Hi",
+			tool_calls: [],
+		});
+		expect(shell.streamingMessage).toBeNull();
+	});
+});
+
+describe("YayaBubble partial thought during streaming (#167 + #168)", () => {
+	async function renderBubble(role: "user" | "assistant", content: string): Promise<HTMLElement> {
+		const el = document.createElement("yaya-bubble") as HTMLElement & {
+			role: string;
+			content: string;
+			updateComplete: Promise<unknown>;
+		};
+		el.role = role;
+		el.content = content;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		return el;
+	}
+
+	it("folds partial Thought emitted mid-stream without flashing raw prefix bytes", async () => {
+		// Mid-stream: chat-shell re-renders the bubble on every delta.
+		// splitThoughtFromFinal must collapse the Thought into <details>
+		// even though the Final Answer has not arrived yet, and must
+		// not surface the literal "Thought:" prefix in a raw .yaya-answer
+		// block that would flash at the user.
+		const el = await renderBubble("assistant", "Thought: thinking about it");
+		expect(el.querySelectorAll("details.yaya-thought")).toHaveLength(1);
+		expect(el.querySelector(".yaya-answer")).toBeNull();
+		expect(el.textContent).not.toContain("Thought: thinking about it");
+		el.remove();
+	});
+});
+
 describe("YayaChat toast lifecycle (bug #71 P3)", () => {
 	it("keeps error toasts until dismissed", () => {
 		const shell = makeShell();

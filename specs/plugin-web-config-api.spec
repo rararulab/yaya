@@ -234,6 +234,60 @@ Scenario: Messages endpoint 503s when no session store is wired
   When a client GETs api sessions id messages for any id
   Then the response status is 503
 
+Scenario: DELETE api sessions id archives the tape and drops it from the list
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_delete_session_archives_the_tape
+  Level: unit
+  Given a SessionStore with one persisted tape carrying a user message
+  When a client DELETEs api sessions id for that tape
+  Then the response status is 204 and the follow up list omits the row
+
+Scenario: DELETE api sessions id returns 404 when the id is unknown
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_delete_session_404_when_id_unknown
+  Level: unit
+  Given an admin router wired to an empty SessionStore
+  When a client DELETEs api sessions id for an unknown id
+  Then the response status is 404
+
+Scenario: DELETE api sessions id returns 503 when no session store is wired
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_delete_session_503_when_no_store
+  Level: unit
+  Given an admin router with session_store None and workspace None
+  When a client DELETEs api sessions id for any id
+  Then the response status is 503
+
+Scenario: PATCH api sessions id writes a name surfaced on subsequent list
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_patch_session_writes_name_and_is_reflected_in_list
+  Level: unit
+  Given a SessionStore with one persisted tape carrying a user message
+  When a client PATCHes api sessions id with a name body
+  Then the response row and the follow up list both carry the new name
+
+Scenario: PATCH api sessions id returns 404 when the id is unknown
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_patch_session_404_when_id_unknown
+  Level: unit
+  Given an admin router wired to an empty SessionStore
+  When a client PATCHes api sessions id with a name body for an unknown id
+  Then the response status is 404
+
+Scenario: PATCH api sessions id returns 400 when the name is blank
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_patch_session_400_when_name_empty
+  Level: unit
+  Given a SessionStore with one persisted tape carrying a user message
+  When a client PATCHes api sessions id with a whitespace only name
+  Then the response status is 400
+
 ## Out of Scope
 
 - Authentication, authorization, and public-bind support — GOAL.md

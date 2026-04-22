@@ -487,3 +487,94 @@ async def test_file_tape_store_next_id_cache_invalidated_on_reset(tmp_path: Path
         )
     finally:
         await store.close()
+
+
+async def test_rename_persists_and_surfaces_via_list_sessions(tmp_path: Path) -> None:
+    """``Session.rename`` writes a ``session/renamed`` anchor surfaced by ``list_sessions`` (#161)."""
+    tapes_dir = tmp_path / "tapes"
+    store = SessionStore(tapes_dir=tapes_dir)
+    try:
+        session = await store.open(tmp_path, "ws-rename-kernel")
+        await session.append_message("user", "hi")
+        await session.rename("My Favourite Chat")
+        infos = await store.list_sessions(tmp_path)
+        assert len(infos) == 1
+        assert infos[0].name == "My Favourite Chat"
+        info = await session.info()
+        assert info.name == "My Favourite Chat"
+    finally:
+        await store.close()
+
+
+async def test_rename_most_recent_wins(tmp_path: Path) -> None:
+    """Stacked renames collapse to the latest one (#161)."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "rename-stack")
+        await session.rename("first")
+        await session.rename("second")
+        await session.rename("third")
+        info = await session.info()
+        assert info.name == "third"
+    finally:
+        await store.close()
+
+
+async def test_rename_rejects_blank_name(tmp_path: Path) -> None:
+    """``Session.rename`` raises ``ValueError`` for whitespace-only names (#161)."""
+    store = SessionStore(store=MemoryTapeStore())
+    try:
+        session = await _open(store, tmp_path, "rename-blank")
+        with pytest.raises(ValueError, match="may not be empty"):
+            await session.rename("   ")
+    finally:
+        await store.close()
+
+
+async def test_rename_persists_across_store_reopens(tmp_path: Path) -> None:
+    """Rename survives process restart (#161)."""
+    tapes_dir = tmp_path / "tapes"
+    store1 = SessionStore(tapes_dir=tapes_dir)
+    try:
+        session = await store1.open(tmp_path, "rename-persist")
+        await session.append_message("user", "hi")
+        await session.rename("Sticky Name")
+    finally:
+        await store1.close()
+
+    store2 = SessionStore(tapes_dir=tapes_dir)
+    try:
+        infos = await store2.list_sessions(tmp_path)
+        assert len(infos) == 1
+        assert infos[0].name == "Sticky Name"
+    finally:
+        await store2.close()
+
+
+async def test_archive_accepts_suffix_form_id(tmp_path: Path) -> None:
+    """``SessionStore.archive`` resolves the suffix form surfaced by ``list_sessions`` (#161)."""
+    tapes_dir = tmp_path / "tapes"
+    store = SessionStore(tapes_dir=tapes_dir)
+    try:
+        session = await store.open(tmp_path, "archive-suffix")
+        await session.append_message("user", "hi")
+        infos = await store.list_sessions(tmp_path)
+        sid_suffix = infos[0].session_id
+
+        archive_path = await store.archive(sid_suffix, workspace=tmp_path)
+        assert archive_path.exists()
+        # After archive, the live tape is gone.
+        remaining = await store.list_sessions(tmp_path)
+        assert all(info.session_id != sid_suffix for info in remaining)
+    finally:
+        await store.close()
+
+
+async def test_archive_raises_when_id_unknown(tmp_path: Path) -> None:
+    """Unknown ids raise ``FileNotFoundError`` so the HTTP layer can 404 (#161)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        with pytest.raises(FileNotFoundError):
+            await store.archive("does-not-exist", workspace=tmp_path)
+    finally:
+        await store.close()

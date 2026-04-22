@@ -81,3 +81,33 @@ Feature: Web adapter HTTP admin API
     Given an admin router with session_store None and workspace None
     When a client GETs api sessions id messages for any id
     Then the response status is 503
+
+  Scenario: DELETE api sessions id archives the tape and drops it from the list
+    Given a SessionStore with one persisted tape carrying a user message
+    When a client DELETEs api sessions id for that tape
+    Then the response status is 204 and the follow up list omits the row
+
+  Scenario: DELETE api sessions id returns 404 when the id is unknown
+    Given an admin router wired to an empty SessionStore
+    When a client DELETEs api sessions id for an unknown id
+    Then the response status is 404
+
+  Scenario: DELETE api sessions id returns 503 when no session store is wired
+    Given an admin router with session_store None and workspace None
+    When a client DELETEs api sessions id for any id
+    Then the response status is 503
+
+  Scenario: PATCH api sessions id writes a name surfaced on subsequent list
+    Given a SessionStore with one persisted tape carrying a user message
+    When a client PATCHes api sessions id with a name body
+    Then the response row and the follow up list both carry the new name
+
+  Scenario: PATCH api sessions id returns 404 when the id is unknown
+    Given an admin router wired to an empty SessionStore
+    When a client PATCHes api sessions id with a name body for an unknown id
+    Then the response status is 404
+
+  Scenario: PATCH api sessions id returns 400 when the name is blank
+    Given a SessionStore with one persisted tape carrying a user message
+    When a client PATCHes api sessions id with a whitespace only name
+    Then the response status is 400

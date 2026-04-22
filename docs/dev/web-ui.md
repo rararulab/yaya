@@ -445,6 +445,31 @@ same code path as the click handler. Fetch failures surface a toast
 and fall back to a fresh chat, so deleting a tape while a tab is
 open does not leave the UI stuck.
 
+## Session CRUD (#161)
+
+Each **Recent** row exposes a ⋯ button revealing Rename and Delete
+actions; right-click is deliberately not used so the affordance stays
+keyboard-reachable.
+
+- **Rename** replaces the row label with an inline `<input>`.
+  ``Enter`` commits via `PATCH /api/sessions/{id}` with
+  `{name: string}`; ``Escape`` cancels; `blur` commits as well. The
+  backend appends a `session/renamed` anchor carrying
+  `state={"name": <stripped>}`. `SessionStore.list_sessions` walks
+  anchors in tape order and returns the most recent rename's name as
+  `SessionInfo.name`, so renames persist across process restart and
+  multiple renames stack (newest wins).
+- **Delete** swaps the ⋯ button for a `Delete?` confirm chip. Clicking
+  it sends `DELETE /api/sessions/{id}`, which calls
+  `SessionStore.archive`: the current entries dump to
+  `<tapes_dir>/.archive/<tape>.jsonl.<stamp>.bak` (recoverable from
+  disk) and the live jsonl file is unlinked. No hard-delete surface is
+  exposed to the UI. When the deleted row matches the hash-encoded
+  active session, the sidebar resets the chat pane and reopens the WS
+  without `?session=` so the user lands on a fresh thread.
+
+The sidebar label priority is `name → preview → last_anchor → id`.
+
 ## Known 0.1 quirk: port handshake
 
 `yaya serve --port <P>` tells the kernel to use port `<P>`, but the

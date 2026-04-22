@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#web-adapter-plugin">Web Adapter Plugin</a></li>
-        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#browser-routes-kimi-style-redesign-issue-108">Browser routes (kimi-style redesign, issue #108)</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#http-admin-api">HTTP admin API</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#browser-routes-kimi-style-redesign-issue-108">Browser routes (kimi-style redesign, issue #108)</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#http-admin-api">HTTP admin API</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#session-resume-159">Session resume (#159)</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -950,6 +950,41 @@ lesson 19 (compile-time enforcement of catalog drift).</p>
 <p>Extension events (<code>x.&lt;plugin&gt;.&lt;kind&gt;</code>) are forwarded transparently so
 plugin-private UI surfaces can receive their private events without
 kernel involvement.</p>
+<h2 id="session-resume-159">Session resume (#159)<a class="headerlink" href="#session-resume-159" title="Permanent link">&para;</a></h2>
+<p>Clicking a sidebar <strong>Recent</strong> row resumes the underlying persisted
+tape rather than starting a fresh session. The flow is:</p>
+<ol>
+<li>The row's <code>data-session-id</code> carries the value from
+   <code>SessionInfo.session_id</code> (the hashed tape suffix).</li>
+<li>The shell updates <code>location.hash</code> to <code>#/chat/&lt;id&gt;</code> via
+   <code>history.replaceState</code> so a reload sticks with the thread, then
+   dispatches a <code>yaya:resume-session</code> custom event.</li>
+<li><code>&lt;yaya-chat&gt;</code> clears its <code>messages</code> / <code>pendingToolCalls</code> /
+   <code>streamingMessage</code> / <code>inFlight</code> state, fetches
+   <code>GET /api/sessions/&lt;id&gt;/messages</code>, and replays each
+   <code>{role, content}</code> row as a chat bubble (<code>system</code> rows from
+   compaction anchors are skipped — the next turn's prompt already
+   carries the summary).</li>
+<li>The existing WebSocket is torn down and a new one opens at
+   <code>/ws?session=&lt;id&gt;</code>. The adapter's handshake binds the connection
+   to <code>&lt;id&gt;</code> so downstream kernel events route to the same tape the
+   sidebar row points at. Unknown ids fall back to a fresh
+   <code>ws-&lt;uuid&gt;</code> and log at INFO — a stale tab never 500s the adapter.</li>
+<li>On the next user turn the agent loop hydrates prior messages
+   from the tape (PR #158) and the thread continues seamlessly.</li>
+</ol>
+<p>The <code>GET /api/sessions/{id}/messages</code> endpoint reuses the loop's own
+projection helper (<code>project_entries_to_messages</code> in
+<code>yaya.kernel.loop</code>) so the history view and the agent loop cannot
+drift. Tool-call replay fidelity is out of scope for v1; ReAct
+tool observations are persisted as user <code>"Observation: ..."</code>
+messages on the tape and therefore render correctly as plain
+bubbles without special handling.</p>
+<p>On page load, <code>&lt;yaya-chat&gt;.connectedCallback</code> inspects
+<code>location.hash</code> and auto-resumes <code>#/chat/&lt;id&gt;</code> when present — the
+same code path as the click handler. Fetch failures surface a toast
+and fall back to a fresh chat, so deleting a tape while a tab is
+open does not leave the UI stuck.</p>
 <h2 id="known-01-quirk-port-handshake">Known 0.1 quirk: port handshake<a class="headerlink" href="#known-01-quirk-port-handshake" title="Permanent link">&para;</a></h2>
 <p><code>yaya serve --port &lt;P&gt;</code> tells the kernel to use port <code>&lt;P&gt;</code>, but the
 web adapter plugin picks its own port from <code>YAYA_WEB_PORT</code> (default:

@@ -498,6 +498,12 @@ def _provider_availability(
     rule (provider plugin must load + config must match) is documented
     in the #163 PR body and easy to tighten later if we see misuse.
 
+    Caveat: this check inspects **config only**. A provider whose
+    config row still exists but whose plugin is unloaded / disabled
+    will report ``available=True`` and the next ``llm.call.request``
+    will time out with no subscriber. A later PR can extend this
+    into a runtime probe via the registry.
+
     Returns ``{available, active, known_providers}``:
 
     * ``available``: True when the historical id appears in the live

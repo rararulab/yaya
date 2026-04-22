@@ -220,13 +220,25 @@ export class YayaChat extends LitElement {
 	private nextToastId = 1;
 	private currentSessionId: string | null = null;
 
+	/**
+	 * Monotonic counter bumped every time the user initiates a resume,
+	 * new-chat, or cancel action. Each ``onResumeSession`` invocation
+	 * captures the counter value at entry and bails out when the counter
+	 * has moved forward — prevents two rapid sidebar clicks from
+	 * cross-pollinating state because their ``fetchSessionFrames`` /
+	 * ``fetchSessionDetail`` awaits resolve out of order.
+	 */
+	private resumeGeneration = 0;
+
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
 	}
 
 	private onNewChat = (): void => {
+		this.resumeGeneration += 1;
 		this.resetChatState();
 		this.currentSessionId = null;
+		this.providerWarning = null;
 		this.reopenSocket(null);
 	};
 
@@ -243,15 +255,23 @@ export class YayaChat extends LitElement {
 			return;
 		}
 		const sessionId = detail.sessionId;
+		this.resumeGeneration += 1;
+		const generation = this.resumeGeneration;
 		let frames: HistoryFrame[];
 		try {
 			frames = await fetchSessionFrames(sessionId);
 		} catch (err) {
+			if (generation !== this.resumeGeneration) {
+				return;
+			}
 			this.pushToast("error", `Could not load history: ${err instanceof Error ? err.message : String(err)}`);
 			this.resetChatState();
 			this.currentSessionId = null;
 			this.providerWarning = null;
 			this.reopenSocket(null);
+			return;
+		}
+		if (generation !== this.resumeGeneration) {
 			return;
 		}
 		// Historical-provider check (#163): if the tape recorded a
@@ -260,6 +280,9 @@ export class YayaChat extends LitElement {
 		// user explicitly chooses to continue with the currently-active
 		// provider or cancel back to a new chat. No silent switch.
 		const detailRow = await fetchSessionDetail(sessionId);
+		if (generation !== this.resumeGeneration) {
+			return;
+		}
 		const avail = detailRow?.provider_availability;
 		if (avail && avail.available === false) {
 			this.resetChatState();
@@ -301,6 +324,7 @@ export class YayaChat extends LitElement {
 	 * contract as the #160 fallback when the tape fetch fails).
 	 */
 	private onCancelResume = (): void => {
+		this.resumeGeneration += 1;
 		this.providerWarning = null;
 		this.resetChatState();
 		this.currentSessionId = null;
@@ -712,7 +736,7 @@ export class YayaChat extends LitElement {
 		return html`
 			<div
 				class="yaya-provider-warning"
-				role="alert"
+				role="status"
 				aria-live="polite"
 				data-testid="provider-warning"
 			>

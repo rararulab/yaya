@@ -40,7 +40,7 @@ from pydantic import ConfigDict, Field
 
 from yaya.kernel.bus import EventBus, Subscription
 from yaya.kernel.events import Event
-from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.plugin import Category, HealthReport, KernelContext
 from yaya.kernel.session import Session
 from yaya.kernel.tool import TextBlock, Tool, ToolError, ToolOk, ToolReturnValue, register_tool, unregister_tool
 
@@ -445,6 +445,20 @@ class AgentPlugin:
         _Runtime.session = None
         _Runtime.bus = None
         _Runtime.plugin_ctx = None
+
+    async def health_check(self, ctx: KernelContext) -> HealthReport:
+        """Report agent-tool readiness from runtime bindings.
+
+        The tool needs a bound bus + plugin context to dispatch a
+        sub-agent. Both are populated by :meth:`on_load`.
+        """
+        del ctx
+        if _Runtime.bus is None or _Runtime.plugin_ctx is None:
+            return HealthReport(
+                status="degraded",
+                summary="runtime bindings not initialised",
+            )
+        return HealthReport(status="ok", summary="skill plugin ready")
 
 
 __all__ = [

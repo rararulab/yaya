@@ -27,7 +27,7 @@ import contextlib
 from typing import Any, ClassVar
 
 from yaya.kernel.events import Event
-from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.plugin import Category, HealthReport, KernelContext
 from yaya.kernel.tool import Tool, register_tool, unregister_tool
 from yaya.plugins.mcp_bridge.client import (
     MCPClient,
@@ -143,6 +143,28 @@ class MCPBridge:
                 await record.client.close()
             except Exception:
                 ctx.logger.exception("mcp-bridge: error closing %r", record.config.name)
+
+    async def health_check(self, ctx: KernelContext) -> HealthReport:
+        """Report live MCP-server count from in-memory state.
+
+        Does NOT open or ping any server — a health check must be
+        cheap, and an MCP stdio handshake would race the plugin's
+        own live clients. The live :attr:`_servers` map is the
+        ground truth after :meth:`on_load` has run.
+
+        * Zero live records → ``ok`` ("no servers configured").
+        * N live records → ``ok`` ("N server(s) ready").
+
+        A boot failure emits ``x.mcp.server.error`` (see
+        :meth:`_boot_server`) but does not leave a stale entry in
+        :attr:`_servers`, so a partially-failed boot surfaces as
+        the reduced live count rather than a special case here.
+        """
+        del ctx  # inspection is fully self-contained in _servers.
+        live = len(self._servers)
+        if live == 0:
+            return HealthReport(status="ok", summary="no servers configured")
+        return HealthReport(status="ok", summary=f"{live} server(s) ready")
 
     # -- internals ---------------------------------------------------------
 

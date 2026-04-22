@@ -64,7 +64,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from yaya.kernel.events import Event
-from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.plugin import Category, HealthReport, KernelContext
 from yaya.plugins.web.api import build_admin_router
 
 if TYPE_CHECKING:  # pragma: no cover - type-only imports.
@@ -276,6 +276,40 @@ class WebAdapter:
                 self._static_cm.__exit__(None, None, None)
             self._static_cm = None
             self._static_path = None
+
+    async def health_check(self, ctx: KernelContext) -> HealthReport:
+        """Verify the static bundle path; report server state if running.
+
+        No network: the check only touches filesystem state via
+        :func:`importlib.resources.files`. If the bundle is missing
+        the wheel is malformed — report ``failed``. If the uvicorn
+        server is live under :attr:`_server`, report ``ok`` with the
+        serving port; otherwise ``ok`` with "bundle only" so
+        ``yaya doctor`` (which runs without ``serve``) does not mark
+        this degraded.
+        """
+        del ctx  # inspection is fully self-contained.
+        try:
+            static_root = self._static_root()
+        except Exception as exc:
+            return HealthReport(
+                status="failed",
+                summary=f"static bundle not found: {exc}",
+            )
+        if not static_root.is_dir():
+            return HealthReport(
+                status="failed",
+                summary=f"static bundle missing: {static_root}",
+            )
+        if self._server is not None:
+            return HealthReport(
+                status="ok",
+                summary=f"serving {static_root.name} (bundle ok)",
+            )
+        return HealthReport(
+            status="ok",
+            summary=f"bundle ok at {static_root}",
+        )
 
     # -- HTTP / WS --------------------------------------------------------------
 

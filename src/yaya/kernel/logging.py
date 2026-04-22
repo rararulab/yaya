@@ -70,7 +70,7 @@ _CONFIGURED: dict[str, bool] = {"done": False}
 We do not want a second :func:`configure_logging` to stack additional
 sinks on top of the existing ones (would double every log line). The
 flag plus :func:`logger.remove` make the function safe to call from
-any process-entry — CLI root callback, test fixture, ``yaya hello``.
+any process-entry — CLI root callback, test fixture, ``yaya doctor``.
 """
 
 

@@ -77,7 +77,7 @@ from yaya.kernel.llm import (
 )
 from yaya.kernel.logging import configure_logging, get_plugin_logger
 from yaya.kernel.loop import AgentLoop, LoopConfig
-from yaya.kernel.plugin import Category, KernelContext, Plugin
+from yaya.kernel.plugin import Category, HealthCheck, HealthReport, HealthStatus, KernelContext, Plugin
 from yaya.kernel.providers import (
     INSTANCE_ID_MAX_LEN,
     INSTANCE_ID_MIN_LEN,
@@ -167,6 +167,9 @@ __all__ = [
     "Event",
     "EventBus",
     "EventHandler",
+    "HealthCheck",
+    "HealthReport",
+    "HealthStatus",
     "InstanceRow",
     "JsonBlock",
     "KernelConfig",

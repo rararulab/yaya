@@ -11,7 +11,7 @@ Feature: Post-install smoke tests
 
   Scenario: AC-02 binary smoke honours YAYA_BIN when set
     Given YAYA_BIN points at a working yaya executable
-    When the test runs version hello and plugin list through that binary
+    When the test runs version doctor and plugin list through that binary
     Then all four invocations exit zero with the expected JSON shapes
 
   Scenario: AC-03 broken binary fails the gate

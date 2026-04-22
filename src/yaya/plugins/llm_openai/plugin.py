@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from pydantic import BaseModel, ConfigDict, Field
 
 from yaya.kernel.events import Event
-from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.plugin import Category, HealthReport, KernelContext
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import.
     from openai import AsyncOpenAI
@@ -178,6 +178,38 @@ class OpenAIProvider:
             raise
         except Exception as exc:
             await self._emit_error(ctx, ev, exc)
+
+    async def health_check(self, ctx: KernelContext) -> HealthReport:
+        """Surface per-instance readiness without firing a real API call.
+
+        Resolves the owned-instance set through :attr:`ctx.providers`
+        and reports:
+
+        * ``ok`` — at least one instance has either a config
+          ``api_key`` or the ``OPENAI_API_KEY`` env fallback AND a
+          live :class:`AsyncOpenAI` client was built.
+        * ``degraded`` — instances exist but none have a resolvable
+          key, OR no instance is configured for this plugin yet.
+        * ``failed`` — client instantiation raised (caught here —
+          never propagates to the doctor command).
+
+        No network I/O: the OpenAI SDK is instantiated lazily inside
+        :meth:`_build_client`, and that path is already covered by
+        :meth:`on_load`; this check only inspects the in-memory
+        ``self._clients`` dict that :meth:`on_load` populated.
+        """
+        del ctx  # inspection is fully self-contained in _clients.
+        client_count = len(self._clients)
+        if client_count > 0:
+            plural = "instance" if client_count == 1 else "instances"
+            return HealthReport(
+                status="ok",
+                summary=f"{client_count} {plural} ready",
+            )
+        return HealthReport(
+            status="degraded",
+            summary="no api_key configured",
+        )
 
     async def on_unload(self, ctx: KernelContext) -> None:
         """Drop every owned client; never re-raise cleanup errors.

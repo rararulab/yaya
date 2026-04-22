@@ -32,7 +32,7 @@ import re
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from yaya.kernel.events import Event
-from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.plugin import Category, HealthReport, KernelContext
 from yaya.kernel.tool import all_tool_specs
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import.
@@ -114,6 +114,32 @@ class ReActStrategy:
 
     async def on_unload(self, ctx: KernelContext) -> None:
         """No-op — the strategy holds no resources."""
+
+    async def health_check(self, ctx: KernelContext) -> HealthReport:
+        """Surface provider/model resolution without firing a call.
+
+        Uses the exact same resolver as the dispatch path
+        (:meth:`_provider_and_model`). When :attr:`ctx.providers`
+        yields a concrete instance, report ``ok``; when the resolver
+        falls back to an env-sniffed default (no configured
+        provider), report ``degraded`` so ``yaya doctor`` tells the
+        operator to configure one.
+        """
+        providers = ctx.providers
+        resolved = None
+        if providers is not None:
+            resolved = ReActStrategy._resolve_from_providers(providers)
+        if resolved is not None:
+            provider, model = resolved
+            return HealthReport(
+                status="ok",
+                summary=f"provider={provider} model={model}",
+            )
+        provider, model = ReActStrategy._provider_and_model(ctx)
+        return HealthReport(
+            status="degraded",
+            summary=f"no configured provider; fallback {provider}/{model}",
+        )
 
     @staticmethod
     def _provider_and_model(ctx: KernelContext) -> tuple[str, str]:

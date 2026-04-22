@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, ClassVar, cast
 
 from yaya.kernel.events import Event
-from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.plugin import Category, HealthReport, KernelContext
 
 _NAME = "memory-sqlite"
 _VERSION = "0.1.0"
@@ -112,6 +112,30 @@ class SqliteMemory:
         if self._db_executor is not None:
             self._db_executor.shutdown(wait=True)
             self._db_executor = None
+
+    async def health_check(self, ctx: KernelContext) -> HealthReport:
+        """Verify the sqlite connection answers ``SELECT 1``.
+
+        ``failed`` when the plugin is not loaded (no connection),
+        when the query raises, or when the db path is not writable.
+        ``ok`` otherwise — confirms both the file and the dedicated
+        single-worker executor are serving requests.
+        """
+        del ctx
+        conn = self._conn
+        db_path = self._db_path
+        if conn is None or db_path is None:
+            return HealthReport(status="failed", summary="database not opened")
+        try:
+            row = await self._run_db(_probe_select_one, conn)
+        except Exception as exc:
+            return HealthReport(
+                status="failed",
+                summary=f"SELECT 1 raised: {exc}",
+            )
+        if row != (1,):
+            return HealthReport(status="failed", summary="SELECT 1 returned unexpected row")
+        return HealthReport(status="ok", summary=f"db at {db_path}")
 
     # -- handlers -------------------------------------------------------------
 
@@ -225,6 +249,17 @@ def _query_like(conn: sqlite3.Connection, query: str, k: int) -> list[tuple[str,
     for row in cur.fetchall():
         rows.append((str(row[0]), str(row[1]), row[2], float(row[3])))
     return rows
+
+
+def _probe_select_one(conn: sqlite3.Connection) -> tuple[int, ...]:
+    """Issue ``SELECT 1`` and return the single row for health checks.
+
+    Kept at module level so the dedicated DB executor can pickle the
+    callable just like the other sync helpers.
+    """
+    cur = conn.execute("SELECT 1")
+    row = cur.fetchone()
+    return tuple(row) if row is not None else ()
 
 
 def _row_to_entry(

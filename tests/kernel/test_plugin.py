@@ -10,7 +10,7 @@ import pytest
 
 from yaya.kernel.bus import EventBus
 from yaya.kernel.events import Event
-from yaya.kernel.plugin import Category, KernelContext, Plugin
+from yaya.kernel.plugin import Category, HealthCheck, HealthReport, KernelContext, Plugin
 
 
 def test_category_round_trips_as_str() -> None:
@@ -133,3 +133,40 @@ async def test_kernel_context_emit_rejects_unknown_public_kind(tmp_path: Path) -
     )
     with pytest.raises(ValueError, match=r"closed catalog|PublicEventKind"):
         await ctx.emit("not.a.kind", {}, session_id="s")
+
+
+def test_plugin_without_health_check_is_still_a_plugin() -> None:
+    """Adding ``health_check`` to the ABI must not break runtime_checkable isinstance."""
+
+    class _NoHealth:
+        name = "no-health"
+        version = "0"
+        category = Category.TOOL
+        requires: ClassVar[list[str]] = []
+
+        def subscriptions(self) -> list[str]:
+            return []
+
+        async def on_load(self, ctx: KernelContext) -> None: ...
+        async def on_event(self, ev: Event, ctx: KernelContext) -> None: ...
+        async def on_unload(self, ctx: KernelContext) -> None: ...
+
+    assert isinstance(_NoHealth(), Plugin)
+    assert not hasattr(_NoHealth(), "health_check")
+
+
+def test_health_report_shape_and_defaults() -> None:
+    """HealthReport round-trips through pydantic and defaults details to []."""
+    r = HealthReport(status="ok", summary="ready")
+    assert r.status == "ok"
+    assert r.summary == "ready"
+    assert r.details == []
+
+    detailed = HealthReport(
+        status="degraded",
+        summary="partial",
+        details=[HealthCheck(name="db", status="ok", message="")],
+    )
+    dumped = detailed.model_dump()
+    assert dumped["status"] == "degraded"
+    assert dumped["details"][0]["name"] == "db"

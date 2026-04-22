@@ -37,7 +37,7 @@ What the smoke covers:
 
 - `yaya version` / `yaya --json version` — entry-point wiring, version
   string shape.
-- `yaya hello` / `yaya --json hello` — kernel bus boot round-trip.
+- `yaya doctor` / `yaya --json doctor` — kernel bus boot round-trip + per-plugin health report.
 - `yaya --json plugin list` — asserts every bundled plugin in the 0.1
   catalog loads with the declared category
   (`tests/e2e/test_plugin_list_smoke.py`).

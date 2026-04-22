@@ -345,7 +345,7 @@ class AgentLoop:
                 start of each turn. Typed as :data:`Any` to keep the
                 kernel import graph acyclic (mirrors the pattern in
                 :class:`~yaya.kernel.session_persister.SessionPersister`).
-                When ``None`` — the default, used by ``yaya hello`` and
+                When ``None`` — the default, used by ``yaya doctor`` and
                 the loop unit tests — each turn starts from a fresh
                 single-message state, preserving 0.1 semantics.
             workspace: Workspace path passed to
@@ -487,7 +487,7 @@ class AgentLoop:
         Behaviour:
 
         * When no ``session_store`` was wired, return the 0.1 single-
-          message state so tests and ``yaya hello`` keep working.
+          message state so tests and ``yaya doctor`` keep working.
         * Otherwise open the session, read every ``kind="message"`` tape
           entry, and project it to ``{role, content}``. If the tape
           contains one or more compaction anchors (written by
@@ -807,7 +807,7 @@ class AgentLoop:
         The anchor carries ``{provider, model}`` — the loop's
         authoritative record of which ``(provider_instance, model)``
         drove a turn. Silently no-ops when no ``session_store`` /
-        ``workspace`` was wired (tests, ``yaya hello``) — the in-memory
+        ``workspace`` was wired (tests, ``yaya doctor``) — the in-memory
         turn still runs, just without persistence. Errors opening the
         session or writing the anchor are logged but never propagate:
         a persistence hiccup must not break the turn (#163).

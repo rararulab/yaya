@@ -35,18 +35,20 @@ def test_version_json_shape(yaya_bin: str) -> None:
     assert payload["version"]
 
 
-def test_hello_kernel_smoke(yaya_bin: str) -> None:
-    """``yaya hello`` round-trips one event through the kernel."""
-    result = run(yaya_bin, "hello")
-    assert result.returncode == 0, result.stderr
-    assert "kernel ok" in result.stdout
+def test_doctor_kernel_smoke(yaya_bin: str) -> None:
+    """``yaya doctor`` round-trips one event through the kernel and prints the table."""
+    result = run(yaya_bin, "doctor")
+    # Bundled plugin health determines exit code; rendering is what we
+    # pin here since the doctor summary is category-specific.
+    assert result.returncode in (0, 1), result.stderr
+    assert "round-trip" in result.stdout
 
 
-def test_hello_json_shape(yaya_bin: str) -> None:
-    payload = json_stdout(run(yaya_bin, "--json", "hello"))
-    assert payload["ok"] is True
-    assert payload["action"] == "hello"
-    assert payload["received"] is True
+def test_doctor_json_shape(yaya_bin: str) -> None:
+    payload = json_stdout(run(yaya_bin, "--json", "doctor"))
+    assert payload["action"] == "doctor"
+    assert isinstance(payload.get("plugins"), list)
+    assert isinstance(payload.get("roundtrip"), dict)
     assert isinstance(payload.get("version"), str)
 
 
@@ -54,7 +56,7 @@ def test_help_lists_every_known_subcommand(yaya_bin: str) -> None:
     result = run(yaya_bin, "--help")
     assert result.returncode == 0, result.stderr
     # Every subcommand currently registered in src/yaya/cli/__init__.py
-    for cmd in ("hello", "version", "update", "serve", "plugin"):
+    for cmd in ("doctor", "version", "update", "serve", "plugin"):
         assert cmd in result.stdout, f"{cmd} missing from --help"
 
 

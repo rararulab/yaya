@@ -13,7 +13,7 @@ Port selection: ``--port 0`` asks the OS for a free port using a
 throwaway socket bind. Adapter plugins load through the registry and
 start their own HTTP servers during ``on_load``; ``serve`` itself does
 NOT start uvicorn. If no adapter plugin is loaded, the kernel is still
-running — ``yaya hello`` verifies the bus round-trip; the surface is
+running — ``yaya doctor`` verifies the bus round-trip; the surface is
 simply offline until an adapter lands (issue #16).
 """
 
@@ -365,7 +365,7 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
             warn(
                 "[yellow]kernel is running but no web adapter plugin is loaded;[/] "
                 "install an adapter plugin to interact with yaya. "
-                "`yaya hello` verifies the bus round-trip in the meantime."
+                "`yaya doctor` verifies the bus round-trip in the meantime."
             )
 
         emit_ok(

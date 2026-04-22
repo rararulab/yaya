@@ -20,8 +20,11 @@
  * default, while keeping the tape and protocol identical.
  *
  * The regex semantics mirror the Python ``_FINAL_RE`` /
- * ``_ACTION_RE`` from the strategy (``re.MULTILINE | re.DOTALL``)
- * translated to JavaScript's ``m`` + ``s`` flags.
+ * ``_ACTION_RE`` from the strategy (``re.MULTILINE | re.DOTALL``).
+ * JavaScript's ``m`` flag would redefine ``$`` as end-of-line which
+ * breaks the ``\\Z`` (end-of-input) anchor Python uses; we instead
+ * encode start-of-line as ``(?:^|\\n)`` and use ``[\\s\\S]`` in place
+ * of the ``s`` flag for DOTALL. Outcome: same match set, no flags.
  */
 
 /** Result of splitting a ReAct message. */

@@ -301,11 +301,13 @@ def build_admin_router(
 
 _OBSERVATION_PREFIX = "Observation: "
 """Marker the ReAct strategy prepends when it re-projects a tool result
-as a user message for the next LLM turn. The UI already renders the
-same tool round trip as a collapsible card sourced from the
-``tool_call`` / ``tool_result`` entries the persister wrote in
-parallel, so the Observation bubble is skipped during replay to avoid
-duplication (#162)."""
+as a user message in the loop's in-memory ``state.messages``. Today no
+``user.message.received`` is published for those entries, so the
+persister does not write them to the tape — meaning this filter is
+defensive: it prevents a duplicate user bubble in the replay in case a
+future strategy (or a manual tape edit) does persist an
+``Observation: ...`` user message alongside the ``tool_call`` /
+``tool_result`` pair the UI already renders as a collapsible card."""
 
 
 def _is_compaction_anchor(payload: dict[str, Any]) -> bool:

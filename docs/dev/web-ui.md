@@ -419,10 +419,12 @@ tape rather than starting a fresh session. The flow is:
    dispatches a `yaya:resume-session` custom event.
 3. `<yaya-chat>` clears its `messages` / `pendingToolCalls` /
    `streamingMessage` / `inFlight` state, fetches
-   `GET /api/sessions/<id>/messages`, and replays each
-   `{role, content}` row as a chat bubble (`system` rows from
-   compaction anchors are skipped — the next turn's prompt already
-   carries the summary).
+   `GET /api/sessions/<id>/frames`, and applies each frame through
+   the same reducer the live WebSocket uses. Historical tool calls
+   land as collapsible cards sourced from the tape's `tool_call` /
+   `tool_result` entries. Pre-compaction entries are skipped — the
+   next turn's prompt already carries the summary through the
+   agent-loop projection.
 4. The existing WebSocket is torn down and a new one opens at
    `/ws?session=<id>`. The adapter's handshake binds the connection
    to `<id>` so downstream kernel events route to the same tape the
@@ -431,13 +433,18 @@ tape rather than starting a fresh session. The flow is:
 5. On the next user turn the agent loop hydrates prior messages
    from the tape (PR #158) and the thread continues seamlessly.
 
-The `GET /api/sessions/{id}/messages` endpoint reuses the loop's own
-projection helper (`project_entries_to_messages` in
-`yaya.kernel.loop`) so the history view and the agent loop cannot
-drift. Tool-call replay fidelity is out of scope for v1; ReAct
-tool observations are persisted as user `"Observation: ..."`
-messages on the tape and therefore render correctly as plain
-bubbles without special handling.
+Two endpoints feed this flow:
+
+* `GET /api/sessions/{id}/messages` is the **agent-loop** projection
+  (`project_entries_to_messages` in `yaya.kernel.loop`) — stable
+  `{role, content}` shape consumed by cross-turn hydration in #158.
+  Do not re-shape it for UI reasons.
+* `GET /api/sessions/{id}/frames` is the **UI** projection (#162) —
+  a discriminated frame list matching the live WebSocket wire
+  (`assistant.done` / `tool.start` / `tool.result` / `user.message`)
+  so the chat-shell replays history through the same reducer that
+  handles live events. `Observation: ...` user messages (if any ever
+  land on tape) are filtered to avoid duplicating the tool card.
 
 On page load, `<yaya-chat>.connectedCallback` inspects
 `location.hash` and auto-resumes `#/chat/<id>` when present — the

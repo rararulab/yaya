@@ -29,7 +29,7 @@ def test_root_version_flag(runner: CliRunner, cli_app) -> None:
 def test_help_shows_all_subcommands(runner: CliRunner, cli_app) -> None:
     result = runner.invoke(cli_app, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("hello", "version", "update"):
+    for cmd in ("doctor", "version", "update"):
         assert cmd in result.stdout
 
 

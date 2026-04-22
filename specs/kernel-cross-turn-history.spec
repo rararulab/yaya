@@ -19,7 +19,7 @@ summary carry forward, matching the contract in
 
 - `AgentLoop.__init__` accepts an optional `session_store` and
   `workspace` pair. When `None`, the loop preserves the 0.1
-  single-message fallback so `yaya hello` and unit tests keep
+  single-message fallback so `yaya doctor` and unit tests keep
   working without a store.
 - `_run_turn` opens the session via `store.open(workspace,
   session_id)` and projects every `kind="message"` tape entry to

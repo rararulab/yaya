@@ -15,10 +15,11 @@ on every emit so the agent loop can correlate concurrent tool calls
 from __future__ import annotations
 
 import asyncio
+import shutil
 from typing import Any, ClassVar, cast
 
 from yaya.kernel.events import Event
-from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.plugin import Category, HealthReport, KernelContext
 from yaya.kernel.tool import register_tool_spec, unregister_tool_spec
 
 _NAME = "tool-bash"
@@ -125,6 +126,22 @@ class BashTool:
     async def on_unload(self, ctx: KernelContext) -> None:
         """Drop the spec registration so hot-reload doesn't leak it."""
         unregister_tool_spec(_TOOL_NAME)
+
+    async def health_check(self, ctx: KernelContext) -> HealthReport:
+        """Verify ``bash`` is on ``$PATH``.
+
+        Fast, local, no spawn: :func:`shutil.which` only walks
+        ``PATH`` entries. ``failed`` when missing because without
+        bash the tool cannot dispatch at all.
+        """
+        del ctx  # unused — stateless check.
+        resolved = shutil.which("bash")
+        if resolved is None:
+            return HealthReport(
+                status="failed",
+                summary="bash not found on PATH",
+            )
+        return HealthReport(status="ok", summary=f"bash at {resolved}")
 
     # -- internals ------------------------------------------------------------
 

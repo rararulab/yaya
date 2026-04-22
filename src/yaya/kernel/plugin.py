@@ -11,7 +11,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+
+from pydantic import BaseModel, Field
 
 from yaya.kernel.events import Event, new_event
 
@@ -37,6 +39,52 @@ class Category(StrEnum):
     STRATEGY = "strategy"
     MEMORY = "memory"
     SKILL = "skill"
+
+
+HealthStatus = Literal["ok", "degraded", "failed"]
+"""Tri-valued plugin health grade.
+
+Semantics:
+    * ``ok`` — the plugin is fully configured and its owned resources
+      are reachable.
+    * ``degraded`` — the plugin is loaded but some configurable surface
+      is missing (no API key, no servers configured). The kernel can
+      still run; the plugin may respond "no subscriber" on requests.
+    * ``failed`` — a check raised, a required resource is missing, or
+      a self-diagnosis detected a broken state. ``yaya doctor`` exits
+      non-zero when any plugin reports this.
+"""
+
+
+class HealthCheck(BaseModel):
+    """One named sub-check inside a :class:`HealthReport`.
+
+    Plugins with multiple orthogonal surfaces (e.g. ``web`` checks both
+    the static bundle path and the HTTP keepalive endpoint) break the
+    per-surface result into entries so ``yaya doctor -v`` can show
+    the breakdown. The rollup is the containing :class:`HealthReport`'s
+    ``status`` — a plugin with one ``failed`` sub-check is itself
+    ``failed``; a mix of ``ok`` and ``degraded`` is ``degraded``.
+    """
+
+    name: str = Field(description="Sub-check name, stable across runs.")
+    status: HealthStatus = Field(description="Per-sub-check grade.")
+    message: str = Field(default="", description="Short human-facing diagnostic.")
+
+
+class HealthReport(BaseModel):
+    """A plugin's self-diagnosis, consumed by ``yaya doctor``.
+
+    The ``summary`` field is the one-liner ``yaya doctor`` renders in
+    the table row; ``details`` is the optional breakdown surfaced only
+    under ``-v`` / ``--json``. Missing ``health_check()`` on a plugin
+    is NOT an error — the doctor command synthesises a default
+    ``ok`` report with summary ``"no checks registered"``.
+    """
+
+    status: HealthStatus
+    summary: str = Field(description="One-liner for the CLI table row.")
+    details: list[HealthCheck] = Field(default_factory=list[HealthCheck])
 
 
 @runtime_checkable
@@ -78,6 +126,20 @@ class Plugin(Protocol):
     async def on_unload(self, ctx: KernelContext) -> None:
         """Run on hot-reload or kernel shutdown. Must be idempotent."""
         ...
+
+    # NOTE: ``health_check`` is intentionally **not** declared on the
+    # Protocol. Adding it here would break ``runtime_checkable``
+    # ``isinstance(obj, Plugin)`` for every plugin that doesn't
+    # override it. The doctor command uses ``hasattr(plug,
+    # "health_check")`` and synthesises a default
+    # :class:`HealthReport` when absent. Plugins that do implement
+    # it MUST match the signature::
+    #
+    #     async def health_check(self, ctx: KernelContext) -> HealthReport: ...
+    #
+    # Must return quickly (<500 ms); never fire a real LLM / network
+    # call. See :class:`HealthReport` and ``docs/dev/plugin-protocol.md``
+    # §"Health checks" for the full contract.
 
 
 # Handler signature used by the registry / bus when subscribing on behalf of
@@ -285,4 +347,12 @@ class KernelContext:
         await self._bus.publish(event)
 
 
-__all__ = ["Category", "EventHandler", "KernelContext", "Plugin"]
+__all__ = [
+    "Category",
+    "EventHandler",
+    "HealthCheck",
+    "HealthReport",
+    "HealthStatus",
+    "KernelContext",
+    "Plugin",
+]

@@ -29,7 +29,7 @@ from __future__ import annotations
 from typing import Any, ClassVar, cast
 
 from yaya.kernel.events import Event
-from yaya.kernel.plugin import Category, KernelContext
+from yaya.kernel.plugin import Category, HealthReport, KernelContext
 
 _NAME = "llm-echo"
 _VERSION = "0.1.0"
@@ -113,6 +113,17 @@ class EchoLLM:
         """Clear the owned-instance set; the plugin holds no other resources."""
         self._active_instances.clear()
         del ctx  # unused — kept for Plugin protocol conformance.
+
+    async def health_check(self, ctx: KernelContext) -> HealthReport:
+        """Zero-config plugin — always ready.
+
+        Echo needs no external dependency; report the number of
+        configured instances for parity with the other LLM provider.
+        """
+        del ctx  # unused — the active set is self-maintained.
+        count = len(self._active_instances)
+        summary = "echo provider ready" if count else "echo provider ready (no instances configured)"
+        return HealthReport(status="ok", summary=summary)
 
     # -- internals ------------------------------------------------------------
 

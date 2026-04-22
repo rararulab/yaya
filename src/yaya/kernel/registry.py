@@ -393,6 +393,30 @@ class PluginRegistry:
             })
         return rows
 
+    def context_for(self, plugin_name: str) -> KernelContext | None:
+        """Return the live :class:`KernelContext` for ``plugin_name``.
+
+        Surface for kernel-side diagnostics (``yaya doctor``) that need
+        to invoke a plugin's ``health_check`` with the same context it
+        saw during :meth:`on_load` — otherwise the plugin's
+        ``ctx.providers`` / ``ctx.config`` views would read from a
+        freshly-constructed context that bypasses the registry's
+        per-plugin state dir and config scoping.
+
+        Args:
+            plugin_name: The plugin's ``name`` as passed to
+                :meth:`_make_context`.
+
+        Returns:
+            The stored :class:`KernelContext`, or ``None`` if no record
+            matches ``plugin_name`` or the plugin is not in the loaded
+            state.
+        """
+        record = self._records.get(plugin_name)
+        if record is None or record.status is not PluginStatus.LOADED:
+            return None
+        return record.ctx
+
     def loaded_plugins(self, category: Category | None = None) -> list[Plugin]:
         """Return live plugin instances, optionally filtered by ``category``.
 

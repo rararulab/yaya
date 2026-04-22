@@ -49,7 +49,7 @@ Self-hosting growth is the product.
         │    event bus  ·  plugin registry        │
         │    agent loop (the scheduler)           │
         │    built-in CLI (self-bootstrap only):  │
-        │       serve · version · update · hello  │
+        │       serve · version · update · doctor │
         │       · plugin {list, install, remove}  │
         └─────┬─────────┬────────────┬────────────┘
               ▼         ▼            ▼
@@ -127,7 +127,7 @@ Kernel = OS. Events = syscalls. Plugins = drivers + userland.
 | `yaya serve` | **Default.** Boot kernel; load bundled `web` adapter plugin; open browser. |
 | `yaya version` | Print kernel + loaded-plugin versions. |
 | `yaya update` | Self-update the yaya binary/wheel. |
-| `yaya hello` | Smoke-test: boot kernel, emit a synthetic event round-trip, print OK. |
+| `yaya doctor` | Boot kernel, emit a synthetic round-trip, and print each loaded plugin's `health_check` in a colour-coded table (or JSON). Exit 1 when the round-trip fails or any plugin reports `failed`. |
 | `yaya plugin list` | List installed plugins with category and status. |
 | `yaya plugin install <src>` | Install a plugin (pip package / path / registry URL). |
 | `yaya plugin remove <name>` | Uninstall. |

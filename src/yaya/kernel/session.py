@@ -194,7 +194,7 @@ class SessionInfo(BaseModel):
 
 #: In-memory tape store — alias for :class:`~republic.tape.InMemoryTapeStore`.
 #:
-#: Re-exported under a yaya-native name so tests and ``yaya hello``
+#: Re-exported under a yaya-native name so tests and ``yaya doctor``
 #: keep a stable import even if upstream renames the implementation
 #: class. Kept as a module-level alias rather than a subclass because
 #: :class:`~republic.tape.InMemoryTapeStore` transits through mypy as

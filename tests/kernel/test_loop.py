@@ -731,7 +731,7 @@ async def test_memory_query_with_nonnumeric_k_defaults_to_5() -> None:
 async def test_turn_with_no_tape_behaves_like_before() -> None:
     """#156 regression: without a session_store the turn state is one user message.
 
-    Guards the 0.1 fallback — ``yaya hello`` and bundled unit tests
+    Guards the 0.1 fallback — ``yaya doctor`` and bundled unit tests
     construct ``AgentLoop(bus)`` with no store, and must keep starting
     turns with exactly the incoming user message (no crash, no extra
     history pulled from thin air).

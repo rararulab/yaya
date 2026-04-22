@@ -25,7 +25,7 @@ post-install:
 
 The smoke installs the built artifact into a fresh venv with no
 project source on `PYTHONPATH`, then drives the minimal CLI surface
-(`version`, `hello`, `plugin list`) through both text and `--json`
+(`version`, `doctor`, `plugin list`) through both text and `--json`
 output. A broken-binary negative scenario proves the gate actually
 fails a merge when the CLI regresses.
 
@@ -115,7 +115,7 @@ Scenario: AC-02 binary smoke honours YAYA_BIN when set
     Filter: tests/e2e/test_binary_smoke.py::test_binary_runs_core_cli_endpoints
   Level: e2e
   Given YAYA_BIN points at a working yaya executable
-  When the test runs version hello and plugin list through that binary
+  When the test runs version doctor and plugin list through that binary
   Then all four invocations exit zero with the expected JSON shapes
 
 Scenario: AC-03 broken binary fails the gate

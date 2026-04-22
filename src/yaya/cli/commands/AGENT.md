@@ -15,7 +15,7 @@ Current commands (1.0 surface — see [GOAL.md](../../../../GOAL.md)):
 - `serve.py` — boot kernel; load bundled `web` adapter plugin; open browser.
 - `version.py` — prints kernel + loaded-plugin versions (also `--version`).
 - `update.py` — self-update the yaya binary/wheel; delegates to `yaya.core.updater`.
-- `hello.py` — smoke-test: boot kernel, emit a synthetic event round-trip, print OK.
+- `doctor.py` — boot kernel, round-trip one event, collect per-plugin `health_check` reports, render a colour-coded table (or JSON). Exit 1 when the round-trip fails or any plugin reports `failed`.
 - `plugin.py` — `plugin list / install / remove`; delegates to `yaya.kernel.registry`.
 
 Adding a new built-in command requires a GOAL.md amendment. All other

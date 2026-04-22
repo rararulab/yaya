@@ -1,13 +1,13 @@
 Feature: CLI kernel commands
 
   These scenarios mirror specs/cli-kernel-commands.spec and keep the
-  minimal built-in CLI surface executable: hello, serve, and plugin
+  minimal built-in CLI surface executable: doctor, serve, and plugin
   management all stay wired to the kernel contracts they advertise.
 
-  Scenario: yaya hello under --json returns ok=true with received=true
-    Given a fresh kernel with no LLM configured
-    When `yaya --json hello` is invoked
-    Then the command exits 0 and stdout carries `{"ok": true, "action": "hello", "received": true}`
+  Scenario: yaya doctor under --json emits a plugins array
+    Given a fresh kernel with every bundled plugin loaded
+    When `yaya --json doctor` is invoked
+    Then the command emits a payload with a plugins list covering every bundled plugin
 
   Scenario: Error path — yaya serve rejects --host
     Given the serve command registered on the CLI app

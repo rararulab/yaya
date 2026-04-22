@@ -16,7 +16,7 @@
   | --help -h Show this message and exit.
   +---+
   +- Commands ---+
-  | hello Kernel smoke-test: boot, round-trip one event, shut down.
+  | doctor Boot the kernel, round-trip one event, report every plugin's health.
   | serve Boot the yaya kernel and wait for shutdown.
   | update Check for and apply updates from GitHub releases.
   | version Print the installed version.

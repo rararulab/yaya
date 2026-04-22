@@ -73,11 +73,11 @@ def test_binary_runs_core_cli_endpoints(yaya_bin: str) -> None:
     assert isinstance(version_json.get("version"), str)
     assert version_json["version"]
 
-    # --json hello
-    hello_json = json_stdout(run(yaya_bin, "--json", "hello"))
-    assert hello_json["ok"] is True
-    assert hello_json["action"] == "hello"
-    assert hello_json["received"] is True
+    # --json doctor
+    doctor_json = json_stdout(run(yaya_bin, "--json", "doctor"))
+    assert doctor_json["action"] == "doctor"
+    assert isinstance(doctor_json.get("plugins"), list)
+    assert isinstance(doctor_json.get("roundtrip"), dict)
 
     # --json plugin list
     plugins_json = json_stdout(run(yaya_bin, "--json", "plugin", "list"))
@@ -96,5 +96,5 @@ def test_binary_help_lists_every_subcommand(yaya_bin: str) -> None:
     """`--help` through the binary enumerates every kernel subcommand."""
     result = run(yaya_bin, "--help")
     assert result.returncode == 0, result.stderr
-    for cmd in ("hello", "version", "update", "serve", "plugin"):
+    for cmd in ("doctor", "version", "update", "serve", "plugin"):
         assert cmd in result.stdout, f"{cmd!r} missing from binary --help"

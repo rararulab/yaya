@@ -27,12 +27,17 @@ built-in subcommand would require a `GOAL.md` amendment.
   `adapter` plugin whose name starts with `web`. When absent, a
   stderr warning tells the operator the kernel is running headless;
   `serve` does NOT fail.
-- `yaya hello` is the kernel smoke-test. It subscribes a sentinel to
-  `user.message.received`, emits one synthetic event, waits 5
-  seconds, then emits `{"ok": true, "action": "hello", "received":
-  true}` on success or `{"ok": false, "error":
-  "event_bus_unresponsive", "suggestion": ...}` on timeout. No LLM
-  or adapter plugin is required.
+- `yaya doctor` is the kernel smoke + per-plugin health-report
+  command (rename of the pre-0.1 `yaya hello`; see #170). It
+  subscribes a sentinel to `user.message.received`, emits one
+  synthetic event, waits for the round-trip, then iterates every
+  loaded plugin and invokes its optional `health_check(ctx)`. Emits
+  `{"ok": true, "action": "doctor", "roundtrip": {...}, "plugins":
+  [...]}` when the round-trip succeeded and no plugin reported
+  `failed`; emits `{"ok": false, "error": "event_bus_unresponsive" |
+  "plugin_failed", ...}` otherwise. No LLM or adapter plugin is
+  required — the round-trip is bus-only. See
+  `specs/kernel-health.spec` for the full health contract.
 - `yaya plugin list` boots a transient registry, snapshots it, tears
   down. JSON mode emits `{"ok": true, "action": "plugin.list",
   "plugins": [...]}`; text mode renders a rich table.
@@ -58,10 +63,10 @@ built-in subcommand would require a `GOAL.md` amendment.
 
 ### Allowed Changes
 - src/yaya/cli/__init__.py
-- src/yaya/cli/commands/hello.py
+- src/yaya/cli/commands/doctor.py
 - src/yaya/cli/commands/serve.py
 - src/yaya/cli/commands/plugin.py
-- tests/cli/test_hello.py
+- tests/cli/test_doctor.py
 - tests/cli/test_serve.py
 - tests/cli/test_plugin.py
 - specs/cli-kernel-commands.spec
@@ -77,14 +82,14 @@ built-in subcommand would require a `GOAL.md` amendment.
 
 ## Completion Criteria
 
-Scenario: yaya hello under --json returns ok=true with received=true
+Scenario: yaya doctor under --json emits a plugins array
   Test:
     Package: yaya
-    Filter: tests/cli/test_hello.py::test_hello_json_ok
+    Filter: tests/cli/test_doctor.py::test_doctor_json_ok
   Level: integration
-  Given a fresh kernel with no LLM configured
-  When `yaya --json hello` is invoked
-  Then the command exits 0 and stdout carries `{"ok": true, "action": "hello", "received": true}`
+  Given a fresh kernel with every bundled plugin loaded
+  When `yaya --json doctor` is invoked
+  Then the command emits a payload with a plugins list covering every bundled plugin
 
 Scenario: Error path — yaya serve rejects --host
   Test:

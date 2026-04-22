@@ -129,7 +129,7 @@ class SessionConfig(BaseModel):
 
     Attributes:
         store: ``"file"`` persists tapes as jsonl under :attr:`dir`;
-            ``"memory"`` keeps them in-process (tests, ``yaya hello``).
+            ``"memory"`` keeps them in-process (tests, ``yaya doctor``).
         dir: Directory for jsonl files. When ``None`` (default) the
             kernel derives it from ``YAYA_STATE_DIR`` /
             ``XDG_STATE_HOME`` — see

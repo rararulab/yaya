@@ -16,7 +16,7 @@ plugin under `plugins/`.
 ## Constraints
 - `__init__.py` — `__version__` + public re-exports. Nothing else importable from outside.
 - `__main__.py` — `python -m yaya` shim; delegates to `cli.app`.
-- `cli/` — Typer entrypoints: `serve · version · update · hello · plugin {list,install,remove}`. See [cli/AGENT.md](cli/AGENT.md).
+- `cli/` — Typer entrypoints: `serve · version · update · doctor · plugin {list,install,remove}`. See [cli/AGENT.md](cli/AGENT.md).
 - `kernel/` — event bus, plugin registry, fixed agent loop, plugin ABI, event catalog. Nothing else.
 - `plugins/` — bundled plugins (`web` adapter, one LLM provider, one tool, one strategy, one memory). Each loads through the **same protocol** as third-party plugins — no special cases.
 - `core/` — shared pure-logic helpers (updater, etc.). See [core/AGENT.md](core/AGENT.md).

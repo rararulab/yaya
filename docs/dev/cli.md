@@ -12,7 +12,7 @@ This file captures yaya-specific mechanics.
 | `yaya serve` | **Default.** Boot kernel; load bundled `web` adapter plugin; open browser. |
 | `yaya version` | Print kernel + loaded-plugin versions. |
 | `yaya update` | Self-update the yaya binary/wheel. |
-| `yaya hello` | Smoke-test: boot kernel, emit a synthetic event round-trip, print OK. |
+| `yaya doctor` | Boot kernel, round-trip one synthetic event, render every loaded plugin's `health_check` in a colour-coded table (or JSON). Exit 1 when the round-trip fails or any plugin reports `failed`. |
 | `yaya plugin list` | List installed plugins with category and status. |
 | `yaya plugin install <src>` | Install a plugin (pip package / path / registry URL). |
 | `yaya plugin remove <name>` | Uninstall. |

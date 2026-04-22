@@ -380,11 +380,66 @@ class Plugin(Protocol):
 
     async def on_unload(self, ctx: KernelContext) -> None:
         """Called on hot-reload or kernel shutdown. Must be idempotent."""
+
+    # OPTIONAL — see "Health checks" below.
+    async def health_check(self, ctx: KernelContext) -> HealthReport: ...
 ```
 
 `KernelContext` gives the plugin an `emit(kind, payload, *,
 session_id)` method, a scoped logger, access to its configuration,
 and a state directory under `<XDG_DATA_HOME>/yaya/plugins/<name>/`.
+
+### Health checks
+
+Every plugin MAY implement an optional async `health_check(ctx)` that
+reports its current runtime state to the `yaya doctor` command. The
+method is deliberately **not** declared on the runtime-checkable
+`Plugin` Protocol — adding it would break `isinstance(obj, Plugin)`
+for every existing third-party plugin. Doctor uses
+`hasattr(plug, "health_check")` and synthesises a default
+`HealthReport(status="ok", summary="no checks registered")` when the
+method is missing, so existing plugins continue to work unchanged.
+
+```python
+class HealthCheck(BaseModel):
+    name: str
+    status: Literal["ok", "degraded", "failed"]
+    message: str = ""
+
+class HealthReport(BaseModel):
+    status: Literal["ok", "degraded", "failed"]
+    summary: str                    # one-liner for the doctor table
+    details: list[HealthCheck] = [] # optional breakdown
+```
+
+Semantics:
+
+- **`ok`** — the plugin is fully configured and every resource it
+  owns is reachable.
+- **`degraded`** — the plugin loaded but some surface is missing
+  (e.g. `llm-openai` with no `api_key`, `strategy-react` with no
+  configured provider). `yaya doctor` exits **0** on `degraded`
+  because this is the common "configured later" install-day state.
+- **`failed`** — a required resource is missing, a self-check raised,
+  or a self-diagnosis detected a broken state. `yaya doctor` exits
+  **1** when any plugin reports `failed`.
+
+Contract rules:
+
+- Checks MUST be fast (<500 ms). No real LLM calls, no network to
+  third-party services. Local HTTP (to `127.0.0.1` endpoints served
+  by the same process) is fine.
+- Checks MUST NOT raise — catch and surface as
+  `HealthReport(status="failed", summary=...)`. Uncaught exceptions
+  are still handled (doctor catches and marks the plugin `failed`)
+  but degrade diagnostics.
+- Checks MUST NOT block. `yaya doctor` enforces a per-plugin
+  timeout (`--timeout`, default 3 s) via `asyncio.wait_for`; a
+  timeout becomes `status="degraded"` so one bad plugin cannot
+  block the rest of the report.
+- Checks are idempotent and side-effect-free: they may be invoked
+  repeatedly (`yaya doctor` re-runs) and must not mutate plugin
+  state or the event bus.
 
 ### Tools (v1 contract)
 
@@ -698,7 +753,7 @@ trailing message. Compaction anchors
 pre-anchor prefix and inject the anchor's `summary` as a
 `role="system"` message, matching
 `yaya.kernel.tape_context.select_messages`. When `AgentLoop` is
-constructed without a `session_store` (e.g. `yaya hello`, loop unit
+constructed without a `session_store` (e.g. `yaya doctor`, loop unit
 tests), each turn starts from a single-message state — the 0.1
 fallback.
 

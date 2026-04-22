@@ -3,7 +3,7 @@
 ```bash
 yaya --help
 yaya version
-yaya hello --name world
+yaya doctor
 ```
 
 ## JSON mode
@@ -13,8 +13,8 @@ All commands accept `--json` and emit the canonical
 contract.
 
 ```bash
-yaya hello --name world --json
-# {"ok": true, "action": "hello", "greeting": "Hello, world!"}
+yaya --json doctor
+# {"ok": true, "action": "doctor", "roundtrip": {...}, "plugins": [...]}
 ```
 
 ## Dev-only commands
@@ -22,7 +22,7 @@ yaya hello --name world --json
 From a source checkout with [just](https://github.com/casey/just):
 
 ```bash
-just run hello     # run the CLI via uv
+just run doctor    # run the CLI via uv
 just test          # pytest + coverage
 just check         # ruff + mypy
 just build         # wheel + sdist

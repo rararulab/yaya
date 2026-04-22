@@ -95,29 +95,44 @@ class _PluginResult:
     details: list[dict[str, Any]]
 
 
+_PROBE_KIND = "x.cli-doctor.ping"
+"""Extension-namespace event kind used for the bus round-trip probe.
+
+The original ``hello`` smoke used ``user.message.received`` which the
+agent loop picks up and turns into a full LLM turn — that meant every
+``yaya doctor`` ran a real MiniMax call (slow, billable, and raced the
+teardown path when the CLI exited before the loop finished streaming).
+The extension namespace is reserved for exactly this use — routed
+through the bus, not in the public 1.0 catalog, and by construction no
+loaded plugin subscribes to it (adapters only see catalog kinds).
+"""
+
+
 async def _run_round_trip(
     bus: EventBus,
     *,
     timeout_s: float,
 ) -> _RoundTripResult:
-    """Emit ``user.message.received``, wait for the sentinel, return timing.
+    """Emit an ``x.cli-doctor.ping`` round-trip; return timing.
 
     Subscribes BEFORE publishing so the sentinel is always registered
-    by the time the kernel's bus drains the event. Returns
-    ``ok=False`` with ``latency_ms=None`` on timeout; caller decides
-    whether that is an exit-1 condition.
+    by the time the kernel's bus drains the event. Using the
+    extension namespace guarantees no plugin subscriber turns the
+    probe into real work (e.g. the agent loop's ``user.message.received``
+    → LLM turn). Returns ``ok=False`` with ``latency_ms=None`` on
+    timeout; caller decides whether that is an exit-1 condition.
     """
     got = asyncio.Event()
 
     async def _sentinel(_ev: Event) -> None:
         got.set()
 
-    sub = bus.subscribe("user.message.received", _sentinel, source="cli-doctor")
+    sub = bus.subscribe(_PROBE_KIND, _sentinel, source="cli-doctor")
     try:
         start = perf_counter()
         await bus.publish(
             new_event(
-                "user.message.received",
+                _PROBE_KIND,
                 {"text": "doctor"},
                 session_id="cli-doctor",
                 source="cli-doctor",

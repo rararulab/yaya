@@ -7,7 +7,9 @@ tags: [kernel, cli, plugins, health, doctor]
 
 yaya ships a `yaya doctor` CLI command — a rename of the pre-0.1
 `yaya hello` smoke test — that boots the kernel, round-trips one
-synthetic `user.message.received`, then invokes an optional
+synthetic extension-namespace event (`x.cli-doctor.ping`) to exercise
+the bus without triggering any plugin subscribers, then invokes an
+optional
 `health_check(ctx)` method on every loaded plugin and renders the
 aggregated status. Each bundled plugin gains a meaningful, fast
 (<500 ms) self-check — `llm-openai` reports whether any instance

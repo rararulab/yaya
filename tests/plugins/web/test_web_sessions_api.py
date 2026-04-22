@@ -220,6 +220,151 @@ async def test_messages_endpoint_503_when_no_store() -> None:
     assert res.status_code == 503
 
 
+async def test_frames_endpoint_returns_live_shape_frames(tmp_path: Path) -> None:
+    """Tool calls + results round-trip as the live WS frame shapes (#162).
+
+    Chat-shell's reducer already handles ``assistant.done``,
+    ``tool.start``, ``tool.result`` in the live path; the frames
+    endpoint emits the same shapes so the hydrator walks a single
+    code path.
+    """
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-frames")
+        await session.append_message("user", "run ls", source="bdd")
+        await session.append_tool_call({"id": "t1", "name": "bash", "args": {"cmd": "ls"}})
+        await session.append_tool_result("t1", {"ok": True, "value": {"stdout": "a\nb\n"}})
+        await session.append_message("assistant", "Thought: done. Final Answer: listed.", source="bdd")
+
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{sid}/frames")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["frames"] == [
+            {"kind": "user.message", "text": "run ls"},
+            {"kind": "tool.start", "id": "t1", "name": "bash", "args": {"cmd": "ls"}},
+            {"kind": "tool.result", "id": "t1", "ok": True, "value": {"stdout": "a\nb\n"}},
+            {
+                "kind": "assistant.done",
+                "content": "Thought: done. Final Answer: listed.",
+                "tool_calls": [],
+            },
+        ]
+    finally:
+        await store.close()
+
+
+async def test_frames_endpoint_skips_observation_user_messages(tmp_path: Path) -> None:
+    """ReAct's ``Observation: ...`` user rows do not duplicate the tool card (#162)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-observation")
+        await session.append_message("user", "hi", source="bdd")
+        await session.append_tool_call({"id": "t1", "name": "bash", "args": {}})
+        await session.append_tool_result("t1", {"ok": True, "value": "out"})
+        # The ReAct strategy persists tool observations both as a
+        # ``tool_result`` entry AND as a ``role="user"`` Observation
+        # message (so the next LLM turn sees it). Replay must fold the
+        # two into one tool card, NOT render the Observation as a
+        # second user bubble.
+        await session.append_message("user", "Observation: tool ok", source="bdd")
+        await session.append_message("assistant", "done", source="bdd")
+
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{sid}/frames")
+        kinds = [f["kind"] for f in res.json()["frames"]]
+        # Exactly one ``user.message`` (the real prompt), never a
+        # second one derived from the Observation bubble.
+        assert kinds.count("user.message") == 1
+        assert "tool.start" in kinds and "tool.result" in kinds
+        texts = [f["text"] for f in res.json()["frames"] if f["kind"] == "user.message"]
+        assert texts == ["hi"]
+    finally:
+        await store.close()
+
+
+async def test_frames_endpoint_elides_pre_compaction_entries(tmp_path: Path) -> None:
+    """Compaction anchor wipes prior frames; same contract as /messages (#162)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-frames-compact")
+        await session.append_message("user", "before", source="bdd")
+        await session.append_tool_call({"id": "t1", "name": "bash", "args": {}})
+        await session.append_tool_result("t1", {"ok": True, "value": "x"})
+        await session.handoff(
+            "compaction/checkpoint",
+            state={"kind": "compaction", "summary": "prior turns summarised"},
+        )
+        await session.append_message("user", "after", source="bdd")
+
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{sid}/frames")
+        # Only the post-anchor frame survives; pre-anchor entries and
+        # the compaction marker itself are dropped.
+        assert res.json()["frames"] == [
+            {"kind": "user.message", "text": "after"},
+        ]
+    finally:
+        await store.close()
+
+
+async def test_frames_endpoint_404_when_id_unknown(tmp_path: Path) -> None:
+    """Unknown session id returns 404 — mirrors /messages (#162)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get("/api/sessions/does-not-exist/frames")
+        assert res.status_code == 404
+    finally:
+        await store.close()
+
+
+async def test_frames_endpoint_503_when_no_store() -> None:
+    """Missing store returns 503 — mirrors /messages (#162)."""
+    app = _build_app(session_store=None, workspace=None)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        res = await client.get("/api/sessions/any/frames")
+    assert res.status_code == 503
+
+
+async def test_frames_endpoint_tool_result_carries_error_field(tmp_path: Path) -> None:
+    """Failed tool calls surface ``error`` + ``ok=false`` on the replay frame (#162)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-frames-err")
+        await session.append_tool_call({"id": "t1", "name": "bash", "args": {}})
+        await session.append_tool_result("t1", {"ok": False, "error": "boom"})
+
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{sid}/frames")
+        frames = res.json()["frames"]
+        result_frame = next(f for f in frames if f["kind"] == "tool.result")
+        assert result_frame["ok"] is False
+        assert result_frame["error"] == "boom"
+        assert "value" not in result_frame
+    finally:
+        await store.close()
+
+
 async def test_delete_session_archives_the_tape(tmp_path: Path) -> None:
     """DELETE archives the tape and removes it from the live list (#161)."""
     store = SessionStore(tapes_dir=tmp_path / "tapes")

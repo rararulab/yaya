@@ -76,6 +76,10 @@ authorization.
 - src/yaya/plugins/web/api.py
 - src/yaya/plugins/web/plugin.py
 - src/yaya/plugins/web/AGENT.md
+- src/yaya/plugins/web/src/chat-shell.ts
+- src/yaya/plugins/web/src/types.ts
+- src/yaya/plugins/web/src/__tests__/chat-shell.test.ts
+- src/yaya/plugins/web/static/
 - src/yaya/kernel/plugin.py
 - src/yaya/kernel/registry.py
 - src/yaya/kernel/config_store.py
@@ -223,6 +227,24 @@ Scenario: Messages endpoint 404s when the session id is unknown
   Level: unit
   Given an admin router wired to an empty SessionStore
   When a client GETs api sessions id messages for a missing id
+  Then the response status is 404
+
+Scenario: GET api sessions id frames returns live shape frames for UI replay
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_frames_endpoint_returns_live_shape_frames
+  Level: unit
+  Given a SessionStore with a tape carrying a user message a tool call a tool result and an assistant message
+  When a client GETs api sessions id frames for that tape
+  Then the response frames list emits user.message tool.start tool.result and assistant.done in tape order
+
+Scenario: Frames endpoint 404s when the session id is unknown
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_frames_endpoint_404_when_id_unknown
+  Level: unit
+  Given an admin router wired to an empty SessionStore
+  When a client GETs api sessions id frames for a missing id
   Then the response status is 404
 
 Scenario: Messages endpoint 503s when no session store is wired

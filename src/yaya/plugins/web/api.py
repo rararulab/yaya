@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from yaya.kernel.events import Event, new_event
+from yaya.kernel.payload import payload_list_of_dicts
 from yaya.kernel.plugin import Category
 from yaya.kernel.providers import (
     PROVIDERS_PREFIX,
@@ -298,6 +299,125 @@ def build_admin_router(
     return router
 
 
+_OBSERVATION_PREFIX = "Observation: "
+"""Marker the ReAct strategy prepends when it re-projects a tool result
+as a user message in the loop's in-memory ``state.messages``. Today no
+``user.message.received`` is published for those entries, so the
+persister does not write them to the tape — meaning this filter is
+defensive: it prevents a duplicate user bubble in the replay in case a
+future strategy (or a manual tape edit) does persist an
+``Observation: ...`` user message alongside the ``tool_call`` /
+``tool_result`` pair the UI already renders as a collapsible card."""
+
+
+def _is_compaction_anchor(payload: dict[str, Any]) -> bool:
+    """True when ``payload`` describes a ``compaction`` anchor."""
+    state_value: Any = payload.get("state")
+    if not isinstance(state_value, dict):
+        return False
+    state: dict[str, Any] = cast("dict[str, Any]", state_value)
+    return state.get("kind") == "compaction"
+
+
+def _message_frame(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the replay frame for a ``message`` entry, or ``None`` to skip.
+
+    ``role="user"`` rows starting with :data:`_OBSERVATION_PREFIX` are
+    skipped to avoid duplicating the tool card the sibling ``tool_call``
+    / ``tool_result`` entries already carry. ``role="system"`` rows
+    (compaction summary markers) are skipped for the same reason the
+    #160 ``/messages`` replay path omits a ``[compacted history]``
+    bubble — the next turn's prompt already carries the summary.
+    """
+    role: Any = payload.get("role")
+    content_raw: Any = payload.get("content", "")
+    if not isinstance(role, str) or not isinstance(content_raw, str):
+        return None
+    if role == "user":
+        if content_raw.startswith(_OBSERVATION_PREFIX):
+            return None
+        return {"kind": "user.message", "text": content_raw}
+    if role == "assistant":
+        return {
+            "kind": "assistant.done",
+            "content": content_raw,
+            "tool_calls": [],
+        }
+    return None
+
+
+def _tool_call_frames(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expand a ``tool_call`` entry into one ``tool.start`` frame per call."""
+    out: list[dict[str, Any]] = []
+    for call in payload_list_of_dicts(payload, "calls"):
+        args_raw: Any = call.get("args", {})
+        out.append({
+            "kind": "tool.start",
+            "id": str(call.get("id", "")),
+            "name": str(call.get("name", "")),
+            "args": args_raw if isinstance(args_raw, dict) else {},
+        })
+    return out
+
+
+def _tool_result_frames(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expand a ``tool_result`` entry into one ``tool.result`` frame per result."""
+    out: list[dict[str, Any]] = []
+    for item in payload_list_of_dicts(payload, "results"):
+        result_raw: Any = item.get("result", {})
+        result: dict[str, Any] = dict(cast("dict[str, Any]", result_raw)) if isinstance(result_raw, dict) else {}
+        frame: dict[str, Any] = {
+            "kind": "tool.result",
+            "id": str(item.get("tool_call_id", "")),
+            "ok": bool(result.get("ok", True)),
+        }
+        if "value" in result:
+            frame["value"] = result["value"]
+        if "error" in result:
+            frame["error"] = result["error"]
+        out.append(frame)
+    return out
+
+
+def _frames_from_entries(entries: list[Any]) -> list[dict[str, Any]]:
+    """Project tape entries onto the WS-shape frame list for UI replay.
+
+    Lives alongside :func:`yaya.kernel.loop.project_entries_to_messages`
+    but produces a different shape on purpose: the loop needs
+    ``{role, content}`` for the next LLM call, the chat-shell needs
+    the richer live-turn frames (``assistant.done``, ``tool.start``,
+    ``tool.result``, plus a synthetic ``user.message``) so the UI
+    reducer stays single-pathed. See :func:`_sessions_frames` for the
+    projection rules.
+    """
+    frames: list[dict[str, Any]] = []
+    for entry in entries:
+        kind = getattr(entry, "kind", None)
+        raw_payload: Any = getattr(entry, "payload", None)
+        payload: dict[str, Any] = dict(cast("dict[str, Any]", raw_payload)) if isinstance(raw_payload, dict) else {}
+        if kind == "anchor":
+            if _is_compaction_anchor(payload):
+                # Same contract as the #160 /messages behaviour: drop
+                # pre-compaction frames entirely. The summary bubble is
+                # deliberately not injected.
+                frames = []
+            continue
+        if kind == "message":
+            frame = _message_frame(payload)
+            if frame is not None:
+                frames.append(frame)
+            continue
+        if kind == "tool_call":
+            frames.extend(_tool_call_frames(payload))
+            continue
+        if kind == "tool_result":
+            frames.extend(_tool_result_frames(payload))
+            continue
+        # Other entry kinds (generic events, session/start anchors) do
+        # not contribute to the UI transcript.
+    return frames
+
+
 def _session_row_to_json(info: Any) -> dict[str, Any]:
     """Serialise a :class:`SessionInfo` row to the JSON shape the sidebar consumes.
 
@@ -378,6 +498,52 @@ def _register_session_routes(
         rows = [_session_row_to_json(info) for info in infos]
         rows.sort(key=lambda r: r["created_at"] or "", reverse=True)
         return JSONResponse({"sessions": rows})
+
+    @router.get("/api/sessions/{session_id}/frames")
+    async def _sessions_frames(session_id: str) -> JSONResponse:
+        """Return the replayable UI frame sequence for ``session_id``.
+
+        Sibling of :func:`_sessions_messages`: that endpoint feeds the
+        agent loop's history projection (``{role, content}`` only);
+        this endpoint feeds the chat-shell reducer so a resumed session
+        re-renders tool calls as the same collapsible cards the live
+        turn shows (#162). The frame shapes match the WS inbound frame
+        catalog (``assistant.done``, ``tool.start``, ``tool.result``),
+        plus a synthetic ``user.message`` frame for inbound echo —
+        reusing the shape means the frontend hydrator is a thin loop
+        over the same state transitions the live WS path already runs.
+
+        Projection rules (matches ``_frames_from_entries``):
+
+        * ``kind="message"`` user with content starting with
+          ``"Observation: "`` is skipped — that is the ReAct loop's
+          tool-result re-projection for the LLM; the UI already shows
+          the tool card via ``tool.start`` + ``tool.result`` pair, and
+          rendering it again as a user bubble would duplicate.
+        * ``kind="message"`` user → ``user.message`` frame.
+        * ``kind="message"`` assistant → ``assistant.done`` frame with
+          ``tool_calls=[]`` (tool calls ride on their own
+          ``tool_call`` entries, not inline).
+        * ``kind="tool_call"`` → one ``tool.start`` per call.
+        * ``kind="tool_result"`` → one ``tool.result`` per result.
+        * A ``compaction`` anchor elides every preceding frame —
+          resumed chats show the post-compaction window only, matching
+          the #160 rule that a ``[compacted history]`` bubble is not
+          rendered (the next turn's prompt already carries the summary).
+
+        Returns ``404`` when the id does not resolve to a known tape,
+        ``503`` when the store / workspace pair was not wired.
+        """
+        store = cast("SessionStore", _require(session_store, "session store"))
+        ws = cast("Path", _require(workspace, "session workspace"))
+        infos = await store.list_sessions(ws)
+        match = next((info for info in infos if info.session_id == session_id), None)
+        if match is None:
+            raise HTTPException(status_code=404, detail=f"session not found: {session_id}")
+        session = await store.open(ws, session_id)
+        entries = await session.entries()
+        frames = _frames_from_entries(entries)
+        return JSONResponse({"frames": frames})
 
     @router.get("/api/sessions/{session_id}/messages")
     async def _sessions_messages(session_id: str) -> JSONResponse:

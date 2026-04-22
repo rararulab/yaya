@@ -77,6 +77,16 @@ Feature: Web adapter HTTP admin API
     When a client GETs api sessions id messages for a missing id
     Then the response status is 404
 
+  Scenario: GET api sessions id frames returns live shape frames for UI replay
+    Given a SessionStore with a tape carrying a user message a tool call a tool result and an assistant message
+    When a client GETs api sessions id frames for that tape
+    Then the response frames list emits user.message tool.start tool.result and assistant.done in tape order
+
+  Scenario: Frames endpoint 404s when the session id is unknown
+    Given an admin router wired to an empty SessionStore
+    When a client GETs api sessions id frames for a missing id
+    Then the response status is 404
+
   Scenario: Messages endpoint 503s when no session store is wired
     Given an admin router with session_store None and workspace None
     When a client GETs api sessions id messages for any id

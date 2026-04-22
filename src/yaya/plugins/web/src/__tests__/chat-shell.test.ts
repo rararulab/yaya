@@ -130,6 +130,63 @@ describe("YayaChat message rendering (bug #71 P1)", () => {
 	});
 });
 
+interface HydrateInternals extends Internals {
+	toolCallsById: Map<string, { id: string; name: string; output: string; ok?: boolean; error?: string }>;
+	pendingToolCalls: Set<string>;
+	streamingMessage: AssistantChatMessage | null;
+	hydrateFrames(frames: unknown[]): void;
+}
+
+describe("YayaChat hydrateFrames (#162)", () => {
+	it("reconstructs tool cards from a user+tool.start+tool.result+assistant.done tape", () => {
+		const shell = makeShell() as unknown as HydrateInternals;
+		shell.hydrateFrames([
+			{ kind: "user.message", text: "run ls" },
+			{ kind: "tool.start", id: "t1", name: "bash", args: { cmd: "ls" } },
+			{ kind: "tool.result", id: "t1", ok: true, value: { stdout: "a\n" } },
+			{ kind: "assistant.done", content: "listed", tool_calls: [] },
+		]);
+		expect(shell.toolCallsById.size).toBe(1);
+		const tc = shell.toolCallsById.get("t1");
+		expect(tc?.name).toBe("bash");
+		expect(tc?.ok).toBe(true);
+		expect(shell.pendingToolCalls.size).toBe(0);
+		expect(shell.streamingMessage).toBeNull();
+		expect(shell.inFlight).toBe(false);
+		// Exactly one assistant bubble and one user bubble (+ the
+		// toolResult trailer tr); the tool card renders via the
+		// toolCallsById map, not a second assistant message.
+		const roles = (shell.messages as { role: string }[]).map((m) => m.role);
+		expect(roles.filter((r) => r === "user")).toHaveLength(1);
+		expect(roles.filter((r) => r === "assistant")).toHaveLength(1);
+	});
+
+	it("skips nothing client-side — Observation rows are filtered server-side", () => {
+		// Smoke test: hydrateFrames does NOT re-filter; the backend
+		// already elided the Observation user bubble, so a frame list
+		// with two user.message items produces two user bubbles.
+		const shell = makeShell() as unknown as HydrateInternals;
+		shell.hydrateFrames([
+			{ kind: "user.message", text: "hi" },
+			{ kind: "user.message", text: "hello" },
+		]);
+		const roles = (shell.messages as { role: string }[]).map((m) => m.role);
+		expect(roles.filter((r) => r === "user")).toHaveLength(2);
+	});
+
+	it("records tool.result error details on the card", () => {
+		const shell = makeShell() as unknown as HydrateInternals;
+		shell.hydrateFrames([
+			{ kind: "tool.start", id: "t1", name: "bash", args: {} },
+			{ kind: "tool.result", id: "t1", ok: false, error: "boom" },
+		]);
+		const tc = shell.toolCallsById.get("t1");
+		expect(tc?.ok).toBe(false);
+		expect(tc?.error).toBe("boom");
+		expect(tc?.output).toBe("boom");
+	});
+});
+
 describe("YayaChat toast lifecycle (bug #71 P3)", () => {
 	it("keeps error toasts until dismissed", () => {
 		const shell = makeShell();

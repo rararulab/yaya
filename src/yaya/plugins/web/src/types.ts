@@ -103,6 +103,28 @@ export type MetaFrame =
 
 export type Frame = InboundFrame | MetaFrame;
 
+/**
+ * Shape of a single item returned by ``GET /api/sessions/{id}/frames``.
+ *
+ * Deliberately parallel to :data:`InboundFrame` so the replay reducer
+ * runs the same state transitions the live WS path runs — see #162.
+ * The only shape not present on the WS catalog is ``user.message``,
+ * which exists here so past-user bubbles can be reconstructed during
+ * hydration (the live path already has the user text locally when
+ * the browser sends it).
+ */
+export type HistoryFrame =
+	| { kind: "user.message"; text: string }
+	| { kind: "assistant.done"; content: string; tool_calls: ToolCall[] }
+	| { kind: "tool.start"; id: string; name: string; args: Record<string, unknown> }
+	| {
+			kind: "tool.result";
+			id: string;
+			ok: boolean;
+			value?: unknown;
+			error?: string;
+	  };
+
 /** Exhaustiveness helper — see lesson #19. */
 export function assertNever(x: never): never {
 	throw new Error(`Unexpected variant: ${JSON.stringify(x)}`);

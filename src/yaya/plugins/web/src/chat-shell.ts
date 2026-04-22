@@ -36,6 +36,7 @@ import type {
 	AssistantChatMessage,
 	ChatMessage,
 	Frame,
+	HistoryFrame,
 	TextContent,
 	ToolResultChatMessage,
 	UserChatMessage,
@@ -96,28 +97,24 @@ function applyTheme(theme: "light" | "dark"): void {
 }
 
 /**
- * Shape of each row returned by ``GET /api/sessions/{id}/messages``.
+ * Fetch the replayable frame sequence for a resumed session (#162).
  *
- * Mirrors the projection the agent loop uses on every turn
- * (``project_entries_to_messages`` in ``yaya.kernel.loop``). Only
- * ``user`` and ``assistant`` rows render as chat bubbles;
- * ``system`` rows (compaction markers) are dropped during hydration
- * because the next turn's prompt already carries the summary.
+ * Uses ``GET /api/sessions/{id}/frames`` — a sibling of the loop's
+ * ``/messages`` endpoint. ``/messages`` feeds the agent loop's
+ * cross-turn history projection (``{role, content}`` only); this
+ * endpoint carries the richer live-turn frame shapes (``tool.start``
+ * / ``tool.result`` / ``assistant.done``) so the chat reducer can
+ * reconstruct the exact transcript the live WS path renders.
  */
-interface HistoryMessage {
-	role: "user" | "assistant" | "system";
-	content: string;
-}
-
-async function fetchSessionMessages(sessionId: string): Promise<HistoryMessage[]> {
-	const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
+async function fetchSessionFrames(sessionId: string): Promise<HistoryFrame[]> {
+	const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/frames`, {
 		headers: { Accept: "application/json" },
 	});
 	if (!res.ok) {
 		throw new Error(`HTTP ${res.status}`);
 	}
-	const body = (await res.json()) as { messages?: HistoryMessage[] };
-	return Array.isArray(body.messages) ? body.messages : [];
+	const body = (await res.json()) as { frames?: HistoryFrame[] };
+	return Array.isArray(body.frames) ? body.frames : [];
 }
 
 /**
@@ -188,9 +185,9 @@ export class YayaChat extends LitElement {
 			return;
 		}
 		const sessionId = detail.sessionId;
-		let rows: HistoryMessage[];
+		let frames: HistoryFrame[];
 		try {
-			rows = await fetchSessionMessages(sessionId);
+			frames = await fetchSessionFrames(sessionId);
 		} catch (err) {
 			this.pushToast("error", `Could not load history: ${err instanceof Error ? err.message : String(err)}`);
 			this.resetChatState();
@@ -200,7 +197,7 @@ export class YayaChat extends LitElement {
 		}
 		this.resetChatState();
 		this.currentSessionId = sessionId;
-		this.hydrateMessages(rows);
+		this.hydrateFrames(frames);
 		this.reopenSocket(sessionId);
 	};
 
@@ -213,29 +210,79 @@ export class YayaChat extends LitElement {
 		this.inputValue = "";
 	}
 
-	private hydrateMessages(rows: HistoryMessage[]): void {
-		const hydrated: ChatMessage[] = [];
-		for (const row of rows) {
-			if (row.role === "user") {
-				hydrated.push({ role: "user", content: row.content, timestamp: Date.now() });
-			} else if (row.role === "assistant") {
-				hydrated.push({
-					role: "assistant",
-					content: [{ type: "text", text: row.content }],
-					api: "responses",
-					provider: "kernel",
-					model: "kernel",
-					usage: emptyUsage(),
-					stopReason: "stop",
-					timestamp: Date.now(),
-				});
+	/**
+	 * Replay a persisted session's frames into the live component state
+	 * (#162).
+	 *
+	 * Walks frames in tape order and applies the same state transitions
+	 * the live ``onFrame`` path applies for ``assistant.done`` /
+	 * ``tool.start`` / ``tool.result``. ``user.message`` has no WS
+	 * counterpart (the live path carries user text locally when the
+	 * browser sends it) so it is handled inline. The end state matches
+	 * what the browser would hold after playing back the same turn live
+	 * — one ``AssistantChatMessage`` with its tool-call parts, a
+	 * ``toolCallsById`` map carrying each tool card's output, and
+	 * ``pendingToolCalls`` empty because every ``tool.start`` saw its
+	 * matching ``tool.result``.
+	 */
+	private hydrateFrames(frames: HistoryFrame[]): void {
+		for (const frame of frames) {
+			switch (frame.kind) {
+				case "user.message": {
+					const msg: UserChatMessage = {
+						role: "user",
+						content: frame.text,
+						timestamp: Date.now(),
+					};
+					this.messages = [...this.messages, msg];
+					break;
+				}
+				case "assistant.done":
+					this.finishAssistant(frame.content, frame.tool_calls ?? []);
+					break;
+				case "tool.start":
+					this.pendingToolCalls = new Set([...this.pendingToolCalls, frame.id]);
+					this.toolCallsById = new Map(this.toolCallsById).set(frame.id, {
+						id: frame.id,
+						name: frame.name,
+						output: "",
+					});
+					break;
+				case "tool.result": {
+					const next = new Set(this.pendingToolCalls);
+					next.delete(frame.id);
+					this.pendingToolCalls = next;
+					const tc = this.toolCallsById.get(frame.id);
+					const output =
+						frame.error ?? (typeof frame.value === "string" ? frame.value : JSON.stringify(frame.value ?? ""));
+					if (tc) {
+						const updated: ToolCallState = {
+							id: tc.id,
+							name: tc.name,
+							output,
+							ok: frame.ok,
+							...(frame.error !== undefined ? { error: frame.error } : {}),
+						};
+						this.toolCallsById = new Map(this.toolCallsById).set(frame.id, updated);
+					}
+					const tr: ToolResultChatMessage = {
+						role: "toolResult",
+						toolCallId: frame.id,
+						toolName: tc?.name ?? frame.id,
+						content: [{ type: "text", text: frame.error ?? String(frame.value ?? "") }],
+						isError: !frame.ok,
+						timestamp: Date.now(),
+					};
+					this.messages = [...this.messages, tr];
+					break;
+				}
 			}
-			// ``role="system"`` compacted-history markers are not rendered
-			// in chat — the next turn's prompt already includes the
-			// summary. Keeping them out of the transcript avoids a
-			// cryptic "[compacted history]" bubble.
 		}
-		this.messages = hydrated;
+		// finishAssistant() flips inFlight=false on every assistant.done
+		// frame; hydration is a replay, not an active turn, so normalize
+		// here too in case the tape has no trailing assistant bubble.
+		this.inFlight = false;
+		this.streamingMessage = null;
 	}
 
 	private reopenSocket(sessionId: string | null): void {
@@ -258,9 +305,9 @@ export class YayaChat extends LitElement {
 		if (initialSession) {
 			// Fire-and-forget hydration; failure surfaces via the toast
 			// the same way a sidebar click does.
-			void fetchSessionMessages(initialSession).then(
-				(rows) => {
-					this.hydrateMessages(rows);
+			void fetchSessionFrames(initialSession).then(
+				(frames) => {
+					this.hydrateFrames(frames);
 				},
 				(err: unknown) => {
 					this.pushToast("error", `Could not load history: ${err instanceof Error ? err.message : String(err)}`);

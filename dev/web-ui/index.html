@@ -993,6 +993,21 @@ tape rather than starting a fresh session. The flow is:</p>
 same code path as the click handler. Fetch failures surface a toast
 and fall back to a fresh chat, so deleting a tape while a tab is
 open does not leave the UI stuck.</p>
+<h3 id="provider-check-on-resume-163">Provider check on resume (#163)<a class="headerlink" href="#provider-check-on-resume-163" title="Permanent link">&para;</a></h3>
+<p>Each turn the agent loop stamps a <code>turn/provider</code> anchor on the
+tape with <code>state={"provider": &lt;instance_id&gt;, "model": &lt;str&gt;}</code> —
+once per turn, not per LLM call. <code>SessionStore.list_sessions</code> and
+a new <code>GET /api/sessions/{id}</code> endpoint surface the latest anchor's
+provider and model on <code>SessionInfo</code>.</p>
+<p>Before hydration on resume, the chat-shell calls <code>GET /api/sessions/{id}</code>.
+When the historical provider is no longer listed in
+<code>ProvidersView.list_instances()</code>, the UI renders an inline banner
+(not a blocking modal) above the chat pane: "This chat was started
+with <old>:<model>; that provider is no longer configured.
+Continue with <current active>?" Two buttons — "Continue" and
+"Cancel" — both with explicit intent; no silent switch. Legacy
+tapes predating the anchor return <code>provider: null</code> and suppress
+the banner entirely (backward compat).</p>
 <h2 id="session-crud-161">Session CRUD (#161)<a class="headerlink" href="#session-crud-161" title="Permanent link">&para;</a></h2>
 <p>Each <strong>Recent</strong> row exposes a ⋯ button revealing Rename and Delete
 actions; right-click is deliberately not used so the affordance stays

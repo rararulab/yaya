@@ -901,7 +901,13 @@ def test_stream_think_filter_passes_angle_text_that_is_not_think() -> None:
 
 
 def test_stream_think_filter_drops_unclosed_tag_on_flush() -> None:
-    """A stream that ends mid-``<think>`` discards the body (matches regex behaviour)."""
+    """A stream that ends mid-``<think>`` discards the body.
+
+    Deliberately diverges from the non-streaming regex (which keeps
+    unclosed spans verbatim); dropping is safer for the UI — a
+    half-rendered reasoning span would otherwise leak. See
+    ``_StreamThinkFilter.flush`` docstring for the rationale.
+    """
     from yaya.plugins.llm_openai.plugin import _StreamThinkFilter
 
     f = _StreamThinkFilter()

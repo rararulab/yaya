@@ -599,12 +599,17 @@ class _StreamThinkFilter:
         """Drain any buffered bytes at end-of-stream.
 
         If the stream ended mid-``<think>`` the held body is
-        discarded (matches the regex behaviour on unclosed tags — the
-        non-streaming path relies on ``re.DOTALL`` with a greedy
-        ``</think>`` match, which silently drops an unmatched open
-        tag's tail when the regex does not fire). If the stream
-        ended mid-``<`` (ambiguous partial prefix of ``<think>``),
-        flush the literal bytes since the tag never completed.
+        **dropped**. This deliberately diverges from the non-
+        streaming regex path (``_strip_reasoning_tags``) which keeps
+        an unclosed ``<think>`` verbatim — under streaming we cannot
+        show the user a half-reasoning span that was going to be
+        stripped by the closing tag, so dropping is safer for the UI.
+        Rare enough in practice (MiniMax always closes its ``<think>``
+        blocks) that the protocol-level divergence is acceptable.
+
+        If the stream ended mid-``<`` (ambiguous partial prefix of
+        ``<think>``), flush the literal bytes since the tag never
+        completed.
         """
         if self._in_think:
             # Unclosed ``<think>`` — drop the body.

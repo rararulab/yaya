@@ -480,8 +480,8 @@ This file captures yaya-specific mechanics.</p>
 <td>Self-update the yaya binary/wheel.</td>
 </tr>
 <tr>
-<td><code>yaya hello</code></td>
-<td>Smoke-test: boot kernel, emit a synthetic event round-trip, print OK.</td>
+<td><code>yaya doctor</code></td>
+<td>Boot kernel, round-trip one synthetic event, render every loaded plugin's <code>health_check</code> in a colour-coded table (or JSON). Exit 1 when the round-trip fails or any plugin reports <code>failed</code>.</td>
 </tr>
 <tr>
 <td><code>yaya plugin list</code></td>

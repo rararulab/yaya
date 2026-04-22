@@ -499,7 +499,7 @@ Self-hosting growth is the product.</p>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        │    event bus  ·  plugin registry        │
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        │    agent loop (the scheduler)           │
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        │    built-in CLI (self-bootstrap only):  │
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        │       serve · version · update · hello  │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        │       serve · version · update · doctor │
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        │       · plugin {list, install, remove}  │
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        └─────┬─────────┬────────────┬────────────┘
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>              ▼         ▼            ▼
@@ -590,8 +590,8 @@ Self-hosting growth is the product.</p>
 <td>Self-update the yaya binary/wheel.</td>
 </tr>
 <tr>
-<td><code>yaya hello</code></td>
-<td>Smoke-test: boot kernel, emit a synthetic event round-trip, print OK.</td>
+<td><code>yaya doctor</code></td>
+<td>Boot kernel, emit a synthetic round-trip, and print each loaded plugin's <code>health_check</code> in a colour-coded table (or JSON). Exit 1 when the round-trip fails or any plugin reports <code>failed</code>.</td>
 </tr>
 <tr>
 <td><code>yaya plugin list</code></td>

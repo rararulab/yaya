@@ -456,18 +456,18 @@
     <h1 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h1>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>yaya<span class="w"> </span>--help
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>yaya<span class="w"> </span>version
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>yaya<span class="w"> </span>hello<span class="w"> </span>--name<span class="w"> </span>world
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>yaya<span class="w"> </span>doctor
 </code></pre></div>
 <h2 id="json-mode">JSON mode<a class="headerlink" href="#json-mode" title="Permanent link">&para;</a></h2>
 <p>All commands accept <code>--json</code> and emit the canonical
 <code>{"ok": bool, ...}</code> shape on stdout. See <a href="../../dev/cli/">CLI Conventions</a> for the full
 contract.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>yaya<span class="w"> </span>hello<span class="w"> </span>--name<span class="w"> </span>world<span class="w"> </span>--json
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># {&quot;ok&quot;: true, &quot;action&quot;: &quot;hello&quot;, &quot;greeting&quot;: &quot;Hello, world!&quot;}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>yaya<span class="w"> </span>--json<span class="w"> </span>doctor
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># {&quot;ok&quot;: true, &quot;action&quot;: &quot;doctor&quot;, &quot;roundtrip&quot;: {...}, &quot;plugins&quot;: [...]}</span>
 </code></pre></div>
 <h2 id="dev-only-commands">Dev-only commands<a class="headerlink" href="#dev-only-commands" title="Permanent link">&para;</a></h2>
 <p>From a source checkout with <a href="https://github.com/casey/just">just</a>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>just<span class="w"> </span>run<span class="w"> </span>hello<span class="w">     </span><span class="c1"># run the CLI via uv</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>just<span class="w"> </span>run<span class="w"> </span>doctor<span class="w">    </span><span class="c1"># run the CLI via uv</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>just<span class="w"> </span><span class="nb">test</span><span class="w">          </span><span class="c1"># pytest + coverage</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>just<span class="w"> </span>check<span class="w">         </span><span class="c1"># ruff + mypy</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>just<span class="w"> </span>build<span class="w">         </span><span class="c1"># wheel + sdist</span>

@@ -69,6 +69,16 @@ _DEFAULT_OWNER: str = "human"
 """Default ``owner`` field on the bootstrap ``session/start`` anchor."""
 
 
+RENAME_ANCHOR_NAME: str = "session/renamed"
+"""Anchor name used to persist a user-supplied session display name.
+
+Rename is deliberately modelled as an append-only anchor rather than a
+sidecar file: the tape is the only source of truth, and stacking
+renames simply means "read the latest one wins". ``state`` carries a
+single ``name`` key (#161).
+"""
+
+
 def default_session_dir() -> Path:
     """Return the XDG-resolved directory holding session tape files.
 
@@ -128,6 +138,10 @@ class SessionInfo(BaseModel):
         preview: First user-message content trimmed to a display-
             friendly length. ``None`` when the tape has no user
             message yet. Powers the web sidebar's Recent list.
+        name: Display name supplied by the most recent
+            ``session/renamed`` anchor on the tape. ``None`` when the
+            tape has never been renamed. Frontend label priority:
+            ``name → preview → last_anchor → session_id`` (#161).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -138,6 +152,7 @@ class SessionInfo(BaseModel):
     entry_count: int
     last_anchor: str | None
     preview: str | None = None
+    name: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +504,25 @@ class Session:
         """
         await self._manager.handoff(self._tape_name, name, state=dict(state))
 
+    async def rename(self, name: str) -> None:
+        """Persist ``name`` as the session's display label.
+
+        Writes a :data:`RENAME_ANCHOR_NAME` anchor carrying
+        ``state={"name": name}``. Multiple renames stack — readers
+        (see :meth:`SessionStore.list_sessions`) take the most recent
+        one. ``name`` must be non-empty after stripping.
+
+        Args:
+            name: New display label. Leading/trailing whitespace is
+                stripped before persistence; an empty result raises
+                :class:`ValueError` so callers surface a ``400``
+                instead of silently persisting a blank anchor.
+        """
+        stripped = name.strip()
+        if not stripped:
+            raise ValueError("session name may not be empty")
+        await self.handoff(RENAME_ANCHOR_NAME, state={"name": stripped})
+
     async def append_event(self, name: str, payload: dict[str, Any], **meta: Any) -> None:
         """Append a generic ``event`` entry.
 
@@ -626,6 +660,7 @@ class Session:
             created_at=self._created_at,
             entry_count=len(entries),
             last_anchor=last_anchor,
+            name=_latest_rename_name(entries),
         )
 
     # -- mutate-as-rewrite ------------------------------------------------------
@@ -849,6 +884,7 @@ class SessionStore:
                     entry_count=len(entries),
                     last_anchor=last_anchor,
                     preview=preview,
+                    name=_latest_rename_name(entries),
                 )
             )
         return infos
@@ -858,16 +894,50 @@ class SessionStore:
 
         When ``workspace`` is omitted, uses the current working
         directory — matches the ``yaya session`` CLI semantics.
+
+        Accepts both the original logical session id (hashed via
+        :func:`tape_name_for`) and the post-hash suffix form surfaced
+        by :meth:`list_sessions` (see #160). The lookup first tries
+        the derived tape name, then falls back to ``<ws_prefix>__<id>``
+        when the caller passes the suffix. Raises
+        :class:`FileNotFoundError` when neither form resolves to a
+        known tape — callers surface that as a ``404`` rather than
+        silently archiving an empty tape (#161).
+
+        Dump-then-reset is intentionally **not atomic**: a crash
+        between the archive dump and the live-tape reset leaves both
+        copies on disk. The duplication is recoverable (archive is
+        the source of truth) and the reset runs in microseconds, so
+        the window is negligible for a local-only process. Callers
+        needing atomicity should wrap their own persistence layer.
         """
         if self._closed:
             raise RuntimeError("SessionStore is closed")
         ws = workspace or Path.cwd()
         tape_name = tape_name_for(ws, session_id)
-        return await _archive_tape(
+        existing = set(await self._manager.list_tapes())
+        if tape_name not in existing:
+            ws_prefix = hashlib.md5(
+                str(ws.resolve()).encode("utf-8"),
+                usedforsecurity=False,
+            ).hexdigest()[:16]
+            candidate = f"{ws_prefix}__{session_id}"
+            if candidate in existing:
+                tape_name = candidate
+            else:
+                raise FileNotFoundError(f"session not found: {session_id}")
+        archive_path = await _archive_tape(
             manager=self._manager,
             tape_name=tape_name,
             archive_root=self._archive_root,
         )
+        # Delete is archive + drop-from-live-list: after archiving the
+        # jsonl dump, reset the original tape so it stops appearing on
+        # the sidebar (#161). The archive dump remains recoverable from
+        # disk — there is no hard-delete.
+        await self._manager.reset_tape(tape_name)
+        self._created_at.pop(tape_name, None)
+        return archive_path
 
     async def close(self) -> None:
         """Idempotent teardown. Keeps state dir; drops in-memory caches."""
@@ -882,6 +952,32 @@ class SessionStore:
 
 _PREVIEW_MAX_CHARS = 80
 """Upper bound on :attr:`SessionInfo.preview` content length."""
+
+
+def _latest_rename_name(entries: Iterable[TapeEntry]) -> str | None:
+    """Return the ``name`` from the most recent rename anchor, or ``None``.
+
+    Walks ``entries`` in tape order and remembers the ``state["name"]``
+    of the last ``anchor`` entry whose ``payload["name"]`` matches
+    :data:`RENAME_ANCHOR_NAME`. Non-string states, missing keys, and
+    empty strings all collapse to ``None`` so a malformed anchor can
+    never silently leak into the UI as a blank label.
+    """
+    latest: str | None = None
+    for entry in entries:
+        if entry.kind != "anchor":
+            continue
+        payload = entry.payload or {}
+        if payload.get("name") != RENAME_ANCHOR_NAME:
+            continue
+        state_raw: Any = payload.get("state") or {}
+        if not isinstance(state_raw, dict):
+            continue
+        state_dict: dict[str, Any] = cast("dict[str, Any]", state_raw)
+        candidate: Any = state_dict.get("name")
+        if isinstance(candidate, str) and candidate.strip():
+            latest = candidate.strip()
+    return latest
 
 
 def _first_user_message_preview(entries: Iterable[TapeEntry]) -> str | None:

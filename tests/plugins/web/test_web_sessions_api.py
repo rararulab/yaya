@@ -220,6 +220,154 @@ async def test_messages_endpoint_503_when_no_store() -> None:
     assert res.status_code == 503
 
 
+async def test_delete_session_archives_the_tape(tmp_path: Path) -> None:
+    """DELETE archives the tape and removes it from the live list (#161)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-delete")
+        await session.append_message("user", "bye", source="bdd")
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.delete(f"/api/sessions/{sid}")
+            assert res.status_code == 204
+            # Follow-up listing no longer includes the tape.
+            listed = await client.get("/api/sessions")
+        assert all(row["id"] != sid for row in listed.json()["sessions"])
+        # The archive dump is recoverable from disk.
+        archive_dir = tmp_path / "tapes" / ".archive"
+        assert archive_dir.is_dir()
+        assert any(archive_dir.iterdir()), "archive directory should carry the dump"
+    finally:
+        await store.close()
+
+
+async def test_delete_session_404_when_id_unknown(tmp_path: Path) -> None:
+    """DELETE returns 404 when the id does not resolve to any tape (#161)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.delete("/api/sessions/does-not-exist")
+        assert res.status_code == 404
+    finally:
+        await store.close()
+
+
+async def test_delete_session_503_when_no_store() -> None:
+    """DELETE returns 503 when the store / workspace was not wired (#161)."""
+    app = _build_app(session_store=None, workspace=None)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        res = await client.delete("/api/sessions/anything")
+    assert res.status_code == 503
+
+
+async def test_patch_session_writes_name_and_is_reflected_in_list(tmp_path: Path) -> None:
+    """PATCH persists ``name`` and ``GET /api/sessions`` surfaces it (#161)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-rename")
+        await session.append_message("user", "hello", source="bdd")
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.patch(f"/api/sessions/{sid}", json={"name": "Grocery list"})
+            assert res.status_code == 200, res.text
+            assert res.json()["name"] == "Grocery list"
+            listed = await client.get("/api/sessions")
+        row = next(r for r in listed.json()["sessions"] if r["id"] == sid)
+        assert row["name"] == "Grocery list"
+    finally:
+        await store.close()
+
+
+async def test_patch_session_most_recent_rename_wins(tmp_path: Path) -> None:
+    """Stacked renames collapse to the latest one (#161)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-rename-stack")
+        await session.append_message("user", "hi", source="bdd")
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            await client.patch(f"/api/sessions/{sid}", json={"name": "First"})
+            res = await client.patch(f"/api/sessions/{sid}", json={"name": "Second"})
+        assert res.status_code == 200
+        assert res.json()["name"] == "Second"
+    finally:
+        await store.close()
+
+
+async def test_patch_session_404_when_id_unknown(tmp_path: Path) -> None:
+    """PATCH returns 404 when the id does not resolve to any tape (#161)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.patch("/api/sessions/nope", json={"name": "whatever"})
+        assert res.status_code == 404
+    finally:
+        await store.close()
+
+
+async def test_patch_session_400_when_name_empty(tmp_path: Path) -> None:
+    """PATCH rejects blank names with 400 rather than writing an empty anchor (#161)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-empty-name")
+        await session.append_message("user", "hi", source="bdd")
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.patch(f"/api/sessions/{sid}", json={"name": "   "})
+        assert res.status_code == 400
+    finally:
+        await store.close()
+
+
+async def test_patch_session_422_when_name_exceeds_max_length(tmp_path: Path) -> None:
+    """PATCH caps ``name`` at 200 chars (#161 review fixup)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-long-name")
+        await session.append_message("user", "hi", source="bdd")
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.patch(f"/api/sessions/{sid}", json={"name": "x" * 201})
+        # Pydantic field validation surfaces as 422 by default.
+        assert res.status_code == 422
+    finally:
+        await store.close()
+
+
+async def test_patch_session_503_when_no_store() -> None:
+    """PATCH returns 503 when the store / workspace was not wired (#161)."""
+    app = _build_app(session_store=None, workspace=None)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        res = await client.patch("/api/sessions/anything", json={"name": "x"})
+    assert res.status_code == 503
+
+
 async def test_sessions_list_sorted_by_created_at_desc(tmp_path: Path) -> None:
     """Newer sessions appear before older ones."""
     store = SessionStore(tapes_dir=tmp_path / "tapes")

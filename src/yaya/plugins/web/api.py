@@ -136,6 +136,18 @@ class _PluginInstallBody(BaseModel):
     editable: bool = Field(default=False)
 
 
+class _SessionPatchBody(BaseModel):
+    """Body shape for ``PATCH /api/sessions/{id}`` — issue #161."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(
+        ...,
+        max_length=200,
+        description="New display name; non-empty after strip; capped at 200 chars.",
+    )
+
+
 class _ProviderActiveBody(BaseModel):
     """Body shape for ``PATCH /api/llm-providers/active``.
 
@@ -286,6 +298,65 @@ def build_admin_router(
     return router
 
 
+def _session_row_to_json(info: Any) -> dict[str, Any]:
+    """Serialise a :class:`SessionInfo` row to the JSON shape the sidebar consumes.
+
+    Factored out of the session route handlers so the list, rename
+    response, and any future session-row endpoint emit an identical
+    shape. The argument is typed as :data:`Any` to avoid a TYPE_CHECKING
+    re-import of :class:`SessionInfo` at runtime.
+    """
+    return {
+        "id": info.session_id,
+        "tape_name": info.tape_name,
+        "created_at": info.created_at,
+        "entry_count": info.entry_count,
+        "last_anchor": info.last_anchor,
+        "preview": info.preview,
+        "name": info.name,
+    }
+
+
+async def _session_delete_handler(
+    session_id: str,
+    store: SessionStore,
+    workspace: Path,
+) -> JSONResponse:
+    """Archive one tape; returns 204 / 400 / 404 per the #161 contract."""
+    if not session_id.strip():
+        raise HTTPException(status_code=400, detail="session id may not be empty")
+    try:
+        await store.archive(session_id, workspace=workspace)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return JSONResponse(None, status_code=204)
+
+
+async def _session_patch_handler(
+    session_id: str,
+    name: str,
+    store: SessionStore,
+    workspace: Path,
+) -> JSONResponse:
+    """Rename one tape via an append-only anchor; returns the refreshed row."""
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="name may not be empty")
+    infos = await store.list_sessions(workspace)
+    match = next((info for info in infos if info.session_id == session_id), None)
+    if match is None:
+        raise HTTPException(status_code=404, detail=f"session not found: {session_id}")
+    session = await store.open(workspace, session_id)
+    try:
+        await session.rename(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    refreshed = await store.list_sessions(workspace)
+    row = next((info for info in refreshed if info.session_id == session_id), None)
+    if row is None:  # pragma: no cover — we just wrote to it.
+        raise HTTPException(status_code=404, detail=f"session not found: {session_id}")
+    return JSONResponse(_session_row_to_json(row))
+
+
 def _register_session_routes(
     router: APIRouter,
     session_store: SessionStore | None,
@@ -304,17 +375,7 @@ def _register_session_routes(
         store = cast("SessionStore", _require(session_store, "session store"))
         ws = cast("Path", _require(workspace, "session workspace"))
         infos = await store.list_sessions(ws)
-        rows = [
-            {
-                "id": info.session_id,
-                "tape_name": info.tape_name,
-                "created_at": info.created_at,
-                "entry_count": info.entry_count,
-                "last_anchor": info.last_anchor,
-                "preview": info.preview,
-            }
-            for info in infos
-        ]
+        rows = [_session_row_to_json(info) for info in infos]
         rows.sort(key=lambda r: r["created_at"] or "", reverse=True)
         return JSONResponse({"sessions": rows})
 
@@ -353,6 +414,20 @@ def _register_session_routes(
         entries = await session.entries()
         messages = project_entries_to_messages(entries)
         return JSONResponse({"messages": messages})
+
+    @router.delete("/api/sessions/{session_id}")
+    async def _sessions_delete(session_id: str) -> JSONResponse:
+        """Archive a tape and remove it from the live list (#161)."""
+        store = cast("SessionStore", _require(session_store, "session store"))
+        ws = cast("Path", _require(workspace, "session workspace"))
+        return await _session_delete_handler(session_id, store, ws)
+
+    @router.patch("/api/sessions/{session_id}")
+    async def _sessions_patch(session_id: str, body: _SessionPatchBody) -> JSONResponse:
+        """Rename a session via an append-only ``session/renamed`` anchor (#161)."""
+        store = cast("SessionStore", _require(session_store, "session store"))
+        ws = cast("Path", _require(workspace, "session workspace"))
+        return await _session_patch_handler(session_id, body.name, store, ws)
 
 
 def _require(obj: Any, label: str) -> Any:

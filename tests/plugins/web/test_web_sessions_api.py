@@ -137,6 +137,89 @@ async def test_sessions_list_503_when_no_store() -> None:
     assert res.status_code == 503
 
 
+async def test_messages_endpoint_returns_projected_history(tmp_path: Path) -> None:
+    """The endpoint projects tape entries into ``{role, content}`` rows."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-resume")
+        await session.append_message("user", "first", source="bdd")
+        await session.append_message("assistant", "hi", source="bdd")
+        await session.append_message("user", "second", source="bdd")
+
+        infos = await store.list_sessions(tmp_path)
+        assert infos, "list_sessions should surface the persisted tape"
+        sid = infos[0].session_id
+
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{sid}/messages")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["messages"] == [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "hi"},
+            {"role": "user", "content": "second"},
+        ]
+    finally:
+        await store.close()
+
+
+async def test_messages_endpoint_elides_history_before_compaction_anchor(tmp_path: Path) -> None:
+    """A compaction anchor wipes prior messages and injects the summary.
+
+    Mirrors the loop's own projection contract (see
+    ``tests/kernel/test_loop.py``) so the endpoint cannot drift from
+    what the agent loop will see on the next turn.
+    """
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-compact")
+        await session.append_message("user", "before", source="bdd")
+        await session.append_message("assistant", "pre-ack", source="bdd")
+        await session.handoff(
+            "compaction/checkpoint", state={"kind": "compaction", "summary": "prior turns summarised"}
+        )
+        await session.append_message("user", "after", source="bdd")
+
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{sid}/messages")
+        body = res.json()
+        assert body["messages"] == [
+            {"role": "system", "content": "[compacted history]\nprior turns summarised"},
+            {"role": "user", "content": "after"},
+        ]
+    finally:
+        await store.close()
+
+
+async def test_messages_endpoint_404_when_id_unknown(tmp_path: Path) -> None:
+    """Unknown session id returns ``404``, never a silent empty list."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get("/api/sessions/does-not-exist/messages")
+        assert res.status_code == 404
+    finally:
+        await store.close()
+
+
+async def test_messages_endpoint_503_when_no_store() -> None:
+    """Missing store mirrors the list endpoint's degrade path."""
+    app = _build_app(session_store=None, workspace=None)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        res = await client.get("/api/sessions/any/messages")
+    assert res.status_code == 503
+
+
 async def test_sessions_list_sorted_by_created_at_desc(tmp_path: Path) -> None:
     """Newer sessions appear before older ones."""
     store = SessionStore(tapes_dir=tmp_path / "tapes")

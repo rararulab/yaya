@@ -351,6 +351,105 @@ def _assert_vite_bundle(index_html_text: str) -> None:
     assert "preview" not in lowered
 
 
+# ---------------------------------------------------------------------------
+# Scenarios: WS resume via ``?session=`` query param (#159)
+# ---------------------------------------------------------------------------
+
+
+def _rebuild_adapter_with_store(web_ctx: _WebCtx) -> None:
+    """Rewire the adapter with a live ``SessionStore`` for resume tests.
+
+    The default ``_WebCtx`` builds the adapter without a session store
+    because the pre-existing scenarios do not need one. The resume
+    scenarios require ``ctx.session_store`` to be live so the
+    adapter's ``_resolve_resume_session`` can look up a tape; we
+    rebuild the ASGI app in place (before any ``TestClient`` starts)
+    so the handshake sees the wired store.
+    """
+    from yaya.kernel.session import SessionStore
+
+    store = SessionStore(tapes_dir=web_ctx.tmp_path / "tapes")
+    web_ctx.extras_store = store  # type: ignore[attr-defined]
+    web_ctx.ctx = KernelContext(
+        bus=web_ctx.bus,
+        logger=logging.getLogger("plugin.web-bdd-resume"),
+        config={},
+        state_dir=web_ctx.tmp_path,
+        plugin_name=web_ctx.adapter.name,
+        session_store=store,
+    )
+    web_ctx.adapter._ctx = web_ctx.ctx
+    web_ctx.adapter._app = web_ctx.adapter._build_app()
+
+    async def _forward(ev: Event) -> None:
+        await web_ctx.adapter.on_event(ev, web_ctx.ctx)
+
+    for kind in web_ctx.adapter.subscriptions():
+        web_ctx.bus.subscribe(kind, _forward, source=web_ctx.adapter.name)
+
+
+@given("a web adapter wired to a SessionStore with one persisted tape", target_fixture="seeded_session_id")
+def _adapter_with_seeded_tape(web_ctx: _WebCtx, monkeypatch: pytest.MonkeyPatch) -> str:
+    _rebuild_adapter_with_store(web_ctx)
+    store = web_ctx.extras_store  # type: ignore[attr-defined]
+    monkeypatch.chdir(web_ctx.tmp_path)
+
+    async def _seed() -> str:
+        session = await store.open(web_ctx.tmp_path, "ws-seed")
+        await session.append_message("user", "seed", source="bdd")
+        infos = await store.list_sessions(web_ctx.tmp_path)
+        return infos[0].session_id
+
+    sid: str = web_ctx.portal_call(_seed)
+    return sid
+
+
+@given("a web adapter wired to an empty SessionStore")
+def _adapter_with_empty_store(web_ctx: _WebCtx, monkeypatch: pytest.MonkeyPatch) -> None:
+    _rebuild_adapter_with_store(web_ctx)
+    monkeypatch.chdir(web_ctx.tmp_path)
+
+
+@when("a websocket client connects with session query param equal to that tape id")
+def _client_connects_with_matching_session(web_ctx: _WebCtx, seeded_session_id: str) -> None:
+    tc = web_ctx.ensure_test_client()
+    ws = tc.websocket_connect(f"/ws?session={seeded_session_id}")
+    ws.__enter__()
+    web_ctx.client_ws.append(ws)
+    ws.send_json({"type": "user.message", "text": "resume"})
+    _wait_for(lambda: bool(web_ctx.adapter._clients))
+
+
+@when("a websocket client connects with session query param pointing at no tape")
+def _client_connects_with_unknown_session(
+    web_ctx: _WebCtx,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="plugin.web-bdd-resume")
+    tc = web_ctx.ensure_test_client()
+    ws = tc.websocket_connect("/ws?session=does-not-exist")
+    ws.__enter__()
+    web_ctx.client_ws.append(ws)
+    ws.send_json({"type": "user.message", "text": "orphan"})
+    _wait_for(lambda: bool(web_ctx.adapter._clients))
+
+
+@then("the adapter binds the connection to that session id instead of minting a fresh one")
+def _bound_to_seeded_id(web_ctx: _WebCtx, seeded_session_id: str) -> None:
+    bound = list(web_ctx.adapter._clients.keys())
+    assert bound == [seeded_session_id], f"expected bind to {seeded_session_id!r}, got {bound!r}"
+
+
+@then("the adapter binds the connection to a fresh ws id and logs an unknown session message")
+def _bound_to_fresh_id(web_ctx: _WebCtx, caplog: pytest.LogCaptureFixture) -> None:
+    bound = list(web_ctx.adapter._clients.keys())
+    assert len(bound) == 1, f"expected exactly one bound session; got {bound!r}"
+    assert bound[0].startswith("ws-"), f"expected fresh ws-* id, got {bound!r}"
+    assert any("unknown session" in rec.getMessage() for rec in caplog.records), (
+        f"expected INFO log for unknown session; got {[r.getMessage() for r in caplog.records]}"
+    )
+
+
 # -- helpers --------------------------------------------------------------
 
 

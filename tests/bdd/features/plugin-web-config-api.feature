@@ -61,3 +61,23 @@ Feature: Web adapter HTTP admin API
     Given a SessionStore with a tape whose first message is from a user
     When a client GETs api sessions
     Then the row carries a preview field equal to the user message content
+
+  Scenario: GET api sessions id messages returns the projected history
+    Given a SessionStore with a tape carrying alternating user and assistant messages
+    When a client GETs api sessions id messages for that tape
+    Then the response messages list mirrors the loop projection in tape order
+
+  Scenario: Messages endpoint elides history before a compaction anchor
+    Given a SessionStore with a tape whose entries straddle a compaction anchor
+    When a client GETs api sessions id messages for that tape
+    Then the response replaces pre compaction entries with a system summary row
+
+  Scenario: Messages endpoint 404s when the session id is unknown
+    Given an admin router wired to an empty SessionStore
+    When a client GETs api sessions id messages for a missing id
+    Then the response status is 404
+
+  Scenario: Messages endpoint 503s when no session store is wired
+    Given an admin router with session_store None and workspace None
+    When a client GETs api sessions id messages for any id
+    Then the response status is 503

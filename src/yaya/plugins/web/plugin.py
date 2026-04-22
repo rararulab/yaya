@@ -419,10 +419,30 @@ class WebAdapter:
             )
 
     async def _handle_ws(self, ws: WebSocket) -> None:
-        """Run one WebSocket connection from accept to disconnect."""
+        """Run one WebSocket connection from accept to disconnect.
+
+        Resume path. If the client supplies ``?session=<id>`` AND the
+        id resolves to an existing tape for the current workspace,
+        bind the connection to that id so downstream events (the
+        agent loop's history hydration, the session persister's tape
+        opens) reach the same tape. Unknown ids fall back to a fresh
+        ``ws-<uuid>`` and log at INFO — operators can tell when a
+        stale tab tried to resume a deleted tape, and bad client
+        input never 500s.
+        """
         import uuid
 
         session_id = f"ws-{uuid.uuid4().hex[:8]}"
+        requested = ws.query_params.get("session") if ws.query_params else None
+        if requested:
+            resolved = await self._resolve_resume_session(requested)
+            if resolved is not None:
+                session_id = resolved
+            elif self._ctx is not None:
+                self._ctx.logger.info(
+                    "ws resume requested for unknown session %r; starting a fresh session",
+                    requested,
+                )
         await ws.accept()
         self._clients[session_id].add(ws)
         ctx = self._ctx
@@ -441,6 +461,31 @@ class WebAdapter:
                     # Self-clean (lesson #6): idle sessions must not
                     # leak queue entries in a long-running process.
                     self._clients.pop(session_id, None)
+
+    async def _resolve_resume_session(self, candidate: str) -> str | None:
+        """Return ``candidate`` if it matches a persisted session, else ``None``.
+
+        The sidebar's ``/api/sessions`` row carries a ``session_id``
+        field that is the hashed tape-name suffix — the same token
+        surfaces back here on ``?session=<id>``. We delegate to the
+        :class:`SessionStore`: listing the workspace's sessions and
+        matching on ``SessionInfo.session_id`` is the single source
+        of truth for "is this a known session?", and it degrades
+        safely when the store / workspace pair is not wired (tests,
+        transient paths).
+        """
+        ctx = self._ctx
+        if ctx is None or ctx.session_store is None:
+            return None
+        try:
+            infos = await ctx.session_store.list_sessions(Path.cwd())
+        except Exception as exc:
+            ctx.logger.debug("ws resume lookup failed: %s", exc)
+            return None
+        for info in infos:
+            if info.session_id == candidate:
+                return candidate
+        return None
 
     async def _handle_frame(
         self,

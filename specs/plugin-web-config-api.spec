@@ -79,8 +79,10 @@ authorization.
 - src/yaya/kernel/plugin.py
 - src/yaya/kernel/registry.py
 - src/yaya/kernel/config_store.py
+- src/yaya/kernel/session.py
 - src/yaya/plugins/llm_openai/plugin.py
 - tests/plugins/web/test_web_config_api.py
+- tests/plugins/web/test_web_sessions_api.py
 - tests/plugins/llm_openai/test_llm_openai.py
 - specs/plugin-web-config-api.spec
 - tests/bdd/features/plugin-web-config-api.feature
@@ -195,6 +197,42 @@ Scenario: Session list rows include a preview sourced from the first user messag
   Given a SessionStore with a tape whose first message is from a user
   When a client GETs api sessions
   Then the row carries a preview field equal to the user message content
+
+Scenario: GET api sessions id messages returns the projected history
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_messages_endpoint_returns_projected_history
+  Level: unit
+  Given a SessionStore with a tape carrying alternating user and assistant messages
+  When a client GETs api sessions id messages for that tape
+  Then the response messages list mirrors the loop projection in tape order
+
+Scenario: Messages endpoint elides history before a compaction anchor
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_messages_endpoint_elides_history_before_compaction_anchor
+  Level: unit
+  Given a SessionStore with a tape whose entries straddle a compaction anchor
+  When a client GETs api sessions id messages for that tape
+  Then the response replaces pre compaction entries with a system summary row
+
+Scenario: Messages endpoint 404s when the session id is unknown
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_messages_endpoint_404_when_id_unknown
+  Level: unit
+  Given an admin router wired to an empty SessionStore
+  When a client GETs api sessions id messages for a missing id
+  Then the response status is 404
+
+Scenario: Messages endpoint 503s when no session store is wired
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_sessions_api.py::test_messages_endpoint_503_when_no_store
+  Level: unit
+  Given an admin router with session_store None and workspace None
+  When a client GETs api sessions id messages for any id
+  Then the response status is 503
 
 ## Out of Scope
 

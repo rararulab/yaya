@@ -173,6 +173,24 @@ Scenario: Shipped static bundle is a real Vite build
   When its index.html is inspected
   Then it references Vite-hashed JS assets and no placeholder markers remain
 
+Scenario: WS handshake resumes an existing session when the session query param matches
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_adapter.py::test_ws_respects_session_query_param_for_existing_tape
+  Level: integration
+  Given a web adapter wired to a SessionStore with one persisted tape
+  When a websocket client connects with session query param equal to that tape id
+  Then the adapter binds the connection to that session id instead of minting a fresh one
+
+Scenario: WS handshake falls back to a fresh session id when the session query param is unknown
+  Test:
+    Package: yaya
+    Filter: tests/plugins/web/test_web_adapter.py::test_ws_falls_back_when_session_query_param_is_unknown
+  Level: integration
+  Given a web adapter wired to an empty SessionStore
+  When a websocket client connects with session query param pointing at no tape
+  Then the adapter binds the connection to a fresh ws id and logs an unknown session message
+
 ## Out of Scope
 
 - Authentication, authorization, and public-bind support — GOAL.md

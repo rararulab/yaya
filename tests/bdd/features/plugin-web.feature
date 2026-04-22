@@ -42,3 +42,13 @@ Feature: Web adapter plugin
     Given the packaged web plugin static directory
     When its index.html is inspected
     Then it references Vite-hashed JS assets and no placeholder markers remain
+
+  Scenario: WS handshake resumes an existing session when the session query param matches
+    Given a web adapter wired to a SessionStore with one persisted tape
+    When a websocket client connects with session query param equal to that tape id
+    Then the adapter binds the connection to that session id instead of minting a fresh one
+
+  Scenario: WS handshake falls back to a fresh session id when the session query param is unknown
+    Given a web adapter wired to an empty SessionStore
+    When a websocket client connects with session query param pointing at no tape
+    Then the adapter binds the connection to a fresh ws id and logs an unknown session message

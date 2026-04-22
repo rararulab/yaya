@@ -407,6 +407,44 @@ Extension events (`x.<plugin>.<kind>`) are forwarded transparently so
 plugin-private UI surfaces can receive their private events without
 kernel involvement.
 
+## Session resume (#159)
+
+Clicking a sidebar **Recent** row resumes the underlying persisted
+tape rather than starting a fresh session. The flow is:
+
+1. The row's `data-session-id` carries the value from
+   `SessionInfo.session_id` (the hashed tape suffix).
+2. The shell updates `location.hash` to `#/chat/<id>` via
+   `history.replaceState` so a reload sticks with the thread, then
+   dispatches a `yaya:resume-session` custom event.
+3. `<yaya-chat>` clears its `messages` / `pendingToolCalls` /
+   `streamingMessage` / `inFlight` state, fetches
+   `GET /api/sessions/<id>/messages`, and replays each
+   `{role, content}` row as a chat bubble (`system` rows from
+   compaction anchors are skipped — the next turn's prompt already
+   carries the summary).
+4. The existing WebSocket is torn down and a new one opens at
+   `/ws?session=<id>`. The adapter's handshake binds the connection
+   to `<id>` so downstream kernel events route to the same tape the
+   sidebar row points at. Unknown ids fall back to a fresh
+   `ws-<uuid>` and log at INFO — a stale tab never 500s the adapter.
+5. On the next user turn the agent loop hydrates prior messages
+   from the tape (PR #158) and the thread continues seamlessly.
+
+The `GET /api/sessions/{id}/messages` endpoint reuses the loop's own
+projection helper (`project_entries_to_messages` in
+`yaya.kernel.loop`) so the history view and the agent loop cannot
+drift. Tool-call replay fidelity is out of scope for v1; ReAct
+tool observations are persisted as user `"Observation: ..."`
+messages on the tape and therefore render correctly as plain
+bubbles without special handling.
+
+On page load, `<yaya-chat>.connectedCallback` inspects
+`location.hash` and auto-resumes `#/chat/<id>` when present — the
+same code path as the click handler. Fetch failures surface a toast
+and fall back to a fresh chat, so deleting a tape while a tab is
+open does not leave the UI stuck.
+
 ## Known 0.1 quirk: port handshake
 
 `yaya serve --port <P>` tells the kernel to use port `<P>`, but the

@@ -447,7 +447,7 @@
 <nav>
     <ul>
         <li><a href="#web-adapter-plugin">Web Adapter Plugin</a></li>
-        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#browser-routes-kimi-style-redesign-issue-108">Browser routes (kimi-style redesign, issue #108)</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#http-admin-api">HTTP admin API</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#session-resume-159">Session resume (#159)</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
+        <li><a href="#runtime-shape">Runtime shape</a></li><li><a href="#role-in-the-plugin-protocol">Role in the plugin protocol</a></li><li><a href="#source-layout">Source layout</a></li><li><a href="#browser-routes-kimi-style-redesign-issue-108">Browser routes (kimi-style redesign, issue #108)</a></li><li><a href="#pi-web-ui-whitelist-blacklist-dependency-rule">pi-web-ui whitelist / blacklist (Dependency Rule)</a></li><li><a href="#version-pinning">Version pinning</a></li><li><a href="#build-pipeline">Build pipeline</a></li><li><a href="#ci-rules">CI rules</a></li><li><a href="#http-admin-api">HTTP admin API</a></li><li><a href="#websocket-schema">WebSocket schema</a></li><li><a href="#session-resume-159">Session resume (#159)</a></li><li><a href="#session-crud-161">Session CRUD (#161)</a></li><li><a href="#known-01-quirk-port-handshake">Known 0.1 quirk: port handshake</a></li><li><a href="#multi-connection-fanout-integration-36">Multi-connection fanout integration (#36)</a></li><li><a href="#what-not-to-do">What NOT To Do</a></li>
     </ul>
 </nav>
 </aside>
@@ -985,6 +985,29 @@ bubbles without special handling.</p>
 same code path as the click handler. Fetch failures surface a toast
 and fall back to a fresh chat, so deleting a tape while a tab is
 open does not leave the UI stuck.</p>
+<h2 id="session-crud-161">Session CRUD (#161)<a class="headerlink" href="#session-crud-161" title="Permanent link">&para;</a></h2>
+<p>Each <strong>Recent</strong> row exposes a ⋯ button revealing Rename and Delete
+actions; right-click is deliberately not used so the affordance stays
+keyboard-reachable.</p>
+<ul>
+<li><strong>Rename</strong> replaces the row label with an inline <code>&lt;input&gt;</code>.
+  <code>Enter</code> commits via <code>PATCH /api/sessions/{id}</code> with
+  <code>{name: string}</code>; <code>Escape</code> cancels; <code>blur</code> commits as well. The
+  backend appends a <code>session/renamed</code> anchor carrying
+  <code>state={"name": &lt;stripped&gt;}</code>. <code>SessionStore.list_sessions</code> walks
+  anchors in tape order and returns the most recent rename's name as
+  <code>SessionInfo.name</code>, so renames persist across process restart and
+  multiple renames stack (newest wins).</li>
+<li><strong>Delete</strong> swaps the ⋯ button for a <code>Delete?</code> confirm chip. Clicking
+  it sends <code>DELETE /api/sessions/{id}</code>, which calls
+  <code>SessionStore.archive</code>: the current entries dump to
+  <code>&lt;tapes_dir&gt;/.archive/&lt;tape&gt;.jsonl.&lt;stamp&gt;.bak</code> (recoverable from
+  disk) and the live jsonl file is unlinked. No hard-delete surface is
+  exposed to the UI. When the deleted row matches the hash-encoded
+  active session, the sidebar resets the chat pane and reopens the WS
+  without <code>?session=</code> so the user lands on a fresh thread.</li>
+</ul>
+<p>The sidebar label priority is <code>name → preview → last_anchor → id</code>.</p>
 <h2 id="known-01-quirk-port-handshake">Known 0.1 quirk: port handshake<a class="headerlink" href="#known-01-quirk-port-handshake" title="Permanent link">&para;</a></h2>
 <p><code>yaya serve --port &lt;P&gt;</code> tells the kernel to use port <code>&lt;P&gt;</code>, but the
 web adapter plugin picks its own port from <code>YAYA_WEB_PORT</code> (default:

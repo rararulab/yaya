@@ -41,6 +41,7 @@ import type {
 	ToolResultChatMessage,
 	UserChatMessage,
 } from "./types.js";
+import { splitThoughtFromFinal } from "./thought-split.js";
 import { assertNever } from "./types.js";
 import { WsClient, defaultWsUrl } from "./ws-client.js";
 
@@ -900,6 +901,37 @@ export class YayaBubble extends LitElement {
 		const isUser = this.role === "user";
 		const align = isUser ? "justify-end" : "justify-start";
 		const skin = isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground";
+		// For assistant bubbles, fold any ReAct ``Thought:`` prefix
+		// behind a collapsed <details> so the user reads the Final
+		// Answer rather than the chain-of-thought. Non-ReAct content
+		// (echo-style providers, llm-echo, etc.) carries no label and
+		// falls through as a single body unchanged (#167).
+		//
+		// Streaming-safety: when the delta frame has landed
+		// ``Thought: ...`` but no ``Final Answer:`` yet, the helper
+		// returns ``{thought, answer: ""}`` — the <details> is
+		// collapsed by default so the user never sees a flash of raw
+		// reasoning before the final answer arrives. Once Final
+		// Answer: lands, re-render fills the answer body while the
+		// <details> stays collapsed.
+		if (!isUser) {
+			const { thought, answer } = splitThoughtFromFinal(this.content);
+			if (thought !== null) {
+				return html`
+					<div class="flex ${align} my-2">
+						<div class="max-w-[75%] rounded-lg px-3 py-2 text-sm ${skin}">
+							<details class="yaya-thought">
+								<summary class="yaya-thought-summary">Show reasoning</summary>
+								<div class="yaya-thought-body">${thought}</div>
+							</details>
+							${answer
+								? html`<div class="yaya-answer whitespace-pre-wrap">${answer}</div>`
+								: nothing}
+						</div>
+					</div>
+				`;
+			}
+		}
 		return html`
 			<div class="flex ${align} my-2">
 				<div class="max-w-[75%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${skin}">${this.content}</div>

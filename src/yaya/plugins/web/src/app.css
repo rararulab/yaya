@@ -950,6 +950,53 @@ yaya-app {
 	padding: 8px 10px 10px;
 }
 
+/* Collapsed-by-default ReAct reasoning block inside an assistant
+ * bubble (#167). Muted, smaller than the answer body so the final
+ * answer reads as the primary content. The <summary> chevron mirrors
+ * the tool-block affordance for visual consistency. */
+.yaya-thought {
+	margin: 0 0 6px;
+	font-size: 12px;
+	color: var(--yaya-text-secondary);
+}
+
+.yaya-thought-summary {
+	list-style: none;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	user-select: none;
+	color: var(--yaya-text-secondary);
+}
+
+.yaya-thought-summary::-webkit-details-marker {
+	display: none;
+}
+
+.yaya-thought-summary::before {
+	content: "▸";
+	font-size: 10px;
+	color: var(--yaya-text-secondary);
+	transition: transform 120ms ease;
+}
+
+.yaya-thought[open] > .yaya-thought-summary::before {
+	transform: rotate(90deg);
+}
+
+.yaya-thought-body {
+	margin-top: 4px;
+	padding: 6px 8px;
+	border-left: 2px solid var(--yaya-border);
+	white-space: pre-wrap;
+	color: var(--yaya-text-secondary);
+}
+
+.yaya-answer {
+	color: inherit;
+}
+
 /* Historical-provider resume banner (#163). Inline (not modal) so the
  * transcript remains readable; two explicit actions so a resume never
  * silently switches provider. */

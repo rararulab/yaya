@@ -187,6 +187,56 @@ describe("YayaChat hydrateFrames (#162)", () => {
 	});
 });
 
+describe("YayaBubble ReAct thought folding (#167)", () => {
+	async function renderBubble(role: "user" | "assistant", content: string): Promise<HTMLElement> {
+		const el = document.createElement("yaya-bubble") as HTMLElement & {
+			role: string;
+			content: string;
+			updateComplete: Promise<unknown>;
+		};
+		el.role = role;
+		el.content = content;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		return el;
+	}
+
+	it("folds Thought into a collapsed <details> and shows the Final Answer", async () => {
+		const el = await renderBubble(
+			"assistant",
+			"Thought: because\nFinal Answer: hello",
+		);
+		const details = el.querySelectorAll("details.yaya-thought");
+		expect(details).toHaveLength(1);
+		const summary = details[0]?.querySelector("summary");
+		expect(summary?.textContent?.trim()).toBe("Show reasoning");
+		expect((details[0] as HTMLDetailsElement).open).toBe(false);
+		const answer = el.querySelector(".yaya-answer");
+		expect(answer?.textContent).toBe("hello");
+		el.remove();
+	});
+
+	it("renders plain assistant content without a <details> wrapper", async () => {
+		const el = await renderBubble("assistant", "just a reply");
+		expect(el.querySelectorAll("details.yaya-thought")).toHaveLength(0);
+		expect(el.textContent).toContain("just a reply");
+		el.remove();
+	});
+
+	it("renders user bubbles verbatim even when they look like ReAct text", async () => {
+		const el = await renderBubble("user", "Thought: hmm\nFinal Answer: ok");
+		expect(el.querySelectorAll("details.yaya-thought")).toHaveLength(0);
+		el.remove();
+	});
+
+	it("keeps the answer area empty while mid-stream (Thought only, no Final Answer)", async () => {
+		const el = await renderBubble("assistant", "Thought: partial reasoning");
+		expect(el.querySelectorAll("details.yaya-thought")).toHaveLength(1);
+		expect(el.querySelector(".yaya-answer")).toBeNull();
+		el.remove();
+	});
+});
+
 describe("YayaChat toast lifecycle (bug #71 P3)", () => {
 	it("keeps error toasts until dismissed", () => {
 		const shell = makeShell();

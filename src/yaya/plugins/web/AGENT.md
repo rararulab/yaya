@@ -109,6 +109,7 @@ src/yaya/plugins/web/
 │   ├── app.css         # kimi theme tokens + pi-web-ui base
 │   ├── app-shell.ts    # <yaya-app> sidebar + hash router (kimi layout)
 │   ├── chat-shell.ts   # <yaya-chat> chat transcript + empty-state hero; multiline textarea, plain Enter submits (kimi-style, Shift+Enter = newline)
+│   ├── thought-split.ts# splitThoughtFromFinal() — folds ReAct `Thought:` behind <details> so assistant bubbles surface only the Final Answer (#167)
 │   ├── settings-view.ts# <yaya-settings> tabs (lazy chunk)
 │   ├── schema-form.ts  # JSON-Schema-driven form (depth 1)
 │   ├── store.ts        # createStore<T>() reactive primitive
@@ -120,6 +121,7 @@ src/yaya/plugins/web/
 │   └── __tests__/
 │       ├── ws-client.test.ts
 │       ├── chat-shell.test.ts
+│       ├── thought-split.test.ts
 │       ├── store.test.ts
 │       ├── schema-form.test.ts
 │       ├── settings-modal.test.ts

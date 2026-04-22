@@ -51,12 +51,36 @@ def _kernel_ctx(bus: EventBus, tmp_path: Path, plugin_name: str) -> KernelContex
     )
 
 
-def _fake_completion(text: str = "hi there") -> SimpleNamespace:
-    """Build a small object matching the SDK completion shape used here."""
-    message = SimpleNamespace(content=text, tool_calls=None)
-    choice = SimpleNamespace(message=message)
-    usage = SimpleNamespace(prompt_tokens=7, completion_tokens=3)
-    return SimpleNamespace(choices=[choice], usage=usage)
+def _fake_completion(text: str = "hi there", *, chunks: list[str] | None = None) -> Any:
+    """Return an async-iterator stub matching the streaming SDK shape (#168).
+
+    The plugin calls ``chat.completions.create`` with ``stream=True``
+    and iterates the result. Each yielded chunk carries a
+    ``choices[0].delta.content`` piece; the trailing chunk emits
+    ``usage`` per ``stream_options={"include_usage": True}``.
+    """
+    body = chunks if chunks is not None else [text]
+
+    async def _iter() -> Any:
+        for piece in body:
+            delta = SimpleNamespace(content=piece, tool_calls=None)
+            choice = SimpleNamespace(delta=delta)
+            yield SimpleNamespace(choices=[choice], usage=None)
+        yield SimpleNamespace(
+            choices=[],
+            usage=SimpleNamespace(prompt_tokens=7, completion_tokens=3),
+        )
+
+    return _iter()
+
+
+def _streaming_create_mock(*, chunks: list[str] | None = None, text: str = "hi there") -> AsyncMock:
+    """Build an ``AsyncMock`` whose every call returns a fresh streaming iterator."""
+
+    async def _call(**_: Any) -> Any:
+        return _fake_completion(text=text, chunks=chunks)
+
+    return AsyncMock(side_effect=_call)
 
 
 def _last_payload(ctx: BDDContext) -> dict[str, Any]:
@@ -86,7 +110,7 @@ def _configured_openai(
     loop.run_until_complete(plugin.on_load(kernel_ctx))
 
     stub_client = MagicMock()
-    stub_client.chat.completions.create = AsyncMock(return_value=_fake_completion())
+    stub_client.chat.completions.create = _streaming_create_mock()
     stub_client.close = AsyncMock(return_value=None)
     # D4b: instance-dispatch keyed by provider id. Register a stub
     # client under the id the scenario will publish against.
@@ -235,6 +259,74 @@ def _openai_error_string(ctx: BDDContext) -> None:
     assert errors, "no error event was captured"
     payload = errors[-1].payload
     assert "rate limited" in payload["error"]
+    assert payload["request_id"] == ctx.extras["last_request"].id
+
+
+# -- streaming (#168) --------------------------------------------------------
+
+
+_STREAM_CHUNKS: tuple[str, ...] = ("Hel", "lo, ", "world!")
+
+
+@given("a configured llm-openai plugin whose stubbed client streams N content chunks")
+def _streaming_openai(
+    ctx: BDDContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    plugin = OpenAIProvider()
+    bus = EventBus()
+    kernel_ctx = _kernel_ctx(bus, tmp_path, plugin.name)
+    loop.run_until_complete(plugin.on_load(kernel_ctx))
+
+    stub_client = MagicMock()
+    stub_client.chat.completions.create = _streaming_create_mock(chunks=list(_STREAM_CHUNKS))
+    stub_client.close = AsyncMock(return_value=None)
+    plugin._clients["openai"] = stub_client
+
+    async def handler(ev: Event) -> None:
+        await plugin.on_event(ev, kernel_ctx)
+
+    captured: list[Event] = []
+    errors: list[Event] = []
+    deltas: list[Event] = []
+    bus.subscribe("llm.call.request", handler, source=plugin.name)
+    bus.subscribe("llm.call.response", lambda ev: _append_async(captured, ev), source="bdd")
+    bus.subscribe("llm.call.delta", lambda ev: _append_async(deltas, ev), source="bdd")
+    bus.subscribe("llm.call.error", lambda ev: _append_async(errors, ev), source="bdd")
+    ctx.bus = bus
+    ctx.extras.update({
+        "plugin": plugin,
+        "kernel_ctx": kernel_ctx,
+        "stub_client": stub_client,
+        "captured": captured,
+        "deltas": deltas,
+        "errors": errors,
+        "openai_provider": "openai",
+        "expected_chunks": list(_STREAM_CHUNKS),
+    })
+
+
+@then("N llm.call.delta events are emitted in order carrying the originating request id")
+def _streaming_deltas_in_order(ctx: BDDContext) -> None:
+    deltas = ctx.extras.get("deltas", [])
+    chunks = ctx.extras.get("expected_chunks", [])
+    assert [d.payload["content"] for d in deltas] == chunks
+    req_id = ctx.extras["last_request"].id
+    for d in deltas:
+        assert d.payload["request_id"] == req_id
+
+
+@then("a single llm.call.response event is emitted with the aggregated text and the originating request id")
+def _streaming_final_response(ctx: BDDContext) -> None:
+    responses = ctx.extras.get("captured", [])
+    assert len(responses) == 1
+    payload = responses[0].payload
+    chunks = ctx.extras.get("expected_chunks", [])
+    assert payload["text"] == "".join(chunks)
     assert payload["request_id"] == ctx.extras["last_request"].id
 
 

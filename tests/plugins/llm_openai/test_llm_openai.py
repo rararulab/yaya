@@ -60,12 +60,44 @@ def _fake_completion(
     *,
     input_tokens: int = 7,
     output_tokens: int = 3,
-) -> SimpleNamespace:
-    """Build a stub mirroring the SDK's chat.completion object shape."""
-    message = SimpleNamespace(content=text, tool_calls=None)
-    choice = SimpleNamespace(message=message)
-    usage = SimpleNamespace(prompt_tokens=input_tokens, completion_tokens=output_tokens)
-    return SimpleNamespace(choices=[choice], usage=usage)
+    chunks: list[str] | None = None,
+) -> Any:
+    """Return an async-iterator stub matching the SDK's streaming shape.
+
+    After #168 the plugin always passes ``stream=True``; each chunk
+    carries a ``choices[0].delta.content`` string. A trailing chunk
+    with empty ``choices`` and a populated ``usage`` mirrors OpenAI's
+    ``stream_options={"include_usage": True}`` behaviour.
+    """
+    body = chunks if chunks is not None else [text]
+
+    async def _iter() -> Any:
+        for piece in body:
+            delta = SimpleNamespace(content=piece, tool_calls=None)
+            choice = SimpleNamespace(delta=delta)
+            yield SimpleNamespace(choices=[choice], usage=None)
+        # Final usage chunk.
+        yield SimpleNamespace(
+            choices=[],
+            usage=SimpleNamespace(prompt_tokens=input_tokens, completion_tokens=output_tokens),
+        )
+
+    return _iter()
+
+
+def _streaming_create(**cfg: Any) -> AsyncMock:
+    """Build an ``AsyncMock`` whose return value yields a fresh stream per call.
+
+    ``chat.completions.create`` is awaitable in the SDK; we stub it as
+    an :class:`AsyncMock` whose ``side_effect`` returns a brand-new
+    async iterator each invocation so tests that publish multiple
+    requests get independent streams.
+    """
+
+    async def _call(**_: Any) -> Any:
+        return _fake_completion(**cfg)
+
+    return AsyncMock(side_effect=_call)
 
 
 async def _seed_instance(
@@ -99,7 +131,7 @@ async def test_successful_completion_emits_response(tmp_path: Path, monkeypatch:
         await plugin.on_load(ctx)
         # Swap the live client for a stub so we don't hit the network.
         stub_client = MagicMock()
-        stub_client.chat.completions.create = AsyncMock(return_value=_fake_completion())
+        stub_client.chat.completions.create = _streaming_create()
         plugin._clients["llm-openai"] = stub_client
 
         async def _handler(ev: Event) -> None:
@@ -211,7 +243,7 @@ async def test_non_matching_provider_is_ignored(tmp_path: Path, monkeypatch: pyt
         await plugin.on_load(ctx)
 
         stub_client = MagicMock()
-        stub_client.chat.completions.create = AsyncMock(return_value=_fake_completion())
+        stub_client.chat.completions.create = _streaming_create()
         plugin._clients["llm-openai"] = stub_client
 
         async def _handler(ev: Event) -> None:
@@ -323,7 +355,7 @@ async def test_two_instances_route_to_distinct_clients(tmp_path: Path, monkeypat
             self._base = kwargs.get("base_url", "<default>")
             self.chat = SimpleNamespace(
                 completions=SimpleNamespace(
-                    create=AsyncMock(return_value=_fake_completion(text=f"from {self._base}")),
+                    create=_streaming_create(text=f"from {self._base}"),
                 ),
             )
 
@@ -829,6 +861,310 @@ def test_strip_reasoning_tags_multiple_blocks() -> None:
 
     raw = "<think>first</think> A <think>second</think> B"
     assert _strip_reasoning_tags(raw) == "A  B"
+
+
+def test_stream_think_filter_splits_open_tag_across_chunks() -> None:
+    """Chunks that split ``<think>`` and ``</think>`` across boundaries never leak markers."""
+    from yaya.plugins.llm_openai.plugin import _StreamThinkFilter
+
+    f = _StreamThinkFilter()
+    visible: list[str] = []
+    for chunk in ["pre ", "<thi", "nk>hidden reason", "ing</thi", "nk>", "post"]:
+        v, _ = f.feed(chunk)
+        visible.append(v)
+    tail, _ = f.flush()
+    visible.append(tail)
+    full = "".join(visible)
+    assert "think" not in full
+    assert full == "pre post"
+    assert f.stripped_any is True
+
+
+def test_stream_think_filter_handles_multiple_spans() -> None:
+    """Sequential ``<think>`` blocks interleaved with visible text pass the visible parts."""
+    from yaya.plugins.llm_openai.plugin import _StreamThinkFilter
+
+    f = _StreamThinkFilter()
+    visible, _ = f.feed("A <think>x</think> B <think>y</think> C")
+    tail, _ = f.flush()
+    assert visible + tail == "A  B  C"
+
+
+def test_stream_think_filter_passes_angle_text_that_is_not_think() -> None:
+    """A literal ``<`` that is not the start of ``<think>`` is emitted."""
+    from yaya.plugins.llm_openai.plugin import _StreamThinkFilter
+
+    f = _StreamThinkFilter()
+    out = f.feed("x<br>y")
+    tail, _ = f.flush()
+    assert out[0] + tail == "x<br>y"
+
+
+def test_stream_think_filter_drops_unclosed_tag_on_flush() -> None:
+    """A stream that ends mid-``<think>`` discards the body (matches regex behaviour)."""
+    from yaya.plugins.llm_openai.plugin import _StreamThinkFilter
+
+    f = _StreamThinkFilter()
+    pre, _ = f.feed("hello <think>still thinkin")
+    tail, _ = f.flush()
+    assert pre == "hello "
+    assert tail == ""
+
+
+async def test_create_streams_deltas_then_final_response(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each streamed chunk produces one llm.call.delta; the final llm.call.response aggregates them."""
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    plugin = OpenAIProvider()
+    bus = EventBus()
+    store = await _make_store(tmp_path, bus)
+    try:
+        await _seed_instance(store, "llm-openai", api_key="sk-test")
+        ctx = _make_ctx(bus, tmp_path, plugin, store=store)
+        await plugin.on_load(ctx)
+
+        stub_client = MagicMock()
+        stub_client.chat.completions.create = _streaming_create(
+            chunks=["Hel", "lo, ", "world!"],
+            input_tokens=5,
+            output_tokens=9,
+        )
+        plugin._clients["llm-openai"] = stub_client
+
+        async def _handler(ev: Event) -> None:
+            await plugin.on_event(ev, ctx)
+
+        bus.subscribe("llm.call.request", _handler, source=plugin.name)
+
+        deltas: list[Event] = []
+        responses: list[Event] = []
+
+        async def _delta(ev: Event) -> None:
+            deltas.append(ev)
+
+        async def _resp(ev: Event) -> None:
+            responses.append(ev)
+
+        bus.subscribe("llm.call.delta", _delta, source="observer")
+        bus.subscribe("llm.call.response", _resp, source="observer")
+
+        req = new_event(
+            "llm.call.request",
+            {
+                "provider": "llm-openai",
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "hi"}],
+                "params": {},
+            },
+            session_id="sess-stream",
+            source="kernel",
+        )
+        await bus.publish(req)
+
+        # stream_options included in create kwargs.
+        kwargs = stub_client.chat.completions.create.await_args.kwargs
+        assert kwargs["stream"] is True
+        assert kwargs["stream_options"] == {"include_usage": True}
+
+        assert [d.payload["content"] for d in deltas] == ["Hel", "lo, ", "world!"]
+        for d in deltas:
+            assert d.payload["request_id"] == req.id
+
+        assert len(responses) == 1
+        payload = responses[0].payload
+        assert payload["text"] == "Hello, world!"
+        assert payload["tool_calls"] == []
+        assert payload["usage"] == {"input_tokens": 5, "output_tokens": 9}
+        assert payload["request_id"] == req.id
+
+        await plugin.on_unload(ctx)
+    finally:
+        await store.close()
+
+
+async def test_think_tags_stripped_across_chunk_boundaries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Streamed chunks that split ``<think>`` never leak tag bytes into deltas, and the aggregated response matches the non-streaming strip behaviour."""
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    plugin = OpenAIProvider()
+    bus = EventBus()
+    store = await _make_store(tmp_path, bus)
+    try:
+        await _seed_instance(store, "llm-openai", api_key="sk-test")
+        ctx = _make_ctx(bus, tmp_path, plugin, store=store)
+        await plugin.on_load(ctx)
+
+        stub_client = MagicMock()
+        stub_client.chat.completions.create = _streaming_create(
+            chunks=["<thi", "nk>plan", "ning</thi", "nk>\n\n", "answer."],
+        )
+        plugin._clients["llm-openai"] = stub_client
+
+        async def _handler(ev: Event) -> None:
+            await plugin.on_event(ev, ctx)
+
+        bus.subscribe("llm.call.request", _handler, source=plugin.name)
+
+        deltas: list[Event] = []
+        responses: list[Event] = []
+
+        async def _delta(ev: Event) -> None:
+            deltas.append(ev)
+
+        async def _resp(ev: Event) -> None:
+            responses.append(ev)
+
+        bus.subscribe("llm.call.delta", _delta, source="observer")
+        bus.subscribe("llm.call.response", _resp, source="observer")
+
+        req = new_event(
+            "llm.call.request",
+            {
+                "provider": "llm-openai",
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "hi"}],
+                "params": {},
+            },
+            session_id="sess-think",
+            source="kernel",
+        )
+        await bus.publish(req)
+
+        # No delta may contain any think marker byte.
+        for d in deltas:
+            assert "think" not in d.payload["content"]
+            assert "<" not in d.payload["content"] or d.payload["content"] == "<"
+
+        assert len(responses) == 1
+        # Matches the non-streaming strip behaviour (``.strip()`` on
+        # the post-regex text) from #149.
+        assert responses[0].payload["text"] == "answer."
+
+        await plugin.on_unload(ctx)
+    finally:
+        await store.close()
+
+
+async def test_stream_error_emits_call_error_not_response(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An exception raised mid-stream surfaces as llm.call.error with no fabricated response."""
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    plugin = OpenAIProvider()
+    bus = EventBus()
+    store = await _make_store(tmp_path, bus)
+    try:
+        await _seed_instance(store, "llm-openai", api_key="sk-test")
+        ctx = _make_ctx(bus, tmp_path, plugin, store=store)
+        await plugin.on_load(ctx)
+
+        async def _broken_stream() -> Any:
+            delta = SimpleNamespace(content="ok so far", tool_calls=None)
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=delta)], usage=None)
+            raise RuntimeError("connection dropped")
+
+        async def _call(**_: Any) -> Any:
+            return _broken_stream()
+
+        stub_client = MagicMock()
+        stub_client.chat.completions.create = AsyncMock(side_effect=_call)
+        plugin._clients["llm-openai"] = stub_client
+
+        async def _handler(ev: Event) -> None:
+            await plugin.on_event(ev, ctx)
+
+        bus.subscribe("llm.call.request", _handler, source=plugin.name)
+
+        responses: list[Event] = []
+        errors: list[Event] = []
+
+        async def _r(ev: Event) -> None:
+            responses.append(ev)
+
+        async def _e(ev: Event) -> None:
+            errors.append(ev)
+
+        bus.subscribe("llm.call.response", _r, source="observer")
+        bus.subscribe("llm.call.error", _e, source="observer")
+
+        req = new_event(
+            "llm.call.request",
+            {
+                "provider": "llm-openai",
+                "model": "gpt-4o-mini",
+                "messages": [],
+                "params": {},
+            },
+            session_id="sess-mid-err",
+            source="kernel",
+        )
+        await bus.publish(req)
+
+        assert responses == []
+        assert len(errors) == 1
+        assert "connection dropped" in errors[0].payload["error"]
+        assert errors[0].payload["request_id"] == req.id
+
+        await plugin.on_unload(ctx)
+    finally:
+        await store.close()
+
+
+async def test_stream_without_usage_support_returns_usage_null(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """OpenAI-compatible endpoints that drop ``stream_options`` yield a response with ``usage=None``."""
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    plugin = OpenAIProvider()
+    bus = EventBus()
+    store = await _make_store(tmp_path, bus)
+    try:
+        await _seed_instance(store, "llm-openai", api_key="sk-test")
+        ctx = _make_ctx(bus, tmp_path, plugin, store=store)
+        await plugin.on_load(ctx)
+
+        async def _no_usage_stream() -> Any:
+            delta = SimpleNamespace(content="hi there", tool_calls=None)
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=delta)], usage=None)
+
+        async def _call(**_: Any) -> Any:
+            return _no_usage_stream()
+
+        stub_client = MagicMock()
+        stub_client.chat.completions.create = AsyncMock(side_effect=_call)
+        plugin._clients["llm-openai"] = stub_client
+
+        async def _handler(ev: Event) -> None:
+            await plugin.on_event(ev, ctx)
+
+        bus.subscribe("llm.call.request", _handler, source=plugin.name)
+
+        responses: list[Event] = []
+
+        async def _r(ev: Event) -> None:
+            responses.append(ev)
+
+        bus.subscribe("llm.call.response", _r, source="observer")
+
+        req = new_event(
+            "llm.call.request",
+            {
+                "provider": "llm-openai",
+                "model": "gpt-4o-mini",
+                "messages": [],
+                "params": {},
+            },
+            session_id="sess-no-usage",
+            source="kernel",
+        )
+        await bus.publish(req)
+
+        assert len(responses) == 1
+        payload = responses[0].payload
+        assert payload["text"] == "hi there"
+        assert payload["usage"] is None
+
+        await plugin.on_unload(ctx)
+    finally:
+        await store.close()
 
 
 def test_strip_reasoning_tags_only_thinking_collapses_to_empty() -> None:

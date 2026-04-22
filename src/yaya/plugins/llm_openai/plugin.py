@@ -9,10 +9,17 @@ therefore backs many operator-configured instances — e.g. "OpenAI
 prod", "Azure OpenAI", "local-LM-Studio" — each with its own
 ``api_key``, ``base_url``, and ``model`` fields.
 
-Non-streaming chat completions only at 0.1; streaming is tracked in
-the adapter-plugin spec. Every response event echoes ``request_id``
-so the agent loop's ``_RequestTracker`` correlates concurrent calls
-(lesson #15 in ``docs/wiki/lessons-learned.md``).
+Chat completions stream by default (#168): the plugin passes
+``stream=True`` with ``stream_options={"include_usage": True}`` and
+consumes the SDK's async iterator, emitting one ``llm.call.delta``
+per user-visible text chunk and a final ``llm.call.response`` with
+the aggregated content plus usage (when the upstream provides it).
+``<think>...</think>`` reasoning tags are filtered via a chunk-
+boundary-safe state machine (:class:`_StreamThinkFilter`) so partial
+tags never leak to adapters and the aggregated response matches the
+non-streaming behaviour from #149. Every response event echoes
+``request_id`` so the agent loop's ``_RequestTracker`` correlates
+concurrent calls (lesson #15 in ``docs/wiki/lessons-learned.md``).
 
 Hot-reload is per-instance: a ``config.updated`` event whose key sits
 under ``providers.<id>.`` rebuilds *only* that instance's client.
@@ -302,11 +309,33 @@ class OpenAIProvider:
             self._clients[inst.id] = client
 
     async def _dispatch(self, ev: Event, ctx: KernelContext, instance_id: str) -> None:
-        """Invoke chat completions and emit ``llm.call.response``.
+        """Stream chat completions and emit deltas + a final response.
+
+        The SDK is invoked with ``stream=True`` and
+        ``stream_options={"include_usage": True}``. Each chunk's
+        ``delta.content`` is fed through a
+        :class:`_StreamThinkFilter` so ``<think>...</think>`` spans
+        (even when split across chunk boundaries) are suppressed
+        from ``llm.call.delta`` events and from the aggregated
+        ``llm.call.response`` text — matching the non-streaming
+        behaviour that #149 introduced.
+
+        The final ``llm.call.response`` carries:
+
+        * ``text`` — aggregated post-filter content.
+        * ``tool_calls`` — list of accumulated tool calls. Chunks
+          deliver tool calls via ``delta.tool_calls`` indexed by
+          ``index``; we reassemble by index and normalise through
+          :func:`_tool_call_to_dict`.
+        * ``usage`` — ``{"input_tokens": int, "output_tokens": int}``
+          when the upstream supports ``stream_options.include_usage``
+          (OpenAI-native). ``None`` on providers that ignore the
+          option (some OpenAI-compatible endpoints).
 
         Model selection is a live read against
-        :attr:`ctx.providers` so ``yaya config set providers.<id>.model
-        gpt-4.1`` takes effect on the next turn without a rebuild.
+        :attr:`ctx.providers` so ``yaya config set
+        providers.<id>.model gpt-4.1`` takes effect on the next turn
+        without a rebuild.
         """
         client = self._clients[instance_id]
         model = self._resolve_model(ctx, instance_id, ev.payload)
@@ -317,6 +346,11 @@ class OpenAIProvider:
         create_kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
+            "stream": True,
+            # Opt into the final usage chunk. OpenAI-native honors this;
+            # endpoints that don't understand ``stream_options`` should
+            # ignore it (and we tolerate a missing usage below).
+            "stream_options": {"include_usage": True},
         }
         if tools:
             create_kwargs["tools"] = tools
@@ -324,34 +358,30 @@ class OpenAIProvider:
         # The SDK typing union (ChatCompletion | AsyncStream[...]) widens
         # everything past this point to Any — that matches the tests'
         # stub-client pattern and the runtime shape we actually emit.
-        completion: Any = await client.chat.completions.create(**create_kwargs)  # pyright: ignore[reportUnknownVariableType]
+        stream: Any = await client.chat.completions.create(**create_kwargs)  # pyright: ignore[reportUnknownVariableType]
 
-        choices_raw: Any = completion.choices or []  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        choices: list[Any] = list(choices_raw) if choices_raw else []  # pyright: ignore[reportUnknownArgumentType]
-        choice: Any = choices[0] if choices else None
-        message: Any = choice.message if choice is not None else None
-        raw_text: str = getattr(message, "content", "") or ""
-        # Strip inline ``<think>...</think>`` reasoning blocks that
-        # MiniMax / DeepSeek-R1 style models embed in ``content``.
-        # Replaying those tags verbatim in the next
-        # ``llm.call.request`` history leaves the model echoing only
-        # more reasoning on turn 2 with no visible output — the chat
-        # then looks single-round because ``assistant.message.done``
-        # falls back to turn 1's thinking-only text (#149).
-        text: str = _strip_reasoning_tags(raw_text)
-        raw_tool_calls_obj: Any = getattr(message, "tool_calls", None) or []
-        raw_tool_calls: list[Any] = list(raw_tool_calls_obj) if raw_tool_calls_obj else []
-        tool_calls = [_tool_call_to_dict(tc) for tc in raw_tool_calls]
+        think_filter = _StreamThinkFilter()
+        aggregated: list[str] = []
+        tool_call_buf: dict[int, dict[str, Any]] = {}
+        usage_obj: Any = None
 
-        usage_obj: Any = getattr(completion, "usage", None)  # pyright: ignore[reportUnknownArgumentType]
-        usage: dict[str, int] = {}
-        if usage_obj is not None:
-            input_tokens = getattr(usage_obj, "prompt_tokens", None)
-            output_tokens = getattr(usage_obj, "completion_tokens", None)
-            if input_tokens is not None:
-                usage["input_tokens"] = int(input_tokens)
-            if output_tokens is not None:
-                usage["output_tokens"] = int(output_tokens)
+        async for chunk in stream:  # pyright: ignore[reportUnknownVariableType]
+            usage_obj = await self._consume_chunk(ev, ctx, chunk, think_filter, aggregated, tool_call_buf, usage_obj)
+
+        # Drain any buffer the filter was sitting on when the stream ended.
+        tail_visible, tail_retained = think_filter.flush()
+        if tail_retained:
+            aggregated.append(tail_retained)
+        if tail_visible:
+            await ctx.emit(
+                "llm.call.delta",
+                {"request_id": ev.id, "content": tail_visible},
+                session_id=ev.session_id,
+            )
+
+        text = "".join(aggregated).strip() if think_filter.stripped_any else "".join(aggregated)
+        tool_calls = [_tool_call_to_dict(tc) for tc in tool_call_buf.values()]
+        usage = _extract_usage(usage_obj)
 
         await ctx.emit(
             "llm.call.response",
@@ -363,6 +393,53 @@ class OpenAIProvider:
             },
             session_id=ev.session_id,
         )
+
+    @staticmethod
+    async def _consume_chunk(
+        ev: Event,
+        ctx: KernelContext,
+        chunk: Any,
+        think_filter: _StreamThinkFilter,
+        aggregated: list[str],
+        tool_call_buf: dict[int, dict[str, Any]],
+        usage_obj: Any,
+    ) -> Any:
+        """Absorb one streamed chunk; return the (possibly updated) ``usage`` sentinel.
+
+        Extracted from :meth:`_dispatch` to keep its cyclomatic
+        complexity under the lint gate — the per-chunk work has its
+        own branching (usage trailer vs content chunk vs tool-call
+        chunk) that would otherwise inflate the async-for body.
+        """
+        chunk_usage: Any = getattr(chunk, "usage", None)
+        if chunk_usage is not None:
+            usage_obj = chunk_usage
+
+        choices_raw: Any = getattr(chunk, "choices", None) or []
+        choices: list[Any] = list(choices_raw) if choices_raw else []
+        if not choices:
+            return usage_obj
+        delta: Any = getattr(choices[0], "delta", None)
+        if delta is None:
+            return usage_obj
+
+        content_piece_any: Any = getattr(delta, "content", None)
+        if isinstance(content_piece_any, str) and content_piece_any:
+            visible, retained = think_filter.feed(content_piece_any)
+            if retained:
+                aggregated.append(retained)
+            if visible:
+                await ctx.emit(
+                    "llm.call.delta",
+                    {"request_id": ev.id, "content": visible},
+                    session_id=ev.session_id,
+                )
+
+        delta_tool_calls_any: Any = getattr(delta, "tool_calls", None) or []
+        if delta_tool_calls_any:
+            for partial in list(delta_tool_calls_any):
+                _merge_tool_call_chunk(tool_call_buf, partial)
+        return usage_obj
 
     @staticmethod
     def _resolve_model(ctx: KernelContext, instance_id: str, payload: dict[str, Any]) -> str:
@@ -413,6 +490,192 @@ class OpenAIProvider:
 
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_THINK_OPEN = "<think>"
+_THINK_CLOSE = "</think>"
+
+
+class _StreamThinkFilter:
+    """Chunk-boundary-safe filter for inline ``<think>...</think>`` spans.
+
+    The non-streaming path uses :func:`_strip_reasoning_tags`, a
+    single regex pass. Streaming cannot: a chunk may arrive mid-tag
+    (``"<thi"`` / ``"nk>reasoning"`` / ``"</think>done"``) and
+    emitting any of those bytes to adapters would either flash raw
+    markers at the user or leak reasoning into the UI bubble.
+
+    State machine:
+
+    * ``OUTSIDE``: buffering until we are sure the trailing bytes are
+      not the start of ``<think>``. When we encounter ``<`` we hold
+      everything from that point until either the full ``<think>``
+      open tag is matched (→ ``INSIDE``) or enough following bytes
+      prove it is NOT a ``<think>`` open (→ flush the held bytes
+      back to ``visible``).
+    * ``INSIDE``: buffering and suppressing every byte until the
+      ``</think>`` close tag lands. On close, flip back to
+      ``OUTSIDE`` and continue — trailing bytes from the same chunk
+      are processed recursively so one chunk closing a span and
+      starting the next segment still emits the tail.
+
+    Returns on :meth:`feed` a pair ``(visible, retained)`` where
+    ``visible`` is what adapters should see immediately (``delta``
+    events) and ``retained`` is what the aggregated response text
+    should accumulate — the two are the same under normal operation
+    (we only emit bytes we plan to keep) but are returned separately
+    so future consumers can diverge (e.g. debug-log thought spans
+    while not emitting them).
+    """
+
+    __slots__ = ("_buf", "_in_think", "stripped_any")
+
+    def __init__(self) -> None:
+        self._buf: str = ""
+        self._in_think: bool = False
+        self.stripped_any: bool = False
+        """Whether any ``<think>`` span was observed — mirrors the
+        post-regex ``.strip()`` call in :func:`_strip_reasoning_tags`
+        so the aggregated output matches byte-for-byte on the common
+        MiniMax pattern."""
+
+    def feed(self, chunk: str) -> tuple[str, str]:
+        """Consume one streamed chunk and return ``(visible, retained)``."""
+        self._buf += chunk
+        visible_parts: list[str] = []
+        while self._buf:
+            if self._in_think:
+                if not self._step_inside():
+                    break
+                continue
+            if not self._step_outside(visible_parts):
+                break
+        visible = "".join(visible_parts)
+        return visible, visible
+
+    def _step_inside(self) -> bool:
+        """Advance while inside a ``<think>`` span; return True to keep stepping."""
+        close_idx = self._buf.find(_THINK_CLOSE)
+        if close_idx == -1:
+            # Retain only the trailing bytes that could still be a
+            # partial close tag (``</``, ``</t``, ...); drop the
+            # rest — it is safely inside the span.
+            keep = 0
+            for n in range(1, min(len(_THINK_CLOSE), len(self._buf) + 1)):
+                if _THINK_CLOSE.startswith(self._buf[-n:]):
+                    keep = n
+            self._buf = self._buf[-keep:] if keep else ""
+            return False
+        self._buf = self._buf[close_idx + len(_THINK_CLOSE) :]
+        self._in_think = False
+        self.stripped_any = True
+        return True
+
+    def _step_outside(self, visible_parts: list[str]) -> bool:
+        """Advance while outside a ``<think>`` span; return True to keep stepping."""
+        lt_idx = self._buf.find("<")
+        if lt_idx == -1:
+            visible_parts.append(self._buf)
+            self._buf = ""
+            return False
+        if lt_idx > 0:
+            visible_parts.append(self._buf[:lt_idx])
+            self._buf = self._buf[lt_idx:]
+        if len(self._buf) < len(_THINK_OPEN):
+            if _THINK_OPEN.startswith(self._buf):
+                return False  # wait for more bytes.
+            visible_parts.append(self._buf)
+            self._buf = ""
+            return False
+        if self._buf.startswith(_THINK_OPEN):
+            self._buf = self._buf[len(_THINK_OPEN) :]
+            self._in_think = True
+            return True
+        # Not a ``<think>`` open — emit the literal ``<`` and keep
+        # scanning from the next byte.
+        visible_parts.append(self._buf[0])
+        self._buf = self._buf[1:]
+        return True
+
+    def flush(self) -> tuple[str, str]:
+        """Drain any buffered bytes at end-of-stream.
+
+        If the stream ended mid-``<think>`` the held body is
+        discarded (matches the regex behaviour on unclosed tags — the
+        non-streaming path relies on ``re.DOTALL`` with a greedy
+        ``</think>`` match, which silently drops an unmatched open
+        tag's tail when the regex does not fire). If the stream
+        ended mid-``<`` (ambiguous partial prefix of ``<think>``),
+        flush the literal bytes since the tag never completed.
+        """
+        if self._in_think:
+            # Unclosed ``<think>`` — drop the body.
+            self._buf = ""
+            return "", ""
+        tail = self._buf
+        self._buf = ""
+        return tail, tail
+
+
+def _extract_usage(usage_obj: Any) -> dict[str, int] | None:
+    """Translate a provider ``usage`` sentinel to the kernel usage dict or ``None``.
+
+    OpenAI delivers ``usage`` on the trailing stream chunk only when
+    the request opted in via ``stream_options={"include_usage":
+    True}``. Some OpenAI-compatible endpoints silently drop the
+    option and never emit a usage sentinel — we tolerate that path by
+    returning ``None`` rather than forging zeros that a downstream
+    token-budget gauge could mistake for "this turn was free".
+    """
+    if usage_obj is None:
+        return None
+    input_tokens = getattr(usage_obj, "prompt_tokens", None)
+    output_tokens = getattr(usage_obj, "completion_tokens", None)
+    usage: dict[str, int] = {}
+    if input_tokens is not None:
+        usage["input_tokens"] = int(input_tokens)
+    if output_tokens is not None:
+        usage["output_tokens"] = int(output_tokens)
+    return usage
+
+
+def _merge_tool_call_chunk(buf: dict[int, dict[str, Any]], partial: Any) -> None:
+    """Fold one streamed ``delta.tool_calls`` entry into the buffer.
+
+    OpenAI streams tool calls across chunks: each chunk carries
+    ``delta.tool_calls[*]`` whose ``index`` field aligns entries
+    across chunks. ``function.name`` and ``function.arguments`` are
+    *concatenated* across chunks; ``id`` lands on the first chunk
+    for that index. We keep the accumulated entry in the SDK's
+    nested shape so :func:`_tool_call_to_dict` — already exercised
+    by the non-streaming path — handles normalisation unchanged.
+    """
+    index_raw: Any = getattr(partial, "index", None)
+    if not isinstance(index_raw, int):
+        # Some compatible endpoints may omit ``index`` and send one
+        # complete tool call per chunk. Bucket by id in that case so
+        # we still aggregate sensibly.
+        fallback_id_raw: Any = getattr(partial, "id", None) or ""
+        fallback_id = fallback_id_raw if isinstance(fallback_id_raw, str) else ""
+        index = -(len(buf) + 1) if not fallback_id else hash(fallback_id)
+    else:
+        index = index_raw
+
+    entry = buf.setdefault(
+        index,
+        {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+    )
+    tc_id: Any = getattr(partial, "id", None)
+    if isinstance(tc_id, str) and tc_id and not entry["id"]:
+        entry["id"] = tc_id
+
+    fn_obj: Any = getattr(partial, "function", None)
+    if fn_obj is not None:
+        fn_name: Any = getattr(fn_obj, "name", None)
+        fn_args: Any = getattr(fn_obj, "arguments", None)
+        fn_dict = cast("dict[str, Any]", entry["function"])
+        if isinstance(fn_name, str) and fn_name:
+            fn_dict["name"] = fn_dict["name"] + fn_name if fn_dict["name"] else fn_name
+        if isinstance(fn_args, str) and fn_args:
+            fn_dict["arguments"] = fn_dict["arguments"] + fn_args
 
 
 def _strip_reasoning_tags(text: str) -> str:

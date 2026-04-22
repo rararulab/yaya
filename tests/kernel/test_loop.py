@@ -1171,3 +1171,121 @@ async def test_turn_skips_provider_anchor_without_session_store() -> None:
     await bus.close()
     # Completing with no store wired should not raise — the test
     # passing is the assertion.
+
+
+# ---------------------------------------------------------------------------
+# #168: streaming — ``llm.call.delta`` → ``assistant.message.delta``.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class StreamingFakeLLM:
+    """Stub LLM provider that emits ``llm.call.delta`` chunks before responding."""
+
+    bus: EventBus
+    chunks: list[str]
+    text: str = ""
+
+    def subscribe(self) -> None:
+        self.bus.subscribe("llm.call.request", self._on_request, source="fake-llm-stream")
+
+    async def _on_request(self, ev: Event) -> None:
+        for chunk in self.chunks:
+            await self.bus.publish(
+                new_event(
+                    "llm.call.delta",
+                    {"request_id": ev.id, "content": chunk},
+                    session_id=ev.session_id,
+                    source="fake-llm-stream",
+                )
+            )
+        await self.bus.publish(
+            new_event(
+                "llm.call.response",
+                {
+                    "text": self.text or "".join(self.chunks),
+                    "tool_calls": [],
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                    "request_id": ev.id,
+                },
+                session_id=ev.session_id,
+                source="fake-llm-stream",
+            )
+        )
+
+
+async def test_loop_forwards_llm_delta_as_assistant_delta() -> None:
+    """An ``llm.call.delta`` for an in-flight request re-emits ``assistant.message.delta`` on the owning session."""
+    bus = EventBus()
+    strategy = FakeStrategy(
+        bus,
+        script=[
+            {"next": "llm", "provider": "fake", "model": "m"},
+            {"next": "done"},
+        ],
+    )
+    llm = StreamingFakeLLM(bus, chunks=["Hel", "lo"], text="Hello")
+    strategy.subscribe()
+    llm.subscribe()
+
+    deltas = EventRecorder(bus)
+    deltas.watch("assistant.message.delta")
+    dones = EventRecorder(bus)
+    dones.watch("assistant.message.done")
+
+    loop = AgentLoop(bus, LoopConfig(step_timeout_s=2.0))
+    await loop.start()
+
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "hi"},
+            session_id="s-stream",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    contents = [e.payload["content"] for e in deltas.events]
+    assert contents == ["Hel", "lo"]
+    for e in deltas.events:
+        assert e.session_id == "s-stream"
+    assert len(dones.events) == 1
+    assert dones.events[0].payload["content"] == "Hello"
+
+
+async def test_loop_ignores_deltas_for_unknown_request_id() -> None:
+    """Deltas with untracked ``request_id`` are dropped silently."""
+    bus = EventBus()
+    loop = AgentLoop(bus, LoopConfig(step_timeout_s=2.0))
+    await loop.start()
+
+    deltas = EventRecorder(bus)
+    deltas.watch("assistant.message.delta")
+
+    # No ``llm.call.request`` was ever tracked — this delta is orphaned.
+    await bus.publish(
+        new_event(
+            "llm.call.delta",
+            {"request_id": "never-tracked", "content": "leaked"},
+            session_id="some-other-session",
+            source="bogus-plugin",
+        )
+    )
+    # A second delta with no ``request_id`` at all must also be a
+    # silent drop, not a crash.
+    await bus.publish(
+        new_event(
+            "llm.call.delta",
+            {"content": "oops"},
+            session_id="s-x",
+            source="bogus-plugin",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert deltas.events == []

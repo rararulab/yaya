@@ -102,10 +102,18 @@ Scenario: Error path — SDK rate-limit error translates to llm.call.error with 
   When a llm.call.request for provider openai is published
   Then a llm.call.error event is emitted with the error string and the originating request id
 
+Scenario: One llm.call.request produces N llm.call.delta events before the final response
+  Test:
+    Package: yaya
+    Filter: tests/plugins/llm_openai/test_llm_openai.py::test_create_streams_deltas_then_final_response
+  Level: unit
+  Given a configured llm-openai plugin whose stubbed client streams N content chunks
+  When a llm.call.request for provider openai is published
+  Then N llm.call.delta events are emitted in order carrying the originating request id
+  And a single llm.call.response event is emitted with the aggregated text and the originating request id
+
 ## Out of Scope
 
-- Streaming (`assistant.message.delta` chunks) — follows the adapter
-  work.
 - Token-budget accounting beyond what the SDK's `usage` object
   returns.
 - Automatic retry on transient failures — the strategy plugin

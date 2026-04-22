@@ -452,6 +452,24 @@ same code path as the click handler. Fetch failures surface a toast
 and fall back to a fresh chat, so deleting a tape while a tab is
 open does not leave the UI stuck.
 
+### Provider check on resume (#163)
+
+Each turn the agent loop stamps a `turn/provider` anchor on the
+tape with `state={"provider": <instance_id>, "model": <str>}` —
+once per turn, not per LLM call. `SessionStore.list_sessions` and
+a new `GET /api/sessions/{id}` endpoint surface the latest anchor's
+provider and model on `SessionInfo`.
+
+Before hydration on resume, the chat-shell calls `GET /api/sessions/{id}`.
+When the historical provider is no longer listed in
+`ProvidersView.list_instances()`, the UI renders an inline banner
+(not a blocking modal) above the chat pane: "This chat was started
+with <old>:<model>; that provider is no longer configured.
+Continue with <current active>?" Two buttons — "Continue" and
+"Cancel" — both with explicit intent; no silent switch. Legacy
+tapes predating the anchor return `provider: null` and suppress
+the banner entirely (backward compat).
+
 ## Session CRUD (#161)
 
 Each **Recent** row exposes a ⋯ button revealing Rename and Delete

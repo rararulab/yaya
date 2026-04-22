@@ -783,9 +783,15 @@ class _FakeSession:
     """
 
     scripted: list[Any]
+    provider_calls: list[tuple[str, str]] = field(default_factory=lambda: [])
 
     async def entries(self) -> list[Any]:
         return list(self.scripted)
+
+    async def append_turn_provider(self, provider: str, model: str) -> None:
+        # Record the call so #163 loop tests can assert the anchor was
+        # stamped exactly once per turn with the expected pair.
+        self.provider_calls.append((provider, model))
 
 
 @dataclass
@@ -1075,3 +1081,93 @@ async def test_assistant_done_carries_last_llm_tool_calls() -> None:
 
     assert len(dones) == 1
     assert dones[0].payload["tool_calls"] == expected_calls
+
+
+# ---------------------------------------------------------------------------
+# #163 — turn/provider anchor stamped once per turn
+# ---------------------------------------------------------------------------
+
+
+async def test_turn_writes_provider_anchor() -> None:
+    """#163 AC-01: the loop stamps a turn/provider anchor once per turn.
+
+    Scripts a two-call ReAct turn (llm → tool → llm → done) and asserts
+    the fake session only receives ONE ``append_turn_provider`` call —
+    the second llm step must not re-stamp. The recorded pair is the
+    provider/model the strategy emitted.
+    """
+    tape: list[_FakeEntry] = [
+        _FakeEntry("anchor", {"name": "session/start", "state": {"owner": "human"}}),
+    ]
+    fake_session = _FakeSession(scripted=tape)
+    store = _FakeStore(fake_session)
+
+    bus = EventBus()
+    strategy = FakeStrategy(
+        bus,
+        script=[
+            {"next": "llm", "provider": "llm-openai-prod", "model": "gpt-4o-mini"},
+            {"next": "tool", "tool_call": {"id": "t1", "name": "echo", "args": {}}},
+            {"next": "llm", "provider": "llm-openai-prod", "model": "gpt-4o-mini"},
+            {"next": "done"},
+        ],
+    )
+    llm = FakeLLM(bus, text="ok")
+    tool = FakeTool(bus)
+    strategy.subscribe()
+    llm.subscribe()
+    tool.subscribe()
+
+    loop = AgentLoop(
+        bus,
+        LoopConfig(step_timeout_s=2.0),
+        session_store=store,
+        workspace="/fake/ws",
+    )
+    await loop.start()
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "go"},
+            session_id="s-anchor",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+
+    assert fake_session.provider_calls == [("llm-openai-prod", "gpt-4o-mini")], (
+        f"expected exactly one anchor per turn; got {fake_session.provider_calls!r}"
+    )
+
+
+async def test_turn_skips_provider_anchor_without_session_store() -> None:
+    """Without a wired session_store the loop never attempts the anchor write (#163)."""
+    bus = EventBus()
+    strategy = FakeStrategy(
+        bus,
+        script=[
+            {"next": "llm", "provider": "llm-openai", "model": "m"},
+            {"next": "done"},
+        ],
+    )
+    llm = FakeLLM(bus, text="ok")
+    strategy.subscribe()
+    llm.subscribe()
+
+    loop = AgentLoop(bus, LoopConfig(step_timeout_s=2.0))
+    await loop.start()
+    await bus.publish(
+        new_event(
+            "user.message.received",
+            {"text": "go"},
+            session_id="s-nostore",
+            source="fake-adapter",
+        )
+    )
+    await _settle(bus)
+    await loop.stop()
+    await bus.close()
+    # Completing with no store wired should not raise — the test
+    # passing is the assertion.

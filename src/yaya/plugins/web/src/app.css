@@ -950,6 +950,48 @@ yaya-app {
 	padding: 8px 10px 10px;
 }
 
+/* Historical-provider resume banner (#163). Inline (not modal) so the
+ * transcript remains readable; two explicit actions so a resume never
+ * silently switches provider. */
+.yaya-provider-warning {
+	margin: 8px 0 12px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	border: 1px solid var(--yaya-surface-danger, #f5c6c6);
+	background: var(--yaya-surface-danger-bg, #fff5f5);
+	color: var(--yaya-surface-danger-ink, #7a1f1f);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.yaya-provider-warning-text {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+.yaya-provider-warning-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.yaya-provider-warning-continue,
+.yaya-provider-warning-cancel {
+	font-size: 12px;
+	padding: 4px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--yaya-border, #d0d7de);
+	background: var(--yaya-surface, #fff);
+	color: inherit;
+	cursor: pointer;
+}
+
+.yaya-provider-warning-continue:hover,
+.yaya-provider-warning-cancel:hover {
+	background: var(--yaya-surface-hover, #f6f8fa);
+}
+
 /* Chat surface fills the main area vertically so the composer can
  * dock to the bottom regardless of message count. Without an
  * explicit height the previous ``min-height: 100vh`` gave the

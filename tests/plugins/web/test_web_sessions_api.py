@@ -17,19 +17,26 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from yaya.kernel.bus import EventBus
+from yaya.kernel.config_store import ConfigStore
 from yaya.kernel.session import SessionStore
 from yaya.plugins.web.api import build_admin_router
 
 pytestmark = pytest.mark.unit
 
 
-def _build_app(*, session_store: SessionStore | None, workspace: Path | None) -> FastAPI:
+def _build_app(
+    *,
+    session_store: SessionStore | None,
+    workspace: Path | None,
+    config_store: ConfigStore | None = None,
+) -> FastAPI:
     """Return a FastAPI app that mounts only the admin router."""
     app = FastAPI()
     app.include_router(
         build_admin_router(
             registry=None,
-            config_store=None,
+            config_store=config_store,
             bus=None,
             session_store=session_store,
             workspace=workspace,
@@ -534,3 +541,166 @@ async def test_sessions_list_sorted_by_created_at_desc(tmp_path: Path) -> None:
         assert timestamps == sorted(timestamps, reverse=True)
     finally:
         await store.close()
+
+
+# ---------------------------------------------------------------------------
+# #163 — per-session provider anchor + single-session endpoint
+# ---------------------------------------------------------------------------
+
+
+async def test_sessions_list_row_carries_provider_and_model(tmp_path: Path) -> None:
+    """AC #163: each row exposes provider + model from the latest anchor."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-provider")
+        await session.append_message("user", "hi", source="bdd")
+        await session.append_turn_provider("llm-openai", "gpt-4o-mini")
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get("/api/sessions")
+        assert res.status_code == 200
+        row = res.json()["sessions"][0]
+        assert row["provider"] == "llm-openai"
+        assert row["model"] == "gpt-4o-mini"
+    finally:
+        await store.close()
+
+
+async def test_sessions_list_row_provider_null_for_legacy_tape(tmp_path: Path) -> None:
+    """Legacy tapes without the anchor surface ``null`` provider/model (#163)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-legacy")
+        await session.append_message("user", "hi", source="bdd")
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get("/api/sessions")
+        row = res.json()["sessions"][0]
+        assert row["provider"] is None
+        assert row["model"] is None
+    finally:
+        await store.close()
+
+
+async def test_single_session_endpoint_available_when_provider_still_configured(tmp_path: Path) -> None:
+    """GET /api/sessions/{id} → available=True when the historical provider exists (#163)."""
+    bus = EventBus()
+    config_store = await ConfigStore.open(bus=bus, path=tmp_path / "cfg.db")
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        # Seed a provider instance so the availability check resolves True.
+        await config_store.set("providers.llm-openai.plugin", "llm-openai")
+        await config_store.set("providers.llm-openai.label", "OpenAI default")
+        await config_store.set("provider", "llm-openai")
+        session = await store.open(tmp_path, "ws-avail")
+        await session.append_message("user", "hi", source="bdd")
+        await session.append_turn_provider("llm-openai", "gpt-4o-mini")
+        # Resolve the suffix id that the API uses.
+        infos = await store.list_sessions(tmp_path)
+        session_id = infos[0].session_id
+        app = _build_app(session_store=store, workspace=tmp_path, config_store=config_store)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{session_id}")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["provider"] == "llm-openai"
+        assert body["model"] == "gpt-4o-mini"
+        avail = body["provider_availability"]
+        assert avail["available"] is True
+        assert avail["active"] == "llm-openai"
+        assert "llm-openai" in avail["known_providers"]
+    finally:
+        await store.close()
+        await config_store.close()
+        await bus.close()
+
+
+async def test_single_session_endpoint_available_false_when_provider_gone(tmp_path: Path) -> None:
+    """Historical provider removed → available=False so the UI can banner (#163)."""
+    bus = EventBus()
+    config_store = await ConfigStore.open(bus=bus, path=tmp_path / "cfg.db")
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        # Only "llm-openai" is configured; historical anchor references "llm-gone".
+        await config_store.set("providers.llm-openai.plugin", "llm-openai")
+        await config_store.set("provider", "llm-openai")
+        session = await store.open(tmp_path, "ws-missing")
+        await session.append_message("user", "hi", source="bdd")
+        await session.append_turn_provider("llm-gone", "old-model")
+        infos = await store.list_sessions(tmp_path)
+        session_id = infos[0].session_id
+        app = _build_app(session_store=store, workspace=tmp_path, config_store=config_store)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{session_id}")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["provider"] == "llm-gone"
+        avail = body["provider_availability"]
+        assert avail["available"] is False
+        assert avail["active"] == "llm-openai"
+        assert "llm-openai" in avail["known_providers"]
+        assert "llm-gone" not in avail["known_providers"]
+    finally:
+        await store.close()
+        await config_store.close()
+        await bus.close()
+
+
+async def test_single_session_endpoint_available_true_for_same_provider_different_model(tmp_path: Path) -> None:
+    """Model mismatch on the same instance does NOT trip the banner (#163).
+
+    Documented design call: users routinely upgrade the model string on
+    an existing instance. Flagging that as "unavailable" would nag every
+    legitimate upgrade. The narrower "provider + model must match" rule
+    can land later if misuse shows up.
+    """
+    bus = EventBus()
+    config_store = await ConfigStore.open(bus=bus, path=tmp_path / "cfg.db")
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        await config_store.set("providers.llm-openai.plugin", "llm-openai")
+        await config_store.set("providers.llm-openai.model", "gpt-4o")  # upgraded
+        await config_store.set("provider", "llm-openai")
+        session = await store.open(tmp_path, "ws-model-change")
+        await session.append_message("user", "hi", source="bdd")
+        # Historical anchor references the OLD model on the SAME instance.
+        await session.append_turn_provider("llm-openai", "gpt-4o-mini")
+        infos = await store.list_sessions(tmp_path)
+        session_id = infos[0].session_id
+        app = _build_app(session_store=store, workspace=tmp_path, config_store=config_store)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{session_id}")
+        assert res.status_code == 200
+        avail = res.json()["provider_availability"]
+        assert avail["available"] is True
+    finally:
+        await store.close()
+        await config_store.close()
+        await bus.close()
+
+
+async def test_single_session_endpoint_404_when_id_unknown(tmp_path: Path) -> None:
+    """Single-session endpoint 404s for an unknown id (#163)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get("/api/sessions/does-not-exist")
+        assert res.status_code == 404
+    finally:
+        await store.close()
+
+
+async def test_single_session_endpoint_503_when_no_store() -> None:
+    """Missing store → 503 (#163)."""
+    app = _build_app(session_store=None, workspace=None)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        res = await client.get("/api/sessions/anything")
+    assert res.status_code == 503

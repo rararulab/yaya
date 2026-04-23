@@ -246,6 +246,74 @@ async def test_run_serve_opens_browser_when_web_adapter_present(
 
 
 @pytest.mark.asyncio
+async def test_run_serve_opens_browser_at_web_adapter_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#195: browser URL is the adapter's uvicorn port, not the kernel's bound_port.
+
+    Before #195, ``serve`` opened ``http://127.0.0.1:{bound_port}/`` where
+    ``bound_port`` was the kernel config port — nothing listens there, so
+    the user saw "Unable to connect". The adapter's uvicorn runs on a
+    separate port resolved in ``_resolve_port``.
+    """
+    from yaya.cli.commands import serve as serve_mod
+
+    monkeypatch.setattr(serve_mod, "_has_web_adapter", lambda _snapshot: True)
+    # Pin the adapter port to a known sentinel that has no chance of
+    # colliding with the kernel's auto-picked port.
+    monkeypatch.setattr(serve_mod, "_web_adapter_port", lambda _registry: 54321)
+    calls: list[str] = []
+    monkeypatch.setattr(serve_mod.webbrowser, "open", lambda url: calls.append(url))
+
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=True)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=False,
+            strategy="react",
+            dev=False,
+            shutdown_event=shutdown,
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    await asyncio.wait_for(task, timeout=5.0)
+    assert calls == ["http://127.0.0.1:54321/"], calls
+
+
+@pytest.mark.asyncio
+async def test_run_serve_skips_browser_when_adapter_has_no_bound_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#195: if the adapter reports no port, skip the browser launch entirely."""
+    from yaya.cli.commands import serve as serve_mod
+
+    monkeypatch.setattr(serve_mod, "_has_web_adapter", lambda _snapshot: True)
+    monkeypatch.setattr(serve_mod, "_web_adapter_port", lambda _registry: None)
+    calls: list[str] = []
+    monkeypatch.setattr(serve_mod.webbrowser, "open", lambda url: calls.append(url))
+
+    shutdown = asyncio.Event()
+    state = CLIState(json_output=True)
+    task = asyncio.create_task(
+        run_serve(
+            state,
+            port=0,
+            no_open=False,
+            strategy="react",
+            dev=False,
+            shutdown_event=shutdown,
+        )
+    )
+    await asyncio.sleep(0.2)
+    shutdown.set()
+    await asyncio.wait_for(task, timeout=5.0)
+    assert calls == [], f"browser was opened without a known port: {calls!r}"
+
+
+@pytest.mark.asyncio
 async def test_run_serve_warns_when_no_adapter(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

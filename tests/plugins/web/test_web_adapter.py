@@ -346,12 +346,26 @@ async def test_on_unload_stops_server(tmp_path: Path) -> None:
     await plugin.on_load(ctx)
     assert plugin._server_task is not None
     assert not plugin._server_task.done()
+    # #195: the public ``bound_port`` property surfaces the real uvicorn port
+    # so the CLI can open the browser at the correct URL without peeking
+    # at the private attribute.
+    assert plugin.bound_port == port
 
     await plugin.on_unload(ctx)
     # After unload the task must be done (completed or cancelled) and
     # the internal reference must be cleared.
     assert plugin._server is None
     assert plugin._server_task is None
+
+
+async def test_bound_port_is_none_before_on_load() -> None:
+    """#195: bound_port is None until on_load resolves the port.
+
+    The CLI relies on the None-vs-int distinction to decide whether
+    to skip the browser launch.
+    """
+    plugin = WebAdapter(port=9999)
+    assert plugin.bound_port is None
 
 
 async def test_plugin_inventory_is_seeded_at_load(tmp_path: Path) -> None:

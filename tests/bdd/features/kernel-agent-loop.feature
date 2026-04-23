@@ -38,6 +38,12 @@ Feature: Kernel AgentLoop fixed per-turn scheduler
     Then the current turn aborts under the interrupt guard
     And no further tool.call.request is emitted for that turn
 
+  Scenario: v1 tool envelope projects into the ReAct Observation
+    Given an AgentLoop with a registered v1 Tool returning a TextBlock envelope
+    And a strategy that calls the tool then asks the LLM
+    When a user.message.received event arrives
+    Then the subsequent llm.call.request carries an Observation message with the tool's text
+
   Scenario: Correlation via request_id — untracked response without matching request_id is ignored
     Given an AgentLoop with an in-flight outbound request tracked by its event id
     When a response event arrives carrying no matching request_id correlation

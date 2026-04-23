@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
@@ -25,6 +25,15 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from yaya.kernel.bus import EventBus
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.loop import AgentLoop, LoopConfig
+from yaya.kernel.tool import (
+    TextBlock,
+    Tool,
+    ToolOk,
+    ToolReturnValue,
+    install_dispatcher,
+    register_tool,
+    unregister_tool,
+)
 
 from .conftest import BDDContext
 
@@ -292,6 +301,7 @@ def _user_message_arrives(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> N
         done_events: list[Event] = []
         tool_start: list[Event] = []
         tool_result: list[Event] = []
+        llm_requests: list[Event] = []
         errors: list[Event] = []
         order: list[str] = []
 
@@ -307,12 +317,16 @@ def _user_message_arrives(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> N
             tool_result.append(ev)
             order.append("tool.call.result")
 
+        async def on_llm_request(ev: Event) -> None:
+            llm_requests.append(ev)
+
         async def on_kernel_error(ev: Event) -> None:
             errors.append(ev)
 
         bus.subscribe("assistant.message.done", on_done, source="probe")
         bus.subscribe("tool.call.start", on_tool_start, source="probe")
         bus.subscribe("tool.call.result", on_tool_result, source="probe")
+        bus.subscribe("llm.call.request", on_llm_request, source="probe")
         bus.subscribe("kernel.error", on_kernel_error, source="probe")
 
         await bus.publish(
@@ -330,6 +344,7 @@ def _user_message_arrives(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> N
         ctx.extras["done_events"] = done_events
         ctx.extras["tool_start"] = tool_start
         ctx.extras["tool_result"] = tool_result
+        ctx.extras["llm_requests"] = llm_requests
         ctx.extras["errors"] = errors
         ctx.extras["order"] = order
 
@@ -578,6 +593,71 @@ def _publish_untracked_response(ctx: BDDContext, loop: asyncio.AbstractEventLoop
         await bus.close()
 
     loop.run_until_complete(_drive())
+
+
+# ---------------------------------------------------------------------------
+# Scenario: v1 tool envelope → Observation message
+# ---------------------------------------------------------------------------
+
+
+class _BDDEnvelopeTool(Tool):
+    name: ClassVar[str] = "bdd_envelope_tool"
+    description: ClassVar[str] = "BDD-only v1 tool returning a TextBlock envelope."
+
+    who: str
+
+    async def run(self, ctx: Any) -> ToolReturnValue:
+        del ctx
+        return ToolOk(brief="greeted", display=TextBlock(text=f"hi {self.who}"))
+
+
+@given("an AgentLoop with a registered v1 Tool returning a TextBlock envelope")
+def _register_envelope_tool(ctx: BDDContext) -> None:
+    bus = EventBus()
+    ctx.bus = bus
+    install_dispatcher(bus)
+    register_tool(_BDDEnvelopeTool)
+    ctx.extras["envelope_tool_registered"] = True
+
+
+@given("a strategy that calls the tool then asks the LLM")
+def _strategy_tool_then_llm(ctx: BDDContext) -> None:
+    assert ctx.bus is not None
+    strategy = _FakeStrategy(
+        ctx.bus,
+        script=[
+            {
+                "next": "tool",
+                "tool_call": {"id": "t1", "name": _BDDEnvelopeTool.name, "args": {"who": "ada"}},
+            },
+            {"next": "llm", "provider": "fake", "model": "m"},
+            {"next": "done"},
+        ],
+    )
+    strategy.subscribe()
+    llm = _FakeLLM(ctx.bus, text="thanks")
+    llm.subscribe()
+    ctx.extras["strategy"] = strategy
+    ctx.extras["llm"] = llm
+
+
+@then("the subsequent llm.call.request carries an Observation message with the tool's text")
+def _llm_request_carries_observation(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> None:
+    llm_requests: list[Event] = ctx.extras["llm_requests"]
+    try:
+        assert llm_requests, "expected at least one llm.call.request after the tool step"
+        messages = llm_requests[0].payload.get("messages", [])
+        observations = [
+            m for m in messages if isinstance(m, dict) and str(m.get("content", "")).startswith("Observation:")
+        ]
+        assert observations, f"no Observation message in transcript: {messages!r}"
+        rendered = observations[-1]["content"]
+        assert "hi ada" in rendered, rendered
+        assert '"value": null' not in rendered, rendered
+    finally:
+        if ctx.extras.get("envelope_tool_registered"):
+            unregister_tool(_BDDEnvelopeTool.name)
+        del loop
 
 
 @then("the untracked response is ignored and the loop keeps awaiting the correlated reply")

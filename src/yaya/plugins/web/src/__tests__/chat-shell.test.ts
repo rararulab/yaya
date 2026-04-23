@@ -59,7 +59,57 @@ describe("YayaChat error recovery (bug #71 P1)", () => {
 		};
 	});
 
-	it("resets inFlight on kernel.error", () => {
+	it("resets inFlight on kernel.error and preserves streamed deltas (#187)", () => {
+		const before = shell.messages.length;
+		shell.onFrame({
+			type: "kernel.error",
+			session_id: "ws-x",
+			source: "agent_loop",
+			message: "step_timeout",
+		});
+		expect(shell.inFlight).toBe(false);
+		expect(shell.streamingMessage).toBeNull();
+		// Partial bubble committed, not wiped.
+		expect(shell.messages.length).toBe(before + 1);
+		const committed = shell.messages[before] as {
+			role: string;
+			content: { type: string; text: string }[];
+			stopReason: string;
+		};
+		expect(committed.role).toBe("assistant");
+		expect(committed.stopReason).toBe("error");
+		const flat = committed.content.map((c) => c.text).join("");
+		expect(flat).toContain("partial");
+		expect(flat).toContain("step_timeout");
+	});
+
+	it("resets inFlight on plugin.error and preserves streamed deltas (#187)", () => {
+		const before = shell.messages.length;
+		shell.onFrame({
+			type: "plugin.error",
+			session_id: "kernel",
+			name: "llm-openai",
+			error: "bad gateway",
+		});
+		expect(shell.inFlight).toBe(false);
+		expect(shell.streamingMessage).toBeNull();
+		expect(shell.messages.length).toBe(before + 1);
+		const committed = shell.messages[before] as {
+			role: string;
+			content: { type: string; text: string }[];
+			stopReason: string;
+		};
+		expect(committed.role).toBe("assistant");
+		expect(committed.stopReason).toBe("error");
+		const flat = committed.content.map((c) => c.text).join("");
+		expect(flat).toContain("partial");
+		expect(flat).toContain("llm-openai");
+		expect(flat).toContain("bad gateway");
+	});
+
+	it("does not push a committed bubble when there is no streaming message", () => {
+		shell.streamingMessage = null;
+		const before = shell.messages.length;
 		shell.onFrame({
 			type: "kernel.error",
 			session_id: "ws-x",
@@ -67,18 +117,7 @@ describe("YayaChat error recovery (bug #71 P1)", () => {
 			message: "boom",
 		});
 		expect(shell.inFlight).toBe(false);
-		expect(shell.streamingMessage).toBeNull();
-	});
-
-	it("resets inFlight on plugin.error", () => {
-		shell.onFrame({
-			type: "plugin.error",
-			session_id: "kernel",
-			name: "foo",
-			error: "boom",
-		});
-		expect(shell.inFlight).toBe(false);
-		expect(shell.streamingMessage).toBeNull();
+		expect(shell.messages.length).toBe(before);
 	});
 
 	it("keeps inFlight on informational plugin.loaded", () => {

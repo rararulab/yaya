@@ -613,8 +613,14 @@ export class YayaChat extends LitElement {
 				this.pushToast("error", `plugin error (${frame.name}): ${frame.error}`);
 				// Bug #71: an error during a turn must release the input.
 				// Without this, the textarea stays disabled until reload.
+				// #187: preserve any already-streamed deltas instead of
+				// nulling the bubble outright — the user should still see
+				// what arrived before the error.
+				this.commitStreamingAsInterrupted(
+					`plugin ${frame.name}: ${frame.error}`,
+					"error",
+				);
 				this.inFlight = false;
-				this.streamingMessage = null;
 				this.stopThinkingTicker();
 				this.lastDeltaTs = null;
 				return;
@@ -627,8 +633,13 @@ export class YayaChat extends LitElement {
 			case "kernel.error":
 				this.pushToast("error", `kernel error (${frame.source}): ${frame.message}`);
 				// Bug #71: a kernel-level failure aborts the turn; re-enable input.
+				// #187: preserve partial streamed deltas — step_timeout used
+				// to wipe the bubble the user had already read.
+				this.commitStreamingAsInterrupted(
+					`${frame.source}: ${frame.message}`,
+					"error",
+				);
 				this.inFlight = false;
-				this.streamingMessage = null;
 				this.stopThinkingTicker();
 				this.lastDeltaTs = null;
 				return;
@@ -664,6 +675,37 @@ export class YayaChat extends LitElement {
 			),
 		};
 		this.streamingMessage = next;
+	}
+
+	/**
+	 * Commit an in-flight ``streamingMessage`` (if any) into the
+	 * transcript as an interrupted assistant bubble (#187).
+	 *
+	 * When a ``kernel.error`` or ``plugin.error`` lands mid-stream,
+	 * we used to null ``streamingMessage`` — the deltas that had
+	 * already rendered in the bubble vanished. The user was left
+	 * with only a red toast. Now the partial bubble stays in the
+	 * transcript with ``stopReason: "error" | "aborted"`` and a
+	 * marker note so the interruption is obvious.
+	 *
+	 * When there is nothing streaming, this is a no-op.
+	 */
+	private commitStreamingAsInterrupted(reason: string, kind: "error" | "aborted"): void {
+		const pending = this.streamingMessage;
+		if (pending === null) {
+			return;
+		}
+		const note = `[${kind === "error" ? "interrupted" : "aborted"}: ${reason}]`;
+		const commit: AssistantChatMessage = {
+			...pending,
+			content: [
+				...pending.content,
+				{ type: "text", text: `\n\n${note}` },
+			],
+			stopReason: kind,
+		};
+		this.messages = [...this.messages, commit];
+		this.streamingMessage = null;
 	}
 
 	private finishAssistant(content: string, toolCalls: { id: string; name: string; args: Record<string, unknown> }[]): void {

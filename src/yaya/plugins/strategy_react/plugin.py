@@ -276,6 +276,42 @@ def _has_recent_retry_marker(messages: list[dict[str, Any]]) -> bool:
     return False
 
 
+_MERCARI_SEARCH_TOOL = "mercari_jp_search"
+"""Tool name that triggers the Mercari shopping output contract (#192)."""
+
+
+def _shopping_contract_lines() -> list[str]:
+    """Output contract appended when the Mercari search tool is installed.
+
+    Stops the model from drifting between 3-vs-5 rows, generic reasons,
+    and format variations across turns — pins the final answer to a
+    single markdown table shape that the user and downstream clients
+    can rely on. Triggered only when ``mercari_jp_search`` is in the
+    tool registry so generic chats are unaffected.
+    """
+    return [
+        "",
+        "Shopping output contract (applies when you called mercari_jp_search):",
+        "- Your Final Answer MUST be a single markdown table with these",
+        "  columns, in this order:",
+        "  | Rank | Title | Price (JPY) | Condition | Why it fits | Link |",
+        "- Produce exactly 3 rows, ranked 1..3. If the tool returned fewer",
+        "  than 3 candidates, include all of them and add one short",
+        "  apology line below the table listing up to 3 alternative",
+        "  keywords the user could try.",
+        "- Each 'Why it fits' cell MUST cite at least one constraint the",
+        "  user actually stated — price ceiling, condition, brand,",
+        "  keyword, Japanese term, free shipping, etc. Generic phrases",
+        "  like 'good price', 'available', or 'new' without a concrete",
+        "  reference to the user's ask are not acceptable.",
+        "- The three 'Why it fits' cells MUST NOT be identical.",
+        "- 'Link' is the raw Mercari URL from the tool result; do not",
+        "  wrap it in extra text.",
+        "- Put nothing above or below the table except (when relevant)",
+        "  the single apology + alternatives line.",
+    ]
+
+
 def _build_system_prompt(tool_specs: list[dict[str, Any]]) -> str:
     """Compose the ReAct system prompt from the live tool registry.
 
@@ -286,6 +322,7 @@ def _build_system_prompt(tool_specs: list[dict[str, Any]]) -> str:
     can reason about without requiring structured tool support on
     the provider side.
     """
+    tool_names: set[str] = set()
     lines: list[str] = [
         "You are yaya, an assistant that solves tasks by reasoning in the ReAct style.",
         "",
@@ -300,6 +337,7 @@ def _build_system_prompt(tool_specs: list[dict[str, Any]]) -> str:
                 continue
             fn = cast("dict[str, Any]", fn_raw)
             name = str(fn.get("name", "?"))
+            tool_names.add(name)
             desc = str(fn.get("description", "")).strip()
             params_raw = fn.get("parameters")
             params: dict[str, Any] = cast("dict[str, Any]", params_raw) if isinstance(params_raw, dict) else {}
@@ -340,6 +378,8 @@ def _build_system_prompt(tool_specs: list[dict[str, Any]]) -> str:
         "",
         "Never emit both an Action and a Final Answer in the same turn.",
     ]
+    if _MERCARI_SEARCH_TOOL in tool_names:
+        lines.extend(_shopping_contract_lines())
     return "\n".join(lines)
 
 

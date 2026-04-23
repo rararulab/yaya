@@ -37,3 +37,8 @@ Feature: ReAct strategy plugin
     Given a strategy.decide.request whose payload omits the state key entirely
     When the ReAct plugin handles the event
     Then the handler raises ValueError so the kernel synthesizes a plugin.error
+
+  Scenario: Shopping output contract appears only when mercari_jp_search is registered
+    Given the live tool registry contains mercari_jp_search
+    When the ReAct system prompt is composed
+    Then it pins the Final Answer to the required 3-row markdown table shape

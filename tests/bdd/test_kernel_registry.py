@@ -30,6 +30,7 @@ from yaya.kernel.bus import EventBus
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.plugin import Category, KernelContext
 from yaya.kernel.registry import PluginRegistry, PluginStatus
+from yaya.kernel.tool import TextBlock, Tool, ToolOk, ToolReturnValue, register_tool, unregister_tool
 
 from .conftest import BDDContext
 
@@ -827,6 +828,104 @@ def _rivals_short_circuit(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> N
     registry: PluginRegistry = ctx.extras["registry"]
     statuses = {row["name"]: row["status"] for row in registry.snapshot()}
     assert statuses["flaky-tool"] == "failed"
+    _teardown(ctx, loop)
+
+
+# ---------------------------------------------------------------------------
+# Scenario — registry startup installs the v1 tool dispatcher
+# ---------------------------------------------------------------------------
+
+
+class _BDDRegistryV1Tool(Tool):
+    """BDD-only v1 Tool, registered via a plugin's on_load hook."""
+
+    name: ClassVar[str] = "bdd_registry_v1_echo"
+    description: ClassVar[str] = "Echo through the registry-installed v1 dispatcher."
+
+    text: str
+
+    async def run(self, ctx: KernelContext) -> ToolReturnValue:
+        del ctx
+        return ToolOk(brief="echoed", display=TextBlock(text=self.text))
+
+
+class _V1RegisteringPlugin:
+    """Plugin that registers a v1 ``Tool`` subclass during ``on_load``."""
+
+    name = "bdd-v1-tool-plugin"
+    version = "0.1.0"
+    category = Category.TOOL
+    requires: ClassVar[list[str]] = []
+
+    def subscriptions(self) -> list[str]:
+        return []
+
+    async def on_load(self, ctx: KernelContext) -> None:
+        del ctx
+        register_tool(_BDDRegistryV1Tool)
+
+    async def on_event(self, ev: Event, ctx: KernelContext) -> None:
+        del ev, ctx
+
+    async def on_unload(self, ctx: KernelContext) -> None:
+        del ctx
+        unregister_tool(_BDDRegistryV1Tool.name)
+
+
+@given("a plugin that registers a v1 Tool during on_load")
+def _plugin_registers_v1_tool(ctx: BDDContext, tmp_path: Path) -> None:
+    plugin = _V1RegisteringPlugin()
+    ctx.extras["plugin"] = plugin
+    ctx.extras["tmp_path"] = tmp_path
+    ctx.extras["tool_results"] = []
+    ctx.extras["entry_points"] = [_FakeEntryPoint("v1-tool", plugin)]
+
+
+@when("registry is started and a v1 tool.call.request is published")
+def _start_registry_and_publish_v1_request(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> None:
+    bus = EventBus()
+    ctx.bus = bus
+    results: list[Event] = ctx.extras["tool_results"]
+    bus.subscribe("tool.call.result", _collector(results), source="bdd-observer")
+
+    eps = ctx.extras["entry_points"]
+    patcher = patch("yaya.kernel.registry.entry_points", side_effect=_fake_entry_points(eps))
+    patcher.start()
+    ctx.extras["patchers"] = [patcher]
+
+    registry = PluginRegistry(bus, state_dir=ctx.extras["tmp_path"])
+    ctx.extras["registry"] = registry
+
+    async def _run() -> None:
+        await registry.start()
+        await bus.publish(
+            new_event(
+                "tool.call.request",
+                {
+                    "schema_version": "v1",
+                    "id": "bdd-call-1",
+                    "name": _BDDRegistryV1Tool.name,
+                    "args": {"text": "ok"},
+                },
+                session_id="s",
+                source="kernel",
+            )
+        )
+        for _ in range(200):
+            if results:
+                return
+            await asyncio.sleep(0.005)
+        raise AssertionError("no tool.call.result observed")
+
+    loop.run_until_complete(_run())
+
+
+@then("a tool.call.result event is emitted by the kernel dispatcher")
+def _tool_result_emitted(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> None:
+    results: list[Event] = ctx.extras["tool_results"]
+    assert len(results) == 1, f"expected 1 tool.call.result, got {len(results)}"
+    payload = results[0].payload
+    assert payload["id"] == "bdd-call-1"
     _teardown(ctx, loop)
 
 

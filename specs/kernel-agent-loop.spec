@@ -22,6 +22,10 @@ tool, or memory plugin is built on top.
   tool call start/request/result, then assistant.message.done. The
   happy path produces an assistant message; the tool round-trip emits
   tool.call.start and tool.call.result before assistant.message.done.
+- Tool calls emitted by the loop carry `schema_version="v1"` so the
+  kernel-side v1 dispatcher runs registered `Tool` subclasses. Legacy
+  tools that subscribe directly to `tool.call.request` still receive
+  the same event and may ignore the extra field.
 - Correlation via event id: each outbound request event is matched
   with its response by echoing the request's id as
   `payload.request_id`; untracked responses carrying no matching
@@ -41,6 +45,8 @@ tool, or memory plugin is built on top.
 - src/yaya/kernel/events.py
 - src/yaya/kernel/AGENT.md
 - tests/kernel/test_loop.py
+- tests/bdd/features/kernel-agent-loop.feature
+- tests/bdd/test_kernel_agent_loop.py
 - docs/dev/plugin-protocol.md
 - specs/kernel-agent-loop.spec
 
@@ -77,6 +83,7 @@ Scenario: Tool round-trip emits tool.call.start and tool.call.result before assi
   When a user.message.received event arrives
   Then a tool.call.start event and a tool.call.result event are observed
   And they occur before assistant.message.done in the frozen event sequence
+  And the tool.call.request payload uses schema_version v1
 
 Scenario: Error path — max_iterations guard emits kernel.error and aborts the turn
   Test:

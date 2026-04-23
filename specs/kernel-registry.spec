@@ -54,6 +54,10 @@ a deterministic load-order tie-breaker, never a behavioral branch.
   unload task: the transient `unloading` status is claimed
   synchronously before the unload task is scheduled, so rival
   handlers observe the flip and short-circuit.
+- Registry startup installs the kernel v1 tool dispatcher before
+  `kernel.ready`, so plugins that register `Tool` subclasses during
+  `on_load` can service `tool.call.request` events carrying
+  `schema_version="v1"`.
 
 ## Boundaries
 
@@ -62,6 +66,8 @@ a deterministic load-order tie-breaker, never a behavioral branch.
 - src/yaya/kernel/__init__.py
 - src/yaya/kernel/AGENT.md
 - tests/kernel/test_registry.py
+- tests/bdd/features/kernel-registry.feature
+- tests/bdd/test_kernel_registry.py
 - specs/kernel-registry.spec
 
 ### Forbidden
@@ -126,6 +132,15 @@ Scenario: snapshot returns one entry per registered plugin with name, version, c
   When registry.snapshot() is called
   Then three entries are returned carrying name, version, category, status fields in first-seen load order
   And the failing plugin's status is "failed"
+
+Scenario: Registry startup installs the v1 tool dispatcher
+  Test:
+    Package: yaya
+    Filter: tests/kernel/test_registry.py::test_registry_installs_v1_tool_dispatcher
+  Level: unit
+  Given a plugin that registers a v1 Tool during on_load
+  When registry is started and a v1 tool.call.request is published
+  Then a tool.call.result event is emitted by the kernel dispatcher
 
 Scenario: install shells to uv pip via subprocess_exec and re-runs discovery
   Test:

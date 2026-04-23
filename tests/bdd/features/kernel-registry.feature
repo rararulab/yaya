@@ -43,6 +43,11 @@ Feature: Kernel plugin registry — discovery, lifecycle, and failure isolation
     Then three entries are returned carrying name, version, category, status fields in first-seen load order
     And the failing plugin's status is "failed"
 
+  Scenario: Registry startup installs the v1 tool dispatcher
+    Given a plugin that registers a v1 Tool during on_load
+    When registry is started and a v1 tool.call.request is published
+    Then a tool.call.result event is emitted by the kernel dispatcher
+
   Scenario: install shells to uv pip via subprocess_exec and re-runs discovery
     Given an uv binary available on PATH
     When registry.install("yaya-tool-bash") is called

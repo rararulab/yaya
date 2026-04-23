@@ -352,6 +352,13 @@ def _tool_before_done(ctx: BDDContext) -> None:
     assert order.index("tool.call.result") < order.index("assistant.message.done")
 
 
+@then("the tool.call.request payload uses schema_version v1")
+def _tool_request_uses_v1_schema(ctx: BDDContext) -> None:
+    tool: _FakeTool = ctx.extras["tool"]
+    assert tool.calls, "no tool.call.request seen"
+    assert tool.calls[0]["schema_version"] == "v1"
+
+
 # ---------------------------------------------------------------------------
 # Scenario 3: max_iterations guard
 # ---------------------------------------------------------------------------

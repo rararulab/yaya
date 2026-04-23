@@ -79,6 +79,7 @@ PLUGIN_GATES: tuple[tuple[str, float], ...] = (
     # does not yet hit. Gate tracks reality (~80.16%) - 0.5.
     ("plugins/llm_openai/", 79.5),
     ("plugins/mcp_bridge/", 90.0),
+    ("plugins/mercari_jp/", 95.5),
     ("plugins/memory_sqlite/", 89.5),
     ("plugins/strategy_react/", 95.0),
     ("plugins/tool_bash/", 95.0),

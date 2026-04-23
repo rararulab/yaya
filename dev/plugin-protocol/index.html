@@ -1418,6 +1418,9 @@ legacy path in the Tool-contract PR.</p>
 </code></pre></div>
 <p>Strategies control: which tools to offer, when to call memory, when to
 stop. Strategies <strong>do not</strong> change the ordering of the sequence —
+the loop emits tool requests with <code>schema_version="v1"</code> so registered
+<code>Tool</code> subclasses route through the kernel dispatcher while legacy
+subscribers still see the same bus event.
 that is the kernel's contract with adapters.</p>
 <h3 id="cross-turn-history-hydration">Cross-turn history hydration<a class="headerlink" href="#cross-turn-history-hydration" title="Permanent link">&para;</a></h3>
 <p>At the start of every turn the loop hydrates initial <code>messages</code> from
@@ -1509,7 +1512,7 @@ kept in memory.</p>
 <tr>
 <td><code>tool.call.request</code></td>
 <td><code>tool_call</code></td>
-<td><code>{id, name, args}</code></td>
+<td><code>{id, name, args, schema_version?}</code></td>
 </tr>
 <tr>
 <td><code>tool.call.result</code></td>

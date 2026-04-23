@@ -628,6 +628,33 @@ def _strategy_tool_call(ctx: BDDContext) -> None:
     }
 
 
+@given("a strategy.decide.request whose last assistant message contains Final Answer prose and a [TOOL_CALL] block")
+def _strategy_bracketed_tool_call(ctx: BDDContext) -> None:
+    assistant_text = (
+        "Final Answer: I will search Mercari Japan for XPS.\n"
+        "[TOOL_CALL]\n"
+        '{"tool": "mercari_jp_search", "tool_input": {"keyword": "XPS"}}\n'
+        "[/TOOL_CALL]"
+    )
+    _strategy_payload(
+        ctx,
+        {
+            "state": {
+                "step": 0,
+                "messages": [
+                    {"role": "user", "content": "帮我看看mercari上的xps"},
+                    {"role": "assistant", "content": assistant_text},
+                ],
+            }
+        },
+    )
+    ctx.extras["expected_tool_call"] = {
+        "id": "rx-0",
+        "name": "mercari_jp_search",
+        "args": {"keyword": "XPS"},
+    }
+
+
 @given("a strategy.decide.request whose state has an Observation user message after the last assistant message")
 def _strategy_after_tool(ctx: BDDContext) -> None:
     _strategy_payload(
@@ -713,6 +740,11 @@ def _strategy_next_tool(ctx: BDDContext) -> None:
     payload = _last_payload(ctx)
     assert payload["next"] == "tool"
     assert payload["tool_call"] == ctx.extras["expected_tool_call"]
+
+
+@then("the Final Answer prose does not terminate the turn before the tool runs")
+def _strategy_final_answer_does_not_preempt_tool(ctx: BDDContext) -> None:
+    assert _last_payload(ctx)["next"] == "tool"
 
 
 @then("a strategy.decide.response is emitted with next done")

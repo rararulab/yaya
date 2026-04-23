@@ -437,6 +437,37 @@ def _mercari_empty_result(ctx: BDDContext) -> None:
     assert any("keyword" in warning for warning in data["warnings"])
 
 
+@given("a search request with category, brand, item_condition, and shipping_payer filters set")
+def _mercari_filter_request(ctx: BDDContext) -> None:
+    from yaya.plugins.mercari_jp.search import MercariSearchRequest
+
+    ctx.extras["mercari_filter_request"] = MercariSearchRequest(
+        keyword="iPhone 15",
+        category_ids=[7, 1346],
+        brand_ids=[9999],
+        item_condition="new",
+        shipping_payer="seller",
+    )
+
+
+@when("the Mercapi payload is built")
+def _mercari_build_payload(ctx: BDDContext) -> None:
+    from yaya.plugins.mercari_jp.search import build_mercapi_search_payload
+
+    request = ctx.extras["mercari_filter_request"]
+    ctx.extras["mercari_filter_payload"] = build_mercapi_search_payload(request)
+
+
+@then("the payload carries the expected category, brand, condition, and shipping-payer IDs")
+def _mercari_payload_carries_filters(ctx: BDDContext) -> None:
+    payload = ctx.extras["mercari_filter_payload"]
+    cond = payload["searchCondition"]
+    assert cond["categoryId"] == ["7", "1346"]
+    assert cond["brandId"] == ["9999"]
+    assert cond["itemConditionId"] == ["1"]
+    assert cond["shippingPayerId"] == ["2"]
+
+
 # -- memory-sqlite ----------------------------------------------------------
 
 

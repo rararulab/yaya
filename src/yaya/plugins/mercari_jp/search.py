@@ -45,6 +45,40 @@ class MercapiRejectedError(MercariSearchError):
     """Raised when Mercari refuses the request or serves an anti-bot response."""
 
 
+ItemCondition = Literal[
+    "new",
+    "like_new",
+    "no_scratches",
+    "small_scratches",
+    "scratches",
+    "poor",
+]
+"""User-facing condition tokens mapped to Mercari's 1..6 ``itemConditionId``.
+
+Order mirrors :data:`_CONDITION_LABELS`: 1=新品 (``new``) through
+6=全体的に状態が悪い (``poor``). The tool surface uses English tokens so
+LLMs pick the right bucket without knowing Japanese labels.
+"""
+
+_ITEM_CONDITION_IDS: dict[ItemCondition, int] = {
+    "new": 1,
+    "like_new": 2,
+    "no_scratches": 3,
+    "small_scratches": 4,
+    "scratches": 5,
+    "poor": 6,
+}
+
+ShippingPayer = Literal["seller", "buyer"]
+"""Who pays shipping. Maps to Mercari's ``shippingPayerId``: 2 = seller
+("送料込み"), 1 = buyer. Most buyers prefer ``seller``."""
+
+_SHIPPING_PAYER_IDS: dict[ShippingPayer, int] = {
+    "seller": 2,
+    "buyer": 1,
+}
+
+
 class MercariSearchRequest(BaseModel):
     """Structured search request for Mercari JP search.
 
@@ -58,6 +92,15 @@ class MercariSearchRequest(BaseModel):
         status: Desired sale status.
         sort: Desired sort mode.
         limit: Maximum normalized candidates returned to the caller.
+        category_ids: Mercari ``categoryId`` filter; combines with ``OR``.
+            Kept id-based because category name → id resolution belongs
+            in a separate lookup tool (future #191 follow-up).
+        brand_ids: Mercari ``brandId`` filter; combines with ``OR``.
+        item_condition: Single condition bucket. Maps to Mercari's
+            ``itemConditionId`` (1 = new … 6 = poor).
+        shipping_payer: ``seller`` or ``buyer``. Maps to Mercari's
+            ``shippingPayerId``. Users asking for "送料込み" want
+            ``seller``.
     """
 
     keyword: str = Field(min_length=1)
@@ -69,6 +112,10 @@ class MercariSearchRequest(BaseModel):
     status: Literal["on_sale", "sold_out", "all"] = "on_sale"
     sort: Literal["recommended", "newest", "price_asc", "price_desc"] = "recommended"
     limit: int = Field(default=20, ge=1, le=50)
+    category_ids: list[int] = Field(default_factory=lambda: [])
+    brand_ids: list[int] = Field(default_factory=lambda: [])
+    item_condition: ItemCondition | None = None
+    shipping_payer: ShippingPayer | None = None
 
     @property
     def query_term(self) -> str:
@@ -172,8 +219,25 @@ def build_mercari_search_url(request: MercariSearchRequest) -> str:
 
 
 def build_mercapi_search_payload(request: MercariSearchRequest) -> dict[str, Any]:
-    """Build the JSON search payload used by take-kun/mercapi."""
+    """Build the JSON search payload used by take-kun/mercapi.
+
+    Filter fields map to Mercari's search schema:
+
+    * ``categoryId`` / ``brandId`` accept lists; a list of one is how
+      Mercari's web UI narrows to a single category or brand.
+    * ``itemConditionId`` is also a list even though our surface
+      accepts a single bucket (``item_condition``) — matches the
+      upstream API shape, keeps the door open for a multi-select.
+    * ``shippingPayerId`` is a list of the same numeric IDs the mobile
+      app sends (1 = buyer, 2 = seller).
+    """
     sort_by, sort_order = _mercapi_sort(request.sort)
+    condition_ids: list[int] = []
+    if request.item_condition is not None:
+        condition_ids.append(_ITEM_CONDITION_IDS[request.item_condition])
+    shipping_payer_ids: list[int] = []
+    if request.shipping_payer is not None:
+        shipping_payer_ids.append(_SHIPPING_PAYER_IDS[request.shipping_payer])
     return {
         "userId": "",
         "pageSize": 120,
@@ -187,13 +251,13 @@ def build_mercapi_search_payload(request: MercariSearchRequest) -> dict[str, Any
             "order": sort_order,
             "status": _mercapi_status(request.status),
             "sizeId": [],
-            "categoryId": [],
-            "brandId": [],
+            "categoryId": [str(cid) for cid in request.category_ids],
+            "brandId": [str(bid) for bid in request.brand_ids],
             "sellerId": [],
             "priceMin": request.min_price_jpy or 0,
             "priceMax": request.max_price_jpy or 0,
-            "itemConditionId": [],
-            "shippingPayerId": [],
+            "itemConditionId": [str(cid) for cid in condition_ids],
+            "shippingPayerId": [str(pid) for pid in shipping_payer_ids],
             "shippingFromArea": [],
             "shippingMethod": [],
             "colorId": [],

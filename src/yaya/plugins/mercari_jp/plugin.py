@@ -65,6 +65,34 @@ class MercariJpSearchTool(Tool):
         description="Sort mode.",
     )
     limit: int = Field(default=20, ge=1, le=50, description="Maximum candidates to return.")
+    category_ids: list[int] = Field(
+        default_factory=lambda: [],
+        description=(
+            "Mercari category ID filter (combines with OR). Use the numeric IDs "
+            "Mercari exposes in its public search URL (e.g. 7 = スマホ・タブレット・パソコン, "
+            "5 = ファッション). Leave empty to search across all categories."
+        ),
+    )
+    brand_ids: list[int] = Field(
+        default_factory=lambda: [],
+        description="Mercari brand ID filter (combines with OR). Leave empty to search across all brands.",
+    )
+    item_condition: Literal["new", "like_new", "no_scratches", "small_scratches", "scratches", "poor"] | None = Field(
+        default=None,
+        description=(
+            "Required item condition bucket. 'new' = 新品, 'like_new' = 未使用に近い, "
+            "'no_scratches' = 目立った傷や汚れなし, 'small_scratches' = やや傷や汚れあり, "
+            "'scratches' = 傷や汚れあり, 'poor' = 全体的に状態が悪い. Omit to accept any condition."
+        ),
+    )
+    shipping_payer: Literal["seller", "buyer"] | None = Field(
+        default=None,
+        description=(
+            "Who pays shipping. 'seller' = 送料込み (buyer pays nothing extra). "
+            "Prefer this when the user asks for 'free shipping' or 送料込み. "
+            "Omit to accept either."
+        ),
+    )
 
     @override
     async def run(self, ctx: KernelContext) -> ToolReturnValue:
@@ -122,6 +150,10 @@ class MercariJpSearchTool(Tool):
             status=self.status,
             sort=self.sort,
             limit=self.limit,
+            category_ids=self.category_ids,
+            brand_ids=self.brand_ids,
+            item_condition=self.item_condition,
+            shipping_payer=self.shipping_payer,
         )
 
 

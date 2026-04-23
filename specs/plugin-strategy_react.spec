@@ -48,6 +48,12 @@ testable and deterministic.
   `[yaya:react-format-nudge] `) via `messages_append` and re-rolls.
   A second consecutive parse failure terminates the turn with
   `{"next": "done"}` — no endless retries.
+- When `mercari_jp_search` is present in the tool registry, the system
+  prompt appends a Shopping Output Contract pinning the Final Answer
+  to a single markdown table (`| Rank | Title | Price (JPY) |
+  Condition | Why it fits | Link |`, exactly 3 rows), requiring each
+  `Why it fits` to cite a user-stated constraint. Absent the tool the
+  contract is omitted so generic chats are unaffected.
 
 ## Boundaries
 
@@ -133,6 +139,15 @@ Scenario: Error path — strategy.decide.request missing state payload raises fo
   Given a strategy.decide.request whose payload omits the state key entirely
   When the ReAct plugin handles the event
   Then the handler raises ValueError so the kernel synthesizes a plugin.error
+
+Scenario: Shopping output contract appears only when mercari_jp_search is registered
+  Test:
+    Package: yaya
+    Filter: tests/plugins/strategy_react/test_strategy_react.py::test_system_prompt_adds_shopping_contract_when_mercari_tool_present
+  Level: unit
+  Given the live tool registry contains mercari_jp_search
+  When the ReAct system prompt is composed
+  Then it pins the Final Answer to the required 3-row markdown table shape
 
 ## Out of Scope
 

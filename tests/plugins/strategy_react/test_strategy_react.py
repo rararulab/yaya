@@ -499,3 +499,53 @@ def test_system_prompt_forbids_content_in_thought() -> None:
     # Old loose phrasing must be gone.
     assert "<final reasoning>" not in prompt
     assert "<reason about what to do next>" not in prompt
+
+
+def test_system_prompt_adds_shopping_contract_when_mercari_tool_present() -> None:
+    """When mercari_jp_search is installed, the ReAct prompt pins the output contract.
+
+    Regression for #192: the model used to drift between 3-vs-5 rows and
+    generic "available" reasons. The system prompt now hard-pins the
+    markdown table shape and requires each why_it_fits to cite a
+    user-stated constraint.
+    """
+    from yaya.plugins.strategy_react.plugin import _build_system_prompt
+
+    mercari_spec = {
+        "type": "function",
+        "function": {
+            "name": "mercari_jp_search",
+            "description": "Search Mercari Japan.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+    prompt = _build_system_prompt([mercari_spec])
+
+    assert "Shopping output contract" in prompt
+    # Table columns pinned in the exact order the UI renders them.
+    assert "| Rank | Title | Price (JPY) | Condition | Why it fits | Link |" in prompt
+    # Row count invariant.
+    assert "exactly 3 rows" in prompt
+    # Non-generic reason invariant — key phrases.
+    assert "cite at least one constraint" in prompt
+    # The contract must NOT leak into Thought (that lives in the earlier block).
+    assert prompt.index("Shopping output contract") > prompt.index("Final Answer:")
+
+
+def test_system_prompt_omits_shopping_contract_without_mercari_tool() -> None:
+    """Generic chats (no mercari_jp_search tool) must not see the contract."""
+    from yaya.plugins.strategy_react.plugin import _build_system_prompt
+
+    other_spec = {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Run a shell command.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+    prompt_with_other = _build_system_prompt([other_spec])
+    prompt_empty = _build_system_prompt([])
+
+    assert "Shopping output contract" not in prompt_with_other
+    assert "Shopping output contract" not in prompt_empty

@@ -757,6 +757,39 @@ def _strategy_raises(ctx: BDDContext) -> None:
     assert isinstance(ctx.extras.get("raised"), ValueError)
 
 
+# -- strategy_react #192 shopping contract ---------------------------------
+
+
+@given("the live tool registry contains mercari_jp_search")
+def _strategy_tool_registry_has_mercari(ctx: BDDContext) -> None:
+    ctx.extras["strategy_tool_specs"] = [
+        {
+            "type": "function",
+            "function": {
+                "name": "mercari_jp_search",
+                "description": "Search Mercari Japan.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+
+
+@when("the ReAct system prompt is composed")
+def _strategy_build_prompt(ctx: BDDContext) -> None:
+    from yaya.plugins.strategy_react.plugin import _build_system_prompt
+
+    ctx.extras["strategy_prompt"] = _build_system_prompt(ctx.extras["strategy_tool_specs"])
+
+
+@then("it pins the Final Answer to the required 3-row markdown table shape")
+def _strategy_prompt_pins_contract(ctx: BDDContext) -> None:
+    prompt = ctx.extras["strategy_prompt"]
+    assert "Shopping output contract" in prompt
+    assert "| Rank | Title | Price (JPY) | Condition | Why it fits | Link |" in prompt
+    assert "exactly 3 rows" in prompt
+    assert "cite at least one constraint" in prompt
+
+
 # -- tool-bash --------------------------------------------------------------
 
 

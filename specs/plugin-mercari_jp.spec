@@ -23,6 +23,10 @@ access.
   candidates, score reasons, and warnings.
 - Candidate ranking is deterministic and happens before the LLM writes
   user-facing recommendations.
+- The search surface accepts optional native Mercari narrowing fields
+  (`category_ids`, `brand_ids`, `item_condition`, `shipping_payer`) and
+  maps them onto the Mercapi JSON payload. Unset fields preserve the
+  pre-#191 payload shape so no existing caller regresses.
 
 ## Boundaries
 
@@ -73,6 +77,15 @@ Scenario: Empty Mercapi results stay successful and explain search drift
   Given Mercapi returns a Mercari search response with no product candidates
   When the mercari_jp_search tool runs
   Then it returns an empty candidate list with warnings containing Mercari coverage and Japanese keyword guidance
+
+Scenario: Filter fields map onto the Mercapi payload
+  Test:
+    Package: yaya
+    Filter: tests/plugins/mercari_jp/test_plugin.py::test_filter_fields_land_on_mercapi_payload
+  Level: unit
+  Given a search request with category, brand, item_condition, and shipping_payer filters set
+  When the Mercapi payload is built
+  Then the payload carries the expected category, brand, condition, and shipping-payer IDs
 
 ## Out of Scope
 

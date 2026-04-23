@@ -16,3 +16,8 @@ Feature: Mercari Japan search plugin
     Given Mercapi returns a Mercari search response with no product candidates
     When the mercari_jp_search tool runs
     Then it returns an empty candidate list with warnings containing Mercari coverage and Japanese keyword guidance
+
+  Scenario: Filter fields map onto the Mercapi payload
+    Given a search request with category, brand, item_condition, and shipping_payer filters set
+    When the Mercapi payload is built
+    Then the payload carries the expected category, brand, condition, and shipping-payer IDs

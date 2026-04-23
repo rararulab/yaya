@@ -314,6 +314,62 @@ def test_mercari_search_url_and_request_filters() -> None:
     assert desc_payload["searchCondition"]["order"] == "ORDER_DESC"
 
 
+def test_filter_fields_land_on_mercapi_payload() -> None:
+    """#191 — category / brand / condition / shipping_payer map to Mercari's schema.
+
+    Mercari takes string IDs in its JSON lists; condition and shipping_payer
+    surface as single-item lists even though the tool accepts a single bucket
+    so downstream widening to multi-select is a no-op.
+    """
+    payload = build_mercapi_search_payload(
+        MercariSearchRequest(
+            keyword="iPhone 15",
+            category_ids=[7, 1346],
+            brand_ids=[9999],
+            item_condition="new",
+            shipping_payer="seller",
+        )
+    )
+    cond = payload["searchCondition"]
+    assert cond["categoryId"] == ["7", "1346"]
+    assert cond["brandId"] == ["9999"]
+    assert cond["itemConditionId"] == ["1"]
+    assert cond["shippingPayerId"] == ["2"]
+
+
+def test_filter_defaults_preserve_legacy_payload_shape() -> None:
+    """Unset filters must round-trip empty lists, same as before #191."""
+    payload = build_mercapi_search_payload(MercariSearchRequest(keyword="iPhone"))
+    cond = payload["searchCondition"]
+    assert cond["categoryId"] == []
+    assert cond["brandId"] == []
+    assert cond["itemConditionId"] == []
+    assert cond["shippingPayerId"] == []
+
+
+def test_item_condition_buckets_cover_1_through_6() -> None:
+    """Every token in the public surface maps to a unique 1..6 Mercari id."""
+    mapping: dict[str, list[str]] = {}
+    for token in ("new", "like_new", "no_scratches", "small_scratches", "scratches", "poor"):
+        payload = build_mercapi_search_payload(
+            MercariSearchRequest(keyword="x", item_condition=token)  # pyright: ignore[reportArgumentType]
+        )
+        mapping[token] = payload["searchCondition"]["itemConditionId"]
+    assert mapping["new"] == ["1"]
+    assert mapping["like_new"] == ["2"]
+    assert mapping["no_scratches"] == ["3"]
+    assert mapping["small_scratches"] == ["4"]
+    assert mapping["scratches"] == ["5"]
+    assert mapping["poor"] == ["6"]
+
+
+def test_shipping_payer_tokens_map_to_mercari_ids() -> None:
+    seller = build_mercapi_search_payload(MercariSearchRequest(keyword="x", shipping_payer="seller"))
+    buyer = build_mercapi_search_payload(MercariSearchRequest(keyword="x", shipping_payer="buyer"))
+    assert seller["searchCondition"]["shippingPayerId"] == ["2"]
+    assert buyer["searchCondition"]["shippingPayerId"] == ["1"]
+
+
 async def test_plugin_registers_unregisters_and_reports_health(tmp_path: Path) -> None:
     """Plugin lifecycle owns the mercari_jp_search v1 tool registration."""
     plugin = MercariJpPlugin()

@@ -87,6 +87,7 @@ export type InboundFrame =
 			ok: boolean;
 			value?: unknown;
 			error?: string;
+			envelope?: ToolEnvelope;
 			session_id: string;
 	  }
 	| { type: "plugin.loaded"; name: string; version: string; category: string; session_id: string }
@@ -123,7 +124,27 @@ export type HistoryFrame =
 			ok: boolean;
 			value?: unknown;
 			error?: string;
+			envelope?: ToolEnvelope;
 	  };
+
+/**
+ * Serialised ToolOk / ToolError envelope produced by the kernel's v1
+ * tool dispatcher (``src/yaya/kernel/tool.py``). The adapter forwards
+ * it verbatim on ``tool.call.result`` events (see
+ * ``_event_to_frame``), so the UI needs a type to route both the
+ * legacy ``{value}`` shape (``tool_bash``) and the v1 ``{envelope}``
+ * shape (mercari, mcp_bridge-derived tools, agent-tool).
+ */
+export interface ToolEnvelope {
+	ok: boolean;
+	brief?: string;
+	kind?: string;
+	display?: {
+		kind?: string;
+		text?: string;
+		data?: unknown;
+	};
+}
 
 /** Exhaustiveness helper — see lesson #19. */
 export function assertNever(x: never): never {

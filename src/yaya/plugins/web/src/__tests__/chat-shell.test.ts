@@ -595,3 +595,166 @@ describe("YayaChat multiline input", () => {
 		expect(ta.style.height).toBe("80px");
 	});
 });
+
+
+describe("YayaChat tool card rendering (#188)", () => {
+	interface ToolCardInternals {
+		onFrame(frame: unknown): void;
+		toolCallsById: Map<string, {
+			id: string;
+			name: string;
+			args?: Record<string, unknown>;
+			brief?: string;
+			output: string;
+			ok?: boolean;
+			error?: string;
+			errorKind?: string;
+		}>;
+	}
+
+	function shellWith(): ToolCardInternals {
+		return makeShell() as unknown as ToolCardInternals;
+	}
+
+	it("captures args on tool.start and keeps running state until result", () => {
+		const shell = shellWith();
+		shell.onFrame({
+			type: "tool.start",
+			id: "t1",
+			name: "mercari_jp_search",
+			args: { keyword: "iPhone" },
+			session_id: "ws-x",
+		});
+		const tc = shell.toolCallsById.get("t1");
+		expect(tc?.name).toBe("mercari_jp_search");
+		expect(tc?.args).toEqual({ keyword: "iPhone" });
+		expect(tc?.ok).toBeUndefined();
+	});
+
+	it("extracts brief + JSON output from a v1 envelope (JsonBlock)", () => {
+		const shell = shellWith();
+		shell.onFrame({
+			type: "tool.start",
+			id: "t1",
+			name: "mercari_jp_search",
+			args: { keyword: "iPhone" },
+			session_id: "ws-x",
+		});
+		shell.onFrame({
+			type: "tool.result",
+			id: "t1",
+			ok: true,
+			envelope: {
+				ok: true,
+				brief: "found 20 Mercari candidate(s)",
+				display: { kind: "json", data: { items: [{ title: "x" }] } },
+			},
+			session_id: "ws-x",
+		});
+		const tc = shell.toolCallsById.get("t1");
+		expect(tc?.ok).toBe(true);
+		expect(tc?.brief).toBe("found 20 Mercari candidate(s)");
+		expect(tc?.output).toContain("items");
+		expect(tc?.output).toContain("title");
+		// args survive across the start → result promotion
+		expect(tc?.args).toEqual({ keyword: "iPhone" });
+	});
+
+	it("extracts text output from a v1 TextBlock envelope", () => {
+		const shell = shellWith();
+		shell.onFrame({
+			type: "tool.start",
+			id: "t2",
+			name: "hello_v1",
+			args: { who: "ada" },
+			session_id: "ws-x",
+		});
+		shell.onFrame({
+			type: "tool.result",
+			id: "t2",
+			ok: true,
+			envelope: {
+				ok: true,
+				brief: "greeted",
+				display: { kind: "text", text: "hi ada" },
+			},
+			session_id: "ws-x",
+		});
+		const tc = shell.toolCallsById.get("t2");
+		expect(tc?.brief).toBe("greeted");
+		expect(tc?.output).toBe("hi ada");
+	});
+
+	it("surfaces envelope.kind on failure", () => {
+		const shell = shellWith();
+		shell.onFrame({
+			type: "tool.start",
+			id: "t3",
+			name: "mercari_jp_search",
+			args: {},
+			session_id: "ws-x",
+		});
+		shell.onFrame({
+			type: "tool.result",
+			id: "t3",
+			ok: false,
+			envelope: {
+				ok: false,
+				kind: "validation",
+				brief: "invalid params for tool 'mercari_jp_search'",
+				display: { kind: "text", text: "keyword: field required" },
+			},
+			session_id: "ws-x",
+		});
+		const tc = shell.toolCallsById.get("t3");
+		expect(tc?.ok).toBe(false);
+		expect(tc?.errorKind).toBe("validation");
+		expect(tc?.error).toContain("invalid params");
+		expect(tc?.output).toContain("keyword");
+	});
+
+	it("still handles the legacy {value: {stdout, stderr, returncode}} shape (tool_bash)", () => {
+		const shell = shellWith();
+		shell.onFrame({
+			type: "tool.start",
+			id: "t4",
+			name: "bash",
+			args: { cmd: ["echo", "hi"] },
+			session_id: "ws-x",
+		});
+		shell.onFrame({
+			type: "tool.result",
+			id: "t4",
+			ok: true,
+			value: { stdout: "hi\n", stderr: "", returncode: 0 },
+			session_id: "ws-x",
+		});
+		const tc = shell.toolCallsById.get("t4");
+		expect(tc?.ok).toBe(true);
+		expect(tc?.brief).toContain("hi");
+		expect(tc?.output).toContain("stdout");
+		expect(tc?.output).toContain("returncode");
+	});
+
+	it("no longer pushes a toolResult message into the transcript", () => {
+		const shell = makeShell();
+		shell.onFrame({ type: "ws.connected" });
+		const before = shell.messages.length;
+		shell.onFrame({
+			type: "tool.start",
+			id: "t5",
+			name: "bash",
+			args: {},
+			session_id: "ws-x",
+		});
+		shell.onFrame({
+			type: "tool.result",
+			id: "t5",
+			ok: true,
+			value: { stdout: "x", stderr: "", returncode: 0 },
+			session_id: "ws-x",
+		});
+		// Card lives in toolCallsById, not in messages[] as a toolResult row.
+		expect(shell.messages.length).toBe(before);
+	});
+});

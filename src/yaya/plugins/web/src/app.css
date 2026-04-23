@@ -950,6 +950,109 @@ yaya-app {
 	padding: 8px 10px 10px;
 }
 
+/* Compact tool-call card (#188). Replaces the older yaya-tool-block
+ * layout for per-call rows: a single summary line always shows the
+ * tool name, status pill, and brief (live brief when running, v1
+ * envelope brief on ok, error kind on failure). Click to expand the
+ * args + full output. */
+.yaya-tool-card {
+	border: 1px solid var(--yaya-border);
+	border-radius: var(--yaya-radius-md);
+	background: var(--yaya-sidebar-bg);
+	margin: 4px auto 4px 0;
+	max-width: 75%;
+	font-size: 12px;
+}
+.yaya-tool-card[data-status="running"] {
+	border-color: var(--yaya-surface-info, var(--yaya-border));
+}
+.yaya-tool-card[data-status="error"] {
+	border-color: var(--yaya-surface-danger, var(--yaya-border));
+}
+.yaya-tool-card-summary {
+	list-style: none;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	color: var(--yaya-text-secondary);
+	user-select: none;
+}
+.yaya-tool-card-summary::-webkit-details-marker {
+	display: none;
+}
+.yaya-tool-card-chevron {
+	font-size: 10px;
+	color: var(--yaya-text-secondary);
+	transition: transform 120ms ease;
+	display: inline-block;
+}
+.yaya-tool-card[open] > .yaya-tool-card-summary .yaya-tool-card-chevron {
+	transform: rotate(90deg);
+}
+.yaya-tool-card-name {
+	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+	color: var(--yaya-text-primary);
+	font-weight: 500;
+}
+.yaya-tool-card-status {
+	font-size: 11px;
+	padding: 1px 6px;
+	border-radius: var(--yaya-radius-pill);
+	background: var(--yaya-hover);
+	color: var(--yaya-text-secondary);
+	white-space: nowrap;
+}
+.yaya-tool-card-status[data-status="ok"] {
+	background: var(--yaya-surface-success);
+	color: var(--yaya-surface-success-ink);
+}
+.yaya-tool-card-status[data-status="error"] {
+	background: var(--yaya-surface-danger);
+	color: var(--yaya-surface-danger-ink);
+}
+.yaya-tool-card-status[data-status="running"] {
+	background: var(--yaya-surface-info, var(--yaya-hover));
+	color: var(--yaya-text-secondary);
+}
+.yaya-tool-card-brief {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--yaya-text-secondary);
+}
+.yaya-tool-card-body {
+	padding: 4px 10px 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.yaya-tool-card-section {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+.yaya-tool-card-label {
+	font-size: 10px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--yaya-text-secondary);
+}
+.yaya-tool-card-args {
+	margin: 0;
+	padding: 6px 8px;
+	border-radius: var(--yaya-radius-sm);
+	background: var(--yaya-code-bg, hsl(210 16% 94%));
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 11px;
+	line-height: 1.4;
+	overflow-x: auto;
+	white-space: pre;
+}
+
 /* Collapsed-by-default ReAct reasoning block inside an assistant
  * bubble (#167). Muted, smaller than the answer body so the final
  * answer reads as the primary content. The <summary> chevron mirrors

@@ -39,7 +39,7 @@ import type {
 	Frame,
 	HistoryFrame,
 	TextContent,
-	ToolResultChatMessage,
+	ToolEnvelope,
 	UserChatMessage,
 } from "./types.js";
 import { renderMarkdown } from "./markdown.js";
@@ -71,9 +71,110 @@ interface Toast {
 interface ToolCallState {
 	id: string;
 	name: string;
+	/** Args captured from the ``tool.start`` frame. Rendered as JSON in the expanded card. */
+	args?: Record<string, unknown>;
+	/** Short one-line summary. v1 envelope's ``brief`` or a fallback. */
+	brief?: string;
+	/** Full tool output; for v1 envelopes this is the display text / serialised JSON. */
 	output: string;
 	ok?: boolean;
 	error?: string;
+	/** v1 envelope's ``kind`` on failure (validation / not_found / rejected / crashed / internal). */
+	errorKind?: string;
+}
+
+/**
+ * Serialise a DisplayBlock (TextBlock / MarkdownBlock / JsonBlock) into
+ * a string fit for the expanded tool card (#188). Text-based blocks
+ * return their ``text`` verbatim; JSON blocks are pretty-printed so
+ * the user can actually read them inside a <details>.
+ */
+function formatToolDisplay(envelope: ToolEnvelope): string {
+	const display = envelope.display;
+	if (!display) {
+		return "";
+	}
+	if (typeof display.text === "string") {
+		return display.text;
+	}
+	if (display.data !== undefined) {
+		try {
+			return JSON.stringify(display.data, null, 2);
+		} catch {
+			return String(display.data);
+		}
+	}
+	return "";
+}
+
+/**
+ * Project a ``tool.result`` / ``HistoryFrame`` payload into the fields
+ * a ``ToolCallState`` needs: brief + output + error detail. Handles
+ * both the v1 ``{envelope}`` shape emitted by ``kernel/tool.py::dispatch``
+ * and the legacy ``{value, error}`` shape still used by ``tool_bash``.
+ */
+function projectToolResult(payload: {
+	ok: boolean;
+	value?: unknown;
+	error?: string;
+	envelope?: ToolEnvelope;
+}): { brief: string; output: string; errorKind?: string; error?: string } {
+	const envelope = payload.envelope;
+	if (envelope) {
+		const brief = typeof envelope.brief === "string" ? envelope.brief : "";
+		const body = formatToolDisplay(envelope);
+		if (payload.ok) {
+			return { brief, output: body };
+		}
+		return {
+			brief,
+			output: body,
+			errorKind: typeof envelope.kind === "string" ? envelope.kind : undefined,
+			error: brief || payload.error || "tool failed",
+		};
+	}
+	// Legacy ``{value}`` shape: bash returns stdout/stderr/returncode; other
+	// legacy tools may return a flat string or arbitrary JSON. Prefer the
+	// human-readable shape; fall back to pretty JSON so the card is always
+	// readable.
+	if (!payload.ok) {
+		return { brief: payload.error ?? "error", output: payload.error ?? "", error: payload.error ?? "tool failed" };
+	}
+	const value = payload.value;
+	if (typeof value === "string") {
+		return { brief: truncate(value, 80), output: value };
+	}
+	if (value && typeof value === "object") {
+		let output = "";
+		try {
+			output = JSON.stringify(value, null, 2);
+		} catch {
+			output = String(value);
+		}
+		const rec = value as Record<string, unknown>;
+		const stdout = typeof rec.stdout === "string" ? rec.stdout : "";
+		const stderr = typeof rec.stderr === "string" ? rec.stderr : "";
+		const brief = stdout.trim() || stderr.trim() || truncate(output, 80);
+		return { brief: truncate(brief.split("\n")[0] ?? brief, 80), output };
+	}
+	return { brief: "ok", output: "" };
+}
+
+/** Cheap clamp for single-line summaries rendered inside the card header. */
+function truncate(text: string, max: number): string {
+	if (text.length <= max) {
+		return text;
+	}
+	return `${text.slice(0, max - 1)}…`;
+}
+
+/** Stringify that never throws (circular refs etc. fall back to String()). */
+function safeStringify(value: unknown): string {
+	try {
+		return JSON.stringify(value, null, 2);
+	} catch {
+		return String(value);
+	}
 }
 
 const THEME_KEY = "yaya.theme";
@@ -443,6 +544,7 @@ export class YayaChat extends LitElement {
 					this.toolCallsById = new Map(this.toolCallsById).set(frame.id, {
 						id: frame.id,
 						name: frame.name,
+						args: frame.args,
 						output: "",
 					});
 					break;
@@ -451,27 +553,18 @@ export class YayaChat extends LitElement {
 					next.delete(frame.id);
 					this.pendingToolCalls = next;
 					const tc = this.toolCallsById.get(frame.id);
-					const output =
-						frame.error ?? (typeof frame.value === "string" ? frame.value : JSON.stringify(frame.value ?? ""));
-					if (tc) {
-						const updated: ToolCallState = {
-							id: tc.id,
-							name: tc.name,
-							output,
-							ok: frame.ok,
-							...(frame.error !== undefined ? { error: frame.error } : {}),
-						};
-						this.toolCallsById = new Map(this.toolCallsById).set(frame.id, updated);
-					}
-					const tr: ToolResultChatMessage = {
-						role: "toolResult",
-						toolCallId: frame.id,
-						toolName: tc?.name ?? frame.id,
-						content: [{ type: "text", text: frame.error ?? String(frame.value ?? "") }],
-						isError: !frame.ok,
-						timestamp: Date.now(),
+					const projected = projectToolResult(frame);
+					const updated: ToolCallState = {
+						id: frame.id,
+						name: tc?.name ?? frame.id,
+						args: tc?.args,
+						brief: projected.brief,
+						output: projected.output,
+						ok: frame.ok,
+						...(projected.error !== undefined ? { error: projected.error } : {}),
+						...(projected.errorKind !== undefined ? { errorKind: projected.errorKind } : {}),
 					};
-					this.messages = [...this.messages, tr];
+					this.toolCallsById = new Map(this.toolCallsById).set(frame.id, updated);
 					break;
 				}
 			}
@@ -570,6 +663,7 @@ export class YayaChat extends LitElement {
 				this.toolCallsById = new Map(this.toolCallsById).set(frame.id, {
 					id: frame.id,
 					name: frame.name,
+					args: frame.args,
 					output: "",
 				});
 				return;
@@ -578,29 +672,18 @@ export class YayaChat extends LitElement {
 				next.delete(frame.id);
 				this.pendingToolCalls = next;
 				const tc = this.toolCallsById.get(frame.id);
-				if (tc) {
-					const output =
-						frame.error ?? (typeof frame.value === "string" ? frame.value : JSON.stringify(frame.value ?? ""));
-					const updated: ToolCallState = {
-						id: tc.id,
-						name: tc.name,
-						output,
-						ok: frame.ok,
-						...(frame.error !== undefined ? { error: frame.error } : {}),
-					};
-					this.toolCallsById = new Map(this.toolCallsById).set(frame.id, updated);
-				}
-				// Also record as a toolResult message so MessageList can
-				// pair it with the assistant turn.
-				const tr: ToolResultChatMessage = {
-					role: "toolResult",
-					toolCallId: frame.id,
-					toolName: tc?.name ?? frame.id,
-					content: [{ type: "text", text: frame.error ?? String(frame.value ?? "") }],
-					isError: !frame.ok,
-					timestamp: Date.now(),
+				const projected = projectToolResult(frame);
+				const updated: ToolCallState = {
+					id: frame.id,
+					name: tc?.name ?? frame.id,
+					args: tc?.args,
+					brief: projected.brief,
+					output: projected.output,
+					ok: frame.ok,
+					...(projected.error !== undefined ? { error: projected.error } : {}),
+					...(projected.errorKind !== undefined ? { errorKind: projected.errorKind } : {}),
 				};
-				this.messages = [...this.messages, tr];
+				this.toolCallsById = new Map(this.toolCallsById).set(frame.id, updated);
 				return;
 			}
 			case "plugin.loaded":
@@ -834,24 +917,54 @@ export class YayaChat extends LitElement {
 	private renderToolBlocks(): TemplateResult[] {
 		const blocks: TemplateResult[] = [];
 		for (const tc of this.toolCallsById.values()) {
-			const variant = tc.ok === false ? "error" : "default";
-			const statusLabel =
-				tc.ok === undefined ? "running…" : tc.ok ? "ok" : "error";
-			// Collapsed-by-default tool output: the transcript stays
-			// scannable and users opt into the raw console only when
-			// they care about it. Native <details> gives us the toggle
-			// affordance for free with no ARIA glue.
-			blocks.push(html`<details class="yaya-tool-block">
-				<summary class="yaya-tool-block-summary">
-					<span class="yaya-tool-block-name">tool: ${tc.name}</span>
-					<span class="yaya-tool-block-status" data-status=${statusLabel}>${statusLabel}</span>
-				</summary>
-				<div class="yaya-tool-block-body">
-					<console-block .content=${tc.output} .variant=${variant}></console-block>
-				</div>
-			</details>`);
+			blocks.push(this.renderToolCard(tc));
 		}
 		return blocks;
+	}
+
+	/**
+	 * Compact live card for one tool call (#188).
+	 *
+	 * Header is always visible: name · status · brief. Click the
+	 * summary to toggle a <details> with the args and full output. The
+	 * card is collapsed by default so a 20 KB mercari JSON response
+	 * stays out of the transcript until the user asks for it.
+	 */
+	private renderToolCard(tc: ToolCallState): TemplateResult {
+		const statusLabel =
+			tc.ok === undefined
+				? "running…"
+				: tc.ok
+					? "ok"
+					: `error${tc.errorKind ? ` · ${tc.errorKind}` : ""}`;
+		const statusKind = tc.ok === undefined ? "running" : tc.ok ? "ok" : "error";
+		const variant = tc.ok === false ? "error" : "default";
+		const brief = tc.brief ?? "";
+		const argsJson = tc.args ? safeStringify(tc.args) : "";
+		return html`<details class="yaya-tool-card" data-status=${statusKind}>
+			<summary class="yaya-tool-card-summary">
+				<span class="yaya-tool-card-chevron" aria-hidden="true">▸</span>
+				<span class="yaya-tool-card-name">${tc.name}</span>
+				<span class="yaya-tool-card-status" data-status=${statusKind}>${statusLabel}</span>
+				${brief
+					? html`<span class="yaya-tool-card-brief" title=${brief}>${brief}</span>`
+					: nothing}
+			</summary>
+			<div class="yaya-tool-card-body">
+				${argsJson
+					? html`<div class="yaya-tool-card-section">
+								<div class="yaya-tool-card-label">args</div>
+								<pre class="yaya-tool-card-args">${argsJson}</pre>
+							</div>`
+					: nothing}
+				${tc.output
+					? html`<div class="yaya-tool-card-section">
+								<div class="yaya-tool-card-label">output</div>
+								<console-block .content=${tc.output} .variant=${variant}></console-block>
+							</div>`
+					: nothing}
+			</div>
+		</details>`;
 	}
 
 	/**

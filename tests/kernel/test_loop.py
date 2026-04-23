@@ -17,7 +17,7 @@ import pytest
 
 from yaya.kernel.bus import EventBus
 from yaya.kernel.events import Event, new_event
-from yaya.kernel.loop import AgentLoop, LoopConfig
+from yaya.kernel.loop import AgentLoop, LoopConfig, _format_tool_result_for_llm
 from yaya.kernel.tool import (
     TextBlock,
     Tool,
@@ -1366,3 +1366,161 @@ async def test_loop_ignores_deltas_for_unknown_request_id() -> None:
     await bus.close()
 
     assert deltas.events == []
+
+
+# ---------------------------------------------------------------------------
+# _format_tool_result_for_llm — regression guard for issue #181.
+# The v1 dispatcher emits ``{envelope: ...}``; legacy ``tool_bash`` emits
+# ``{value: ...}``. Both shapes must project into a readable observation so
+# the LLM does not see ``{"ok": true, "value": null}`` for every v1 tool.
+# ---------------------------------------------------------------------------
+
+
+def test_format_v1_envelope_json_block_includes_brief_and_data() -> None:
+    payload = {
+        "id": "rx-1",
+        "ok": True,
+        "envelope": {
+            "ok": True,
+            "brief": "found 2 candidate(s)",
+            "display": {"kind": "json", "data": {"items": [1, 2]}},
+        },
+        "request_id": "req-1",
+    }
+    observation = _format_tool_result_for_llm(payload)
+    assert '"brief": "found 2 candidate(s)"' in observation
+    assert '"items"' in observation
+    assert '"value": null' not in observation
+
+
+def test_format_v1_envelope_text_block_returns_readable_text() -> None:
+    payload = {
+        "id": "rx-2",
+        "ok": True,
+        "envelope": {
+            "ok": True,
+            "brief": "echoed",
+            "display": {"kind": "text", "text": "hello world"},
+        },
+        "request_id": "req-2",
+    }
+    observation = _format_tool_result_for_llm(payload)
+    assert "hello world" in observation
+    assert "echoed" in observation
+
+
+def test_format_v1_envelope_failure_surfaces_brief_and_kind() -> None:
+    payload = {
+        "id": "rx-3",
+        "ok": False,
+        "envelope": {
+            "ok": False,
+            "kind": "validation",
+            "brief": "invalid params for tool 'mercari_jp_search'",
+            "display": {"kind": "text", "text": "keyword: field required"},
+        },
+        "request_id": "req-3",
+    }
+    observation = _format_tool_result_for_llm(payload)
+    assert '"ok": false' in observation
+    assert "validation" in observation
+    assert "invalid params" in observation
+
+
+def test_format_legacy_bash_value_shape_unchanged() -> None:
+    payload = {
+        "id": "rx-4",
+        "ok": True,
+        "value": {"stdout": "hi\n", "stderr": "", "returncode": 0},
+        "request_id": "req-4",
+    }
+    observation = _format_tool_result_for_llm(payload)
+    assert '"stdout": "hi\\n"' in observation
+    assert '"returncode": 0' in observation
+
+
+def test_format_legacy_error_shape_unchanged() -> None:
+    payload = {
+        "id": "rx-5",
+        "ok": False,
+        "error": "timeout",
+        "request_id": "req-5",
+    }
+    observation = _format_tool_result_for_llm(payload)
+    assert '"error": "timeout"' in observation
+
+
+async def test_loop_projects_v1_envelope_into_llm_request() -> None:
+    """End-to-end: a registered v1 ``Tool`` reaches the LLM as readable data.
+
+    The loop appends ``Observation: <formatted>`` as a ``role="user"``
+    message when a ``next=tool`` step completes. This test registers a
+    v1 tool that returns a ``ToolOk`` with a ``TextBlock`` display,
+    then captures the ``llm.call.request`` that follows the tool step
+    and asserts the tool's text reached the transcript. Guards against
+    the issue #181 regression where the formatter hid v1 envelopes as
+    ``{"value": null}``.
+    """
+    bus = EventBus()
+    install_dispatcher(bus)
+
+    class _HelloTool(Tool):
+        name: ClassVar[str] = "hello_v1"
+        description: ClassVar[str] = "Return a friendly greeting."
+
+        who: str
+
+        async def run(self, ctx: Any) -> ToolReturnValue:
+            del ctx
+            return ToolOk(brief="greeted", display=TextBlock(text=f"hi {self.who}"))
+
+    register_tool(_HelloTool)
+    try:
+        strategy = FakeStrategy(
+            bus,
+            script=[
+                {
+                    "next": "tool",
+                    "tool_call": {"id": "t1", "name": "hello_v1", "args": {"who": "ada"}},
+                },
+                {"next": "llm", "provider": "fake", "model": "m"},
+                {"next": "done"},
+            ],
+        )
+        llm = FakeLLM(bus, text="thanks")
+        strategy.subscribe()
+        llm.subscribe()
+
+        llm_requests: list[Event] = []
+
+        async def _capture_llm(ev: Event) -> None:
+            llm_requests.append(ev)
+
+        bus.subscribe("llm.call.request", _capture_llm, source="probe")
+
+        recorder = EventRecorder(bus)
+        recorder.watch("assistant.message.done")
+
+        loop = AgentLoop(bus, LoopConfig(step_timeout_s=2.0))
+        await loop.start()
+        await bus.publish(
+            new_event(
+                "user.message.received",
+                {"text": "greet ada"},
+                session_id="s-1",
+                source="probe",
+            )
+        )
+        await _settle(bus)
+        await loop.stop()
+        await bus.close()
+    finally:
+        unregister_tool(_HelloTool.name)
+
+    assert llm_requests, "expected at least one llm.call.request after the tool step"
+    messages = llm_requests[0].payload.get("messages", [])
+    observations = [m for m in messages if isinstance(m, dict) and str(m.get("content", "")).startswith("Observation:")]
+    assert observations, messages
+    rendered = observations[-1]["content"]
+    assert "hi ada" in rendered, rendered
+    assert '"value": null' not in rendered, rendered

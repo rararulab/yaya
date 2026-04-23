@@ -26,6 +26,12 @@ tool, or memory plugin is built on top.
   kernel-side v1 dispatcher runs registered `Tool` subclasses. Legacy
   tools that subscribe directly to `tool.call.request` still receive
   the same event and may ignore the extra field.
+- `tool.call.result` projection into the ReAct `Observation:` message
+  handles both shapes: the v1 dispatcher's `{envelope: {brief, display}}`
+  (TextBlock / MarkdownBlock surface as text; JsonBlock surfaces as
+  `{brief, data}`) and the legacy `{value: ...}` shape emitted by
+  `tool_bash`. Failures preserve `kind` and `brief` from the envelope
+  so the LLM sees the tool-authored reason, not a generic "unknown".
 - Correlation via event id: each outbound request event is matched
   with its response by echoing the request's id as
   `payload.request_id`; untracked responses carrying no matching
@@ -106,6 +112,16 @@ Scenario: Error path — user.interrupt guard aborts the active turn for the ses
   When a user.interrupt event is published for the same active session
   Then the current turn aborts under the interrupt guard
   And no further tool.call.request is emitted for that turn
+
+Scenario: v1 tool envelope projects into the ReAct Observation
+  Test:
+    Package: yaya
+    Filter: tests/kernel/test_loop.py::test_loop_projects_v1_envelope_into_llm_request
+  Level: unit
+  Given an AgentLoop with a registered v1 Tool returning a TextBlock envelope
+  And a strategy that calls the tool then asks the LLM
+  When a user.message.received event arrives
+  Then the subsequent llm.call.request carries an Observation message with the tool's text
 
 Scenario: Correlation via request_id — untracked response without matching request_id is ignored
   Test:

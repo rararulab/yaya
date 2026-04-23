@@ -131,15 +131,33 @@ def _format_tool_result_for_llm(result_payload: dict[str, Any]) -> str:
 
     The caller wraps the returned string as
     ``role="user" content="Observation: <this>"`` before appending it
-    to the conversation. We prefer compact structured JSON so the
-    model can parse fields (stdout / stderr / error) reliably, but
-    fall back to the stdout-only shape when the tool returned a flat
-    ``value`` that already reads well as text.
+    to the conversation.
+
+    Two payload shapes reach this formatter:
+
+    * The v1 ``kernel.tool.dispatch`` shape — ``{id, ok, envelope, ...}``
+      where ``envelope`` is a serialised :class:`ToolOk` / :class:`ToolError`
+      (carries ``brief`` + a typed ``display`` block). Every v1 ``Tool``
+      subclass (mercari, mcp_bridge-derived tools, agent-tool) returns
+      through this path.
+    * The legacy ``on_event`` shape — ``{id, ok, value, ...}`` or
+      ``{id, ok, error, ...}``. Only ``tool_bash`` still emits this.
+
+    We extract a text rendition the LLM can actually read: the display
+    block's payload for v1, or the raw ``value`` for legacy. Returning
+    ``{"ok": true, "value": null}`` (the old default branch) silently
+    hid every v1 tool's output from the model and broke downstream
+    reasoning — see #181.
     """
     import json
 
     if result_payload.get("ok") is False:
-        return json.dumps({"ok": False, "error": result_payload.get("error", "unknown")})
+        return _format_failed_result(result_payload)
+
+    envelope_raw: Any = result_payload.get("envelope")
+    if isinstance(envelope_raw, dict):
+        return _format_v1_envelope(cast("dict[str, Any]", envelope_raw))
+
     value: Any = result_payload.get("value")
     if isinstance(value, dict):
         typed_value = cast("dict[str, Any]", value)
@@ -148,6 +166,83 @@ def _format_tool_result_for_llm(result_payload: dict[str, Any]) -> str:
     if isinstance(value, str):
         return value
     return json.dumps({"ok": True, "value": value})
+
+
+def _format_failed_result(result_payload: dict[str, Any]) -> str:
+    """Project an ``ok=False`` tool result into a compact error line.
+
+    Both shapes surface failures here: the v1 dispatcher emits
+    ``envelope`` with ``kind`` + ``brief`` + ``display``; legacy
+    ``tool_bash`` emits a flat ``error`` string. Prefer the v1 detail
+    when present so the LLM sees the tool-authored brief instead of a
+    generic "unknown".
+    """
+    import json
+
+    envelope_raw: Any = result_payload.get("envelope")
+    if isinstance(envelope_raw, dict):
+        envelope = cast("dict[str, Any]", envelope_raw)
+        failure: dict[str, Any] = {"ok": False}
+        kind = envelope.get("kind")
+        if isinstance(kind, str) and kind:
+            failure["kind"] = kind
+        brief = envelope.get("brief")
+        if isinstance(brief, str) and brief:
+            failure["error"] = brief
+        display = _display_payload(envelope.get("display"))
+        if display is not None:
+            failure["detail"] = display
+        if "error" not in failure and "detail" not in failure:
+            failure["error"] = "tool failed"
+        return json.dumps(failure)
+
+    return json.dumps({"ok": False, "error": result_payload.get("error", "unknown")})
+
+
+def _format_v1_envelope(envelope: dict[str, Any]) -> str:
+    """Project a v1 ``ToolOk`` envelope into an LLM-readable observation.
+
+    ``envelope.display`` is one of the built-in blocks:
+    ``TextBlock`` / ``MarkdownBlock`` carry ``text``; ``JsonBlock``
+    carries structured ``data``. When the display payload already reads
+    well as text we return it verbatim; structured JSON is re-serialised
+    with ``brief`` so the LLM has both a one-line summary and the full
+    content to cite.
+    """
+    import json
+
+    brief_raw: Any = envelope.get("brief")
+    brief = brief_raw if isinstance(brief_raw, str) else ""
+    display = _display_payload(envelope.get("display"))
+
+    if isinstance(display, str):
+        return f"{brief}\n{display}" if brief else display
+    if display is None:
+        return brief or json.dumps({"ok": True})
+    body: dict[str, Any] = {"ok": True, "data": display}
+    if brief:
+        body["brief"] = brief
+    return json.dumps(body)
+
+
+def _display_payload(display: Any) -> str | dict[str, Any] | None:
+    """Extract the readable payload from a ``DisplayBlock`` dump.
+
+    ``Tool.run`` serialises its display through ``model_dump(mode="json")``
+    so the block surfaces as a plain dict here. Text/Markdown blocks map
+    to their ``text`` string; JSON blocks map to their ``data`` dict.
+    Anything else is left to the caller's fallback.
+    """
+    if not isinstance(display, dict):
+        return None
+    typed = cast("dict[str, Any]", display)
+    text = typed.get("text")
+    if isinstance(text, str):
+        return text
+    data = typed.get("data")
+    if isinstance(data, dict):
+        return cast("dict[str, Any]", data)
+    return None
 
 
 def project_entries_to_messages(entries: list[Any]) -> list[Message]:

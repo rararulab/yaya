@@ -9,7 +9,7 @@
  * way.
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../chat-shell.js";
 import type { YayaChat } from "../chat-shell.js";
 import type { AssistantChatMessage } from "../types.js";
@@ -324,6 +324,136 @@ function sends(shell: KeyboardInternals): unknown[] {
 	shell.ws = { send: (msg) => captured.push(msg) };
 	return captured;
 }
+
+/**
+ * Thinking indicator (#173).
+ *
+ * Exercises both visibility surfaces: the standalone bubble that
+ * appears before any delta has landed, and the inline dots that ride
+ * the streaming bubble after a 500ms idle gap. Fast-streaming bursts
+ * must NOT trip the inline dots — that is the core flicker guarantee.
+ */
+interface ThinkingInternals extends Internals {
+	lastDeltaTs: number | null;
+	tickCounter: number;
+	updateComplete: Promise<unknown>;
+}
+
+describe("YayaChat thinking indicator (#173)", () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("renders standalone thinking bubble when in-flight and no streaming message", async () => {
+		const shell = makeShell() as unknown as ThinkingInternals;
+		document.body.appendChild(shell as unknown as Node);
+		shell.inFlight = true;
+		shell.streamingMessage = null;
+		await shell.updateComplete;
+		const indicator = (shell as unknown as HTMLElement).querySelector(
+			"[data-testid=thinking-indicator]",
+		);
+		expect(indicator).not.toBeNull();
+		expect(indicator?.getAttribute("role")).toBe("status");
+		expect(indicator?.getAttribute("aria-live")).toBe("polite");
+		(shell as unknown as HTMLElement).remove();
+	});
+
+	it("hides the standalone bubble once the first delta arrives", async () => {
+		const shell = makeShell() as unknown as ThinkingInternals;
+		document.body.appendChild(shell as unknown as Node);
+		shell.inFlight = true;
+		shell.streamingMessage = null;
+		await shell.updateComplete;
+		expect(
+			(shell as unknown as HTMLElement).querySelector(
+				"[data-testid=thinking-indicator]",
+			),
+		).not.toBeNull();
+		shell.onFrame({ type: "assistant.delta", session_id: "ws-x", content: "Hi" });
+		await shell.updateComplete;
+		expect(
+			(shell as unknown as HTMLElement).querySelector(
+				"[data-testid=thinking-indicator]",
+			),
+		).toBeNull();
+		(shell as unknown as HTMLElement).remove();
+	});
+
+	it("surfaces inline dots on the streaming bubble after an idle gap > 500ms", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const shell = makeShell() as unknown as ThinkingInternals;
+		document.body.appendChild(shell as unknown as Node);
+		shell.inFlight = true;
+		shell.onFrame({ type: "assistant.delta", session_id: "ws-x", content: "Hi" });
+		await shell.updateComplete;
+		// No inline dots right after a delta.
+		expect(
+			(shell as unknown as HTMLElement).querySelector(
+				"[data-testid=thinking-inline]",
+			),
+		).toBeNull();
+		// Advance past the 500ms idle threshold and let the 250ms ticker
+		// fire a re-render.
+		vi.advanceTimersByTime(800);
+		await shell.updateComplete;
+		expect(
+			(shell as unknown as HTMLElement).querySelector(
+				"[data-testid=thinking-inline]",
+			),
+		).not.toBeNull();
+		(shell as unknown as HTMLElement).remove();
+	});
+
+	it("does not flicker inline dots during fast 100ms-interval deltas", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const shell = makeShell() as unknown as ThinkingInternals;
+		document.body.appendChild(shell as unknown as Node);
+		shell.inFlight = true;
+		for (let i = 0; i < 10; i++) {
+			shell.onFrame({
+				type: "assistant.delta",
+				session_id: "ws-x",
+				content: "x",
+			});
+			vi.advanceTimersByTime(100);
+			await shell.updateComplete;
+			expect(
+				(shell as unknown as HTMLElement).querySelector(
+					"[data-testid=thinking-inline]",
+				),
+			).toBeNull();
+		}
+		(shell as unknown as HTMLElement).remove();
+	});
+
+	it("clears the indicator on plugin.error mid-turn", async () => {
+		const shell = makeShell() as unknown as ThinkingInternals;
+		document.body.appendChild(shell as unknown as Node);
+		shell.inFlight = true;
+		shell.streamingMessage = null;
+		await shell.updateComplete;
+		expect(
+			(shell as unknown as HTMLElement).querySelector(
+				"[data-testid=thinking-indicator]",
+			),
+		).not.toBeNull();
+		shell.onFrame({
+			type: "plugin.error",
+			session_id: "kernel",
+			name: "foo",
+			error: "boom",
+		});
+		await shell.updateComplete;
+		expect(
+			(shell as unknown as HTMLElement).querySelector(
+				"[data-testid=thinking-indicator]",
+			),
+		).toBeNull();
+		expect(shell.inFlight).toBe(false);
+		(shell as unknown as HTMLElement).remove();
+	});
+});
 
 describe("YayaChat multiline input", () => {
 	it("submits on plain Enter (kimi-style)", () => {

@@ -997,6 +997,85 @@ yaya-app {
 	color: inherit;
 }
 
+/* Thinking indicator (#173). Pulses three dots while a turn is in
+ * flight so the user never stares at a disabled composer during
+ * MiniMax/MoonShot chunk batching or ReAct's multi-LLM-round pauses.
+ * Two surfaces:
+ *   - ``.yaya-thinking-bubble``      : a standalone bubble rendered
+ *                                      before any delta has landed.
+ *                                      Mirrors the assistant bubble's
+ *                                      muted skin so layout stays put
+ *                                      when the real bubble appears.
+ *   - ``.yaya-thinking-dots-inline`` : three dots appended to a
+ *                                      streaming bubble's answer body
+ *                                      once the 500ms idle-gap trips. */
+.yaya-thinking-bubble {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 75%;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background: var(--yaya-surface-muted, hsl(210 16% 94%));
+	color: var(--yaya-text-secondary);
+	font-size: 13px;
+	line-height: 1;
+}
+
+.yaya-thinking-dots {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	line-height: 1;
+}
+
+.yaya-thinking-dots-inline {
+	margin-left: 6px;
+	vertical-align: baseline;
+}
+
+.yaya-thinking-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+	color: var(--yaya-text-secondary);
+	opacity: 0.2;
+	animation: yaya-thinking-pulse 1.2s infinite ease-in-out both;
+}
+
+.yaya-thinking-dot:nth-child(1) {
+	animation-delay: 0ms;
+}
+
+.yaya-thinking-dot:nth-child(2) {
+	animation-delay: 150ms;
+}
+
+.yaya-thinking-dot:nth-child(3) {
+	animation-delay: 300ms;
+}
+
+@keyframes yaya-thinking-pulse {
+	0%,
+	80%,
+	100% {
+		opacity: 0.2;
+	}
+	40% {
+		opacity: 1;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.yaya-thinking-dot {
+		animation: none;
+		/* Static half-tone dots convey the "thinking" state without
+		 * motion for users who opted out. */
+		opacity: 0.6;
+	}
+}
+
 /* Historical-provider resume banner (#163). Inline (not modal) so the
  * transcript remains readable; two explicit actions so a resume never
  * silently switches provider. */

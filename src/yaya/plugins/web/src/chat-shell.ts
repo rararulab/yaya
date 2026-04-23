@@ -217,6 +217,39 @@ export class YayaChat extends LitElement {
 		activeProvider: string | null;
 	} | null = null;
 
+	/**
+	 * Timestamp (``Date.now()``) of the most recent ``applyDelta`` call
+	 * for the active turn, or ``null`` when no delta has arrived yet.
+	 *
+	 * The thinking-indicator derives all of its visibility from this
+	 * timestamp plus ``inFlight`` / ``streamingMessage`` so we never
+	 * maintain a duplicate "is-thinking" bit that could drift out of
+	 * sync with the real streaming state (#173).
+	 */
+	@state() private lastDeltaTs: number | null = null;
+
+	/**
+	 * Monotonic tick bumped by ``thinkingInterval`` while a turn is in
+	 * flight. Its only purpose is to trigger a Lit re-render every
+	 * ~250ms so the inline idle-gap check (``Date.now() - lastDeltaTs
+	 * > 500``) can flip the indicator on without an explicit event.
+	 */
+	@state() private tickCounter = 0;
+
+	/**
+	 * ``setInterval`` handle for the 250ms re-render tick. Non-null only
+	 * while ``inFlight`` is true; cleared on every path that flips
+	 * ``inFlight`` back to false (finishAssistant, error frames,
+	 * interrupt, new-chat, resume, ws.disconnected).
+	 */
+	private thinkingInterval: ReturnType<typeof setInterval> | null = null;
+
+	/** Flicker guard: a streaming bubble only shows inline dots once no
+	 * delta has landed for this many ms. MiniMax / MoonShot chunk
+	 * batching occasionally pauses ~200-400ms between bursts — we must
+	 * not flicker the dots in that window. */
+	private static readonly THINKING_IDLE_MS = 500;
+
 	private ws: WsClient | null = null;
 	private nextToastId = 1;
 	private currentSessionId: string | null = null;
@@ -342,6 +375,35 @@ export class YayaChat extends LitElement {
 		this.toolCallsById = new Map();
 		this.pendingToolCalls = new Set();
 		this.inputValue = "";
+		this.stopThinkingTicker();
+		this.lastDeltaTs = null;
+	}
+
+	/**
+	 * Start the ~250ms re-render ticker that drives the inline
+	 * thinking-indicator's idle-gap check. Idempotent: if the ticker is
+	 * already running, this is a no-op.
+	 *
+	 * The ticker does not mutate chat state beyond ``tickCounter``. Its
+	 * only job is to force Lit to re-evaluate the render function so
+	 * the derived visibility rule (``Date.now() - lastDeltaTs > 500``)
+	 * can flip on after an idle gap without needing an event to land.
+	 */
+	private startThinkingTicker(): void {
+		if (this.thinkingInterval !== null) {
+			return;
+		}
+		this.thinkingInterval = setInterval(() => {
+			this.tickCounter++;
+		}, 250);
+	}
+
+	/** Stop the re-render ticker. Idempotent. */
+	private stopThinkingTicker(): void {
+		if (this.thinkingInterval !== null) {
+			clearInterval(this.thinkingInterval);
+			this.thinkingInterval = null;
+		}
 	}
 
 	/**
@@ -448,10 +510,27 @@ export class YayaChat extends LitElement {
 		}
 	}
 
+	protected override updated(
+		changed: Map<string | number | symbol, unknown>,
+	): void {
+		// Drive the thinking ticker from ``inFlight`` transitions so any
+		// code path that flips the flag (sendMessage, hydrateFrames with
+		// an abandoned turn, direct test fixtures) ends up with a
+		// coherent ticker without each caller remembering to poke it.
+		if (changed.has("inFlight")) {
+			if (this.inFlight) {
+				this.startThinkingTicker();
+			} else {
+				this.stopThinkingTicker();
+			}
+		}
+	}
+
 	override disconnectedCallback(): void {
 		super.disconnectedCallback();
 		this.ws?.close();
 		this.ws = null;
+		this.stopThinkingTicker();
 		window.removeEventListener("yaya:new-chat", this.onNewChat);
 		window.removeEventListener("yaya:resume-session", this.onResumeSession as EventListener);
 	}
@@ -475,6 +554,8 @@ export class YayaChat extends LitElement {
 				// drops; reset so the UI becomes interactive again.
 				this.inFlight = false;
 				this.streamingMessage = null;
+				this.stopThinkingTicker();
+				this.lastDeltaTs = null;
 				return;
 			case "assistant.delta":
 				this.applyDelta(frame.content);
@@ -532,6 +613,8 @@ export class YayaChat extends LitElement {
 				// Without this, the textarea stays disabled until reload.
 				this.inFlight = false;
 				this.streamingMessage = null;
+				this.stopThinkingTicker();
+				this.lastDeltaTs = null;
 				return;
 			case "kernel.ready":
 				this.pushToast("info", `kernel ready (v${frame.version})`);
@@ -544,6 +627,8 @@ export class YayaChat extends LitElement {
 				// Bug #71: a kernel-level failure aborts the turn; re-enable input.
 				this.inFlight = false;
 				this.streamingMessage = null;
+				this.stopThinkingTicker();
+				this.lastDeltaTs = null;
 				return;
 			default:
 				return assertNever(frame);
@@ -551,6 +636,11 @@ export class YayaChat extends LitElement {
 	}
 
 	private applyDelta(content: string): void {
+		// Record the moment this delta landed so the inline idle-gap
+		// check in render() can fire once the gap exceeds
+		// THINKING_IDLE_MS. No effect on text — that still comes from
+		// the existing streamingMessage accumulation below.
+		this.lastDeltaTs = Date.now();
 		const existing = this.streamingMessage;
 		if (existing === null) {
 			this.streamingMessage = {
@@ -595,6 +685,8 @@ export class YayaChat extends LitElement {
 		this.messages = [...this.messages, msg];
 		this.streamingMessage = null;
 		this.inFlight = false;
+		this.stopThinkingTicker();
+		this.lastDeltaTs = null;
 		// Let the sidebar re-fetch /api/sessions so the Recent list
 		// picks up the tape that landed on this turn.
 		window.dispatchEvent(new CustomEvent("yaya:turn-finished"));
@@ -623,6 +715,8 @@ export class YayaChat extends LitElement {
 			ta.style.height = "auto";
 		}
 		this.inFlight = true;
+		this.lastDeltaTs = null;
+		this.startThinkingTicker();
 		this.ws.send({ type: "user.message", text });
 	}
 
@@ -668,6 +762,8 @@ export class YayaChat extends LitElement {
 		this.ws.send({ type: "user.interrupt" });
 		this.inFlight = false;
 		this.streamingMessage = null;
+		this.stopThinkingTicker();
+		this.lastDeltaTs = null;
 	}
 
 	private toggleTheme(): void {
@@ -764,11 +860,44 @@ export class YayaChat extends LitElement {
 		`;
 	}
 
+	/**
+	 * Derive whether the thinking indicator should render inline inside
+	 * the current streaming bubble.
+	 *
+	 * Returns ``true`` only when a turn is in flight, a streaming bubble
+	 * already exists, and no delta has landed for ``THINKING_IDLE_MS``.
+	 * The streaming-burst case — deltas arriving every ~100ms — never
+	 * trips the 500ms threshold, so the dots stay hidden through fast
+	 * streams and only surface during real pauses (tool-call rounds,
+	 * provider batching). ``tickCounter`` is read via the @state wiring
+	 * in render(); this helper is pure derivation.
+	 */
+	private shouldShowInlineDots(now: number): boolean {
+		if (!this.inFlight || this.streamingMessage === null) {
+			return false;
+		}
+		if (this.lastDeltaTs === null) {
+			// No delta yet but we already have a streamingMessage (only
+			// possible if a caller populated it directly, e.g. tests). The
+			// standalone bubble covers the "no deltas yet" case; treat
+			// this as not-yet-idle.
+			return false;
+		}
+		return now - this.lastDeltaTs > YayaChat.THINKING_IDLE_MS;
+	}
+
 	override render(): TemplateResult {
 		// Connection state moved into the sidebar footer dot (#114); the
 		// chat header no longer renders a duplicate indicator.
 		const empty = this.messages.length === 0 && this.streamingMessage === null;
 		const quickStart = ["Summarize a file", "Generate a plan", "Review code diff"];
+		// Read tickCounter so Lit re-subscribes our render to its
+		// bumps — without this read, the 250ms ticker would update the
+		// state but the idle-gap branch below would not re-evaluate.
+		void this.tickCounter;
+		const now = Date.now();
+		const showStandaloneThinking = this.inFlight && this.streamingMessage === null;
+		const showInlineDots = this.shouldShowInlineDots(now);
 
 		return html`
 			<div class="yaya-chat">
@@ -808,7 +937,25 @@ export class YayaChat extends LitElement {
 										.filter((c): c is TextContent => c.type === "text")
 										.map((c) => c.text)
 										.join("")}
+									?thinking=${showInlineDots}
 								></yaya-bubble>`
+							: nothing}
+						${showStandaloneThinking
+							? html`<div
+									class="flex justify-start my-2"
+									role="status"
+									aria-live="polite"
+									aria-label="Assistant is thinking"
+									data-testid="thinking-indicator"
+								>
+									<div class="yaya-thinking-bubble">
+										<span class="yaya-thinking-dots" aria-hidden="true">
+											<span class="yaya-thinking-dot"></span>
+											<span class="yaya-thinking-dot"></span>
+											<span class="yaya-thinking-dot"></span>
+										</span>
+									</div>
+								</div>`
 							: nothing}
 						${this.renderToolBlocks()}
 					</div>
@@ -892,9 +1039,34 @@ export class YayaChat extends LitElement {
 export class YayaBubble extends LitElement {
 	@property({ type: String }) override role: "user" | "assistant" = "user";
 	@property({ type: String }) content = "";
+	/**
+	 * When ``true``, append an inline pulsing-dots indicator to the
+	 * bubble's answer body (or the thought-body if no answer has
+	 * arrived yet). Driven by ``YayaChat``'s 500ms idle-gap derivation
+	 * in #173 so users see motion during provider-batching pauses
+	 * without the dots flickering through normal fast streams.
+	 */
+	@property({ type: Boolean, reflect: true }) thinking = false;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
+	}
+
+	/**
+	 * Three-dot inline spinner rendered inside a streaming bubble when
+	 * the assistant has gone quiet for ``THINKING_IDLE_MS`` (#173).
+	 * ``aria-hidden`` because the parent ``data-testid=thinking-inline``
+	 * host carries the live-region semantics.
+	 */
+	private renderInlineDots(): TemplateResult {
+		return html`<span
+			class="yaya-thinking-dots yaya-thinking-dots-inline"
+			data-testid="thinking-inline"
+			aria-hidden="true"
+			><span class="yaya-thinking-dot"></span><span
+				class="yaya-thinking-dot"
+			></span><span class="yaya-thinking-dot"></span
+		></span>`;
 	}
 
 	override render(): TemplateResult {
@@ -914,18 +1086,27 @@ export class YayaBubble extends LitElement {
 		// reasoning before the final answer arrives. Once Final
 		// Answer: lands, re-render fills the answer body while the
 		// <details> stays collapsed.
+		const inline = this.thinking ? this.renderInlineDots() : nothing;
 		if (!isUser) {
 			const { thought, answer } = splitThoughtFromFinal(this.content);
 			if (thought !== null) {
+				// Dots ride the answer body once it exists so users see
+				// the pause attached to the visible output; if no answer
+				// has arrived yet, they ride the thought-body so the
+				// affordance still surfaces inside the collapsed
+				// reasoning section's host bubble.
+				const showInAnswer = answer.length > 0;
 				return html`
 					<div class="flex ${align} my-2">
 						<div class="max-w-[75%] rounded-lg px-3 py-2 text-sm ${skin}">
 							<details class="yaya-thought">
 								<summary class="yaya-thought-summary">Show reasoning</summary>
-								<div class="yaya-thought-body">${thought}</div>
+								<div class="yaya-thought-body">
+									${thought}${!showInAnswer ? inline : nothing}
+								</div>
 							</details>
-							${answer
-								? html`<div class="yaya-answer whitespace-pre-wrap">${answer}</div>`
+							${showInAnswer
+								? html`<div class="yaya-answer whitespace-pre-wrap">${answer}${inline}</div>`
 								: nothing}
 						</div>
 					</div>
@@ -934,7 +1115,9 @@ export class YayaBubble extends LitElement {
 		}
 		return html`
 			<div class="flex ${align} my-2">
-				<div class="max-w-[75%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${skin}">${this.content}</div>
+				<div class="max-w-[75%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${skin}">
+					${this.content}${!isUser ? inline : nothing}
+				</div>
 			</div>
 		`;
 	}

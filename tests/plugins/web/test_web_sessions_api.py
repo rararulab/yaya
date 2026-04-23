@@ -372,6 +372,39 @@ async def test_frames_endpoint_tool_result_carries_error_field(tmp_path: Path) -
         await store.close()
 
 
+async def test_frames_endpoint_tool_result_carries_v1_envelope(tmp_path: Path) -> None:
+    """Tool results with a v1 envelope project the envelope onto the replay frame (#188)."""
+    store = SessionStore(tapes_dir=tmp_path / "tapes")
+    try:
+        session = await store.open(tmp_path, "ws-frames-envelope")
+        await session.append_tool_call({"id": "t1", "name": "mercari_jp_search", "args": {"keyword": "iPhone"}})
+        await session.append_tool_result(
+            "t1",
+            {
+                "ok": True,
+                "envelope": {
+                    "ok": True,
+                    "brief": "found 20 Mercari candidate(s)",
+                    "display": {"kind": "json", "data": {"items": [{"title": "x"}]}},
+                },
+            },
+        )
+
+        infos = await store.list_sessions(tmp_path)
+        sid = infos[0].session_id
+        app = _build_app(session_store=store, workspace=tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(f"/api/sessions/{sid}/frames")
+        frames = res.json()["frames"]
+        result_frame = next(f for f in frames if f["kind"] == "tool.result")
+        assert result_frame["ok"] is True
+        assert result_frame["envelope"]["brief"] == "found 20 Mercari candidate(s)"
+        assert result_frame["envelope"]["display"]["kind"] == "json"
+    finally:
+        await store.close()
+
+
 async def test_delete_session_archives_the_tape(tmp_path: Path) -> None:
     """DELETE archives the tape and removes it from the live list (#161)."""
     store = SessionStore(tapes_dir=tmp_path / "tapes")

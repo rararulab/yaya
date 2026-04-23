@@ -375,6 +375,12 @@ def _tool_result_frames(payload: dict[str, Any]) -> list[dict[str, Any]]:
             frame["value"] = result["value"]
         if "error" in result:
             frame["error"] = result["error"]
+        # Propagate the v1 envelope verbatim so the UI can render brief
+        # + display on replay, same as the live ``tool.call.result`` path
+        # (#188). Without this the UI would lose the tool-authored brief
+        # and fall back to "undefined" when rehydrating v1 tool calls.
+        if "envelope" in result:
+            frame["envelope"] = result["envelope"]
         out.append(frame)
     return out
 

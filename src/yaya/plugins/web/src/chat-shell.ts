@@ -113,12 +113,19 @@ function formatToolDisplay(envelope: ToolEnvelope): string {
  * both the v1 ``{envelope}`` shape emitted by ``kernel/tool.py::dispatch``
  * and the legacy ``{value, error}`` shape still used by ``tool_bash``.
  */
+interface ProjectedToolResult {
+	brief: string;
+	output: string;
+	errorKind?: string;
+	error?: string;
+}
+
 function projectToolResult(payload: {
 	ok: boolean;
 	value?: unknown;
 	error?: string;
 	envelope?: ToolEnvelope;
-}): { brief: string; output: string; errorKind?: string; error?: string } {
+}): ProjectedToolResult {
 	const envelope = payload.envelope;
 	if (envelope) {
 		const brief = typeof envelope.brief === "string" ? envelope.brief : "";
@@ -126,12 +133,15 @@ function projectToolResult(payload: {
 		if (payload.ok) {
 			return { brief, output: body };
 		}
-		return {
+		const failure: ProjectedToolResult = {
 			brief,
 			output: body,
-			errorKind: typeof envelope.kind === "string" ? envelope.kind : undefined,
 			error: brief || payload.error || "tool failed",
 		};
+		if (typeof envelope.kind === "string") {
+			failure.errorKind = envelope.kind;
+		}
+		return failure;
 	}
 	// Legacy ``{value}`` shape: bash returns stdout/stderr/returncode; other
 	// legacy tools may return a flat string or arbitrary JSON. Prefer the
@@ -557,10 +567,10 @@ export class YayaChat extends LitElement {
 					const updated: ToolCallState = {
 						id: frame.id,
 						name: tc?.name ?? frame.id,
-						args: tc?.args,
 						brief: projected.brief,
 						output: projected.output,
 						ok: frame.ok,
+						...(tc?.args !== undefined ? { args: tc.args } : {}),
 						...(projected.error !== undefined ? { error: projected.error } : {}),
 						...(projected.errorKind !== undefined ? { errorKind: projected.errorKind } : {}),
 					};
@@ -676,10 +686,10 @@ export class YayaChat extends LitElement {
 				const updated: ToolCallState = {
 					id: frame.id,
 					name: tc?.name ?? frame.id,
-					args: tc?.args,
 					brief: projected.brief,
 					output: projected.output,
 					ok: frame.ok,
+					...(tc?.args !== undefined ? { args: tc.args } : {}),
 					...(projected.error !== undefined ? { error: projected.error } : {}),
 					...(projected.errorKind !== undefined ? { errorKind: projected.errorKind } : {}),
 				};

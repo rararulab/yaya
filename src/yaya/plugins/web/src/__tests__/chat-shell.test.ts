@@ -212,7 +212,9 @@ describe("YayaBubble ReAct thought folding (#167)", () => {
 		expect(summary?.textContent?.trim()).toBe("Show reasoning");
 		expect((details[0] as HTMLDetailsElement).open).toBe(false);
 		const answer = el.querySelector(".yaya-answer");
-		expect(answer?.textContent).toBe("hello");
+		// .textContent may include the trailing newline marked adds to <p>
+		// elements; the rendered final-answer text is what we care about.
+		expect(answer?.textContent?.trim()).toBe("hello");
 		el.remove();
 	});
 

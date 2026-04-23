@@ -15,6 +15,7 @@
  */
 
 import { LitElement, html, nothing, type TemplateResult } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { customElement, property, state } from "lit/decorators.js";
 
 // Side-effectful imports register the custom elements used below.
@@ -41,6 +42,7 @@ import type {
 	ToolResultChatMessage,
 	UserChatMessage,
 } from "./types.js";
+import { renderMarkdown } from "./markdown.js";
 import { splitThoughtFromFinal } from "./thought-split.js";
 import { assertNever } from "./types.js";
 import { WsClient, defaultWsUrl } from "./ws-client.js";
@@ -1096,22 +1098,34 @@ export class YayaBubble extends LitElement {
 				// affordance still surfaces inside the collapsed
 				// reasoning section's host bubble.
 				const showInAnswer = answer.length > 0;
+				const thoughtHtml = renderMarkdown(thought);
+				const answerHtml = renderMarkdown(answer);
 				return html`
 					<div class="flex ${align} my-2">
 						<div class="max-w-[75%] rounded-lg px-3 py-2 text-sm ${skin}">
 							<details class="yaya-thought">
 								<summary class="yaya-thought-summary">Show reasoning</summary>
-								<div class="yaya-thought-body">
-									${thought}${!showInAnswer ? inline : nothing}
+								<div class="yaya-thought-body yaya-markdown">
+									${unsafeHTML(thoughtHtml)}${!showInAnswer ? inline : nothing}
 								</div>
 							</details>
 							${showInAnswer
-								? html`<div class="yaya-answer whitespace-pre-wrap">${answer}${inline}</div>`
+								? html`<div class="yaya-answer yaya-markdown">${unsafeHTML(answerHtml)}${inline}</div>`
 								: nothing}
 						</div>
 					</div>
 				`;
 			}
+			// Non-ReAct assistant content: render markdown so echo-style
+			// providers still get tables / bold without a second code path.
+			const bodyHtml = renderMarkdown(this.content);
+			return html`
+				<div class="flex ${align} my-2">
+					<div class="max-w-[75%] rounded-lg px-3 py-2 text-sm ${skin} yaya-markdown">
+						${unsafeHTML(bodyHtml)}${inline}
+					</div>
+				</div>
+			`;
 		}
 		return html`
 			<div class="flex ${align} my-2">

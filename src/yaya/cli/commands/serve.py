@@ -108,6 +108,22 @@ def _has_web_adapter(snapshot: list[dict[str, str]]) -> bool:
     )
 
 
+def _web_adapter_port(registry: PluginRegistry) -> int | None:
+    """Return the port the loaded web adapter is listening on.
+
+    The kernel's ``bound_port`` is not an HTTP port — it's a kernel
+    config construct with no listener behind it. The browser must
+    open the web adapter's uvicorn port instead (#195). Tolerates a
+    missing or not-yet-bound adapter by returning ``None`` so the
+    caller can skip the browser launch.
+    """
+    for plugin in registry.loaded_plugins(Category.ADAPTER):
+        port = getattr(plugin, "bound_port", None)
+        if isinstance(port, int) and port > 0:
+            return port
+    return None
+
+
 def _make_session_store(cfg: KernelConfig) -> SessionStore:
     """Build the :class:`SessionStore` for ``yaya serve``.
 
@@ -368,22 +384,27 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
                 "`yaya doctor` verifies the bus round-trip in the meantime."
             )
 
+        web_port = _web_adapter_port(registry) if web_present else None
+        web_url = f"http://{_BIND_HOST}:{web_port}/" if web_port is not None else None
+        status_lines = [
+            f"[green]yaya kernel live[/] (pid {os.getpid()})",
+        ]
+        if web_url is not None:
+            status_lines.append(f"[bold]web UI:[/] {web_url}")
+        elif web_present:
+            # Adapter loaded but port not yet reported — rare; warn so
+            # the user knows where to look manually.
+            status_lines.append("[yellow]web adapter loaded but has not reported its bound port yet.[/]")
+        status_lines.append("press Ctrl+C to stop.")
         emit_ok(
             state,
-            text=(
-                f"[green]yaya kernel live[/] on "
-                f"[bold]{_BIND_HOST}:{bound_port}[/] (pid {os.getpid()})\n"
-                "[dim]note: the web adapter may bind a different port; "
-                "check http://127.0.0.1:<adapter-port>/api/health or set "
-                "YAYA_WEB_PORT to pin it.[/]\n"
-                "press Ctrl+C to stop."
-            ),
+            text="\n".join(status_lines),
             action="serve.started",
-            addr=f"{_BIND_HOST}:{bound_port}",
+            addr=web_url if web_url is not None else f"{_BIND_HOST}:{bound_port}",
             pid=os.getpid(),
         )
 
-        if not no_open and web_present:
+        if not no_open and web_url is not None:
             # Best-effort; ``webbrowser.open`` can block for seconds on
             # macOS (launching Safari), so run it on the default
             # executor instead of stalling the event loop.
@@ -394,7 +415,7 @@ async def run_serve(  # noqa: C901 — linear lifecycle, each branch is a distin
                 await asyncio.get_running_loop().run_in_executor(
                     None,
                     webbrowser.open,
-                    f"http://{_BIND_HOST}:{bound_port}/",
+                    web_url,
                 )
             except Exception as exc:
                 warn(f"[yellow]failed to open browser:[/] {exc}")

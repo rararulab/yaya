@@ -168,6 +168,17 @@ class WebAdapter:
         self._static_cm: Any = None
         self._static_path: Path | None = None
 
+    @property
+    def bound_port(self) -> int | None:
+        """Return the port uvicorn is listening on, or None before ``on_load``.
+
+        Exposed so the CLI (``yaya serve``) can open the browser at the
+        correct URL without duplicating the resolve logic. Kernel's
+        ``bound_port`` is a separate, non-HTTP construct; the real user-
+        facing address is this one.
+        """
+        return self._bound_port
+
     # -- ABI --------------------------------------------------------------------
 
     def subscriptions(self) -> list[str]:

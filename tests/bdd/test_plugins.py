@@ -9,20 +9,24 @@ into unexecuted prose.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from pytest_bdd import given, scenarios, then, when
 
 from yaya.kernel.bus import EventBus
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.plugin import KernelContext
+from yaya.kernel.tool import ToolError, ToolOk
 from yaya.plugins.llm_openai.plugin import OpenAIProvider
 from yaya.plugins.memory_sqlite.plugin import SqliteMemory
+from yaya.plugins.mercari_jp.plugin import MercariJpSearchTool
 from yaya.plugins.strategy_react import plugin as react_plugin
 from yaya.plugins.tool_bash.plugin import BashTool
 
@@ -33,6 +37,7 @@ pytestmark = pytest.mark.unit
 FEATURE_DIR = Path(__file__).parent / "features"
 for _feature in (
     "plugin-llm_openai.feature",
+    "plugin-mercari_jp.feature",
     "plugin-memory_sqlite.feature",
     "plugin-strategy_react.feature",
     "plugin-tool_bash.feature",
@@ -90,6 +95,35 @@ def _last_payload(ctx: BDDContext) -> dict[str, Any]:
     event = events[-1]
     assert isinstance(event, Event)
     return event.payload
+
+
+_MERCAPI_RESPONSE_WITH_ITEMS = {
+    "meta": {"nextPageToken": "", "previousPageToken": "", "numFound": "1"},
+    "items": [
+        {
+            "id": "m33333333333",
+            "name": "Nintendo Switch 有機EL ホワイト 本体",
+            "price": "28500",
+            "status": "ITEM_STATUS_ON_SALE",
+            "thumbnails": ["https://example.test/switch.jpg"],
+            "itemConditionId": "3",
+        }
+    ],
+}
+
+
+def _mercapi_client(status_code: int, body: dict[str, Any] | str) -> httpx.AsyncClient:
+    """Return a mocked Mercapi-compatible HTTP client for BDD scenarios."""
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://api.mercari.jp/v2/entities:search"
+        payload = json.loads(request.content.decode())
+        assert payload["searchCondition"]["keyword"] == "Nintendo Switch OLED"
+        if isinstance(body, str):
+            return httpx.Response(status_code, text=body, request=request)
+        return httpx.Response(status_code, json=body, request=request)
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(_handler))
 
 
 # -- llm-openai -------------------------------------------------------------
@@ -328,6 +362,79 @@ def _streaming_final_response(ctx: BDDContext) -> None:
     chunks = ctx.extras.get("expected_chunks", [])
     assert payload["text"] == "".join(chunks)
     assert payload["request_id"] == ctx.extras["last_request"].id
+
+
+# -- mercari-jp -------------------------------------------------------------
+
+
+@given("Mercapi returns a Mercari search response with visible product candidates")
+def _mercari_visible_cards(ctx: BDDContext) -> None:
+    ctx.extras["mercari_client"] = _mercapi_client(200, _MERCAPI_RESPONSE_WITH_ITEMS)
+    ctx.extras["mercari_tool"] = MercariJpSearchTool(
+        keyword="Nintendo Switch OLED",
+        max_price_jpy=30_000,
+        must_have=["Switch"],
+    )
+
+
+@given("Mercapi returns HTTP 403 for a Mercari search request")
+def _mercari_forbidden(ctx: BDDContext) -> None:
+    ctx.extras["mercari_client"] = _mercapi_client(403, "Forbidden")
+    ctx.extras["mercari_tool"] = MercariJpSearchTool(keyword="Nintendo Switch OLED")
+
+
+@given("Mercapi returns a Mercari search response with no product candidates")
+def _mercari_empty(ctx: BDDContext) -> None:
+    ctx.extras["mercari_client"] = _mercapi_client(
+        200,
+        {"meta": {"nextPageToken": "", "previousPageToken": "", "numFound": "0"}, "items": []},
+    )
+    ctx.extras["mercari_tool"] = MercariJpSearchTool(keyword="Nintendo Switch OLED")
+
+
+@when("the mercari_jp_search tool runs with a keyword and price ceiling")
+@when("the mercari_jp_search tool runs")
+def _mercari_tool_runs(ctx: BDDContext, loop: asyncio.AbstractEventLoop) -> None:
+    tool = ctx.extras["mercari_tool"]
+    client = ctx.extras["mercari_client"]
+    assert isinstance(tool, MercariJpSearchTool)
+    assert isinstance(client, httpx.AsyncClient)
+    result = loop.run_until_complete(tool.run_with_client(client))
+    loop.run_until_complete(client.aclose())
+    ctx.extras["mercari_result"] = result
+
+
+@then("it returns normalized candidates with source metadata, prices, URLs, and score reasons")
+def _mercari_candidates(ctx: BDDContext) -> None:
+    result = ctx.extras["mercari_result"]
+    assert isinstance(result, ToolOk)
+    assert result.display.kind == "json"
+    data = result.display.data
+    item = data["items"][0]
+    assert data["source"] == "mercapi_mercari"
+    assert data["source_url"].startswith("https://jp.mercari.com/search?")
+    assert item["price_jpy"] == 28_500
+    assert item["mercari_url"] == "https://jp.mercari.com/item/m33333333333"
+    assert item["score_reasons"]
+
+
+@then("it returns a rejected tool error explaining that the source refused the request")
+def _mercari_rejected(ctx: BDDContext) -> None:
+    result = ctx.extras["mercari_result"]
+    assert isinstance(result, ToolError)
+    assert result.kind == "rejected"
+    assert "refused" in result.display.text
+
+
+@then("it returns an empty candidate list with warnings containing Mercari coverage and Japanese keyword guidance")
+def _mercari_empty_result(ctx: BDDContext) -> None:
+    result = ctx.extras["mercari_result"]
+    assert isinstance(result, ToolOk)
+    assert result.display.kind == "json"
+    data = result.display.data
+    assert data["items"] == []
+    assert any("Mercari" in warning for warning in data["warnings"])
+    assert any("keyword" in warning for warning in data["warnings"])
 
 
 # -- memory-sqlite ----------------------------------------------------------

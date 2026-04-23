@@ -15,6 +15,7 @@ Bundled-plugin home. Each subpackage is one plugin that loads through the **same
   - `memory_sqlite/` — `Category.MEMORY` · subscribes to `memory.query` + `memory.write` · emits `memory.result`.
   - `llm_openai/` — `Category.LLM_PROVIDER` · subscribes to `llm.call.request` · emits `llm.call.response` or `llm.call.error`.
   - `tool_bash/` — `Category.TOOL` · subscribes to `tool.call.request` · emits `tool.call.result`.
+  - `mercari_jp/` — `Category.TOOL` · registers v1 tool `mercari_jp_search`; uses a Mercapi-compatible Mercari JP search request.
 - Each plugin has its own folder `AGENT.md` covering its Constraints + Interaction contract.
 
 ## Interaction (patterns)

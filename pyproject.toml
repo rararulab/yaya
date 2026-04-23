@@ -30,6 +30,7 @@ dependencies = [
     # orchestration framework and therefore not covered by the ban in
     # AGENT.md §4.
     "republic>=0.5.4",
+    "cryptography>=43.0.0",
 ]
 
 [project.entry-points."yaya.plugins.v1"]
@@ -40,6 +41,7 @@ llm_echo = "yaya.plugins.llm_echo:plugin"
 tool_bash = "yaya.plugins.tool_bash:plugin"
 mcp_bridge = "yaya.plugins.mcp_bridge:plugin"
 agent_tool = "yaya.plugins.agent_tool:plugin"
+mercari_jp = "yaya.plugins.mercari_jp:plugin"
 web = "yaya.plugins.web:plugin"
 
 [project.urls]

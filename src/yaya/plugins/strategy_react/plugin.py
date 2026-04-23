@@ -5,9 +5,11 @@ prompt that constrains the LLM to emit either
 ``Thought: ... Action: <tool> Action Input: <json>`` triples or a
 ``Thought: ... Final Answer: <user-facing text>`` termination. The
 strategy parses the assistant's latest content for one of those two
-shapes:
+shapes, plus a compatibility ``[TOOL_CALL]`` block emitted by some
+providers or prompts:
 
 * A valid Action → ``{next: "tool"}`` with a synthesized tool_call.
+* A valid ``[TOOL_CALL]`` JSON block → the same ``{next: "tool"}``.
 * A Final Answer → ``{next: "done"}``.
 * Neither → append one corrective ``role="user"`` nudge and reroll.
   A second parse failure terminates the turn (no endless retries).
@@ -65,6 +67,10 @@ _ACTION_RE = re.compile(
 )
 _ACTION_INPUT_RE = re.compile(
     r"^Action Input:\s*(?P<body>.*?)(?=^Action:|^Final Answer:|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_TOOL_CALL_RE = re.compile(
+    r"^[ \t]*\[TOOL_CALL\]\s*(?P<body>.*?)^[ \t]*\[/TOOL_CALL\][ \t]*$",
     re.MULTILINE | re.DOTALL,
 )
 # Strip ``` ```json ... ``` ``` fences that some models wrap JSON in.
@@ -339,12 +345,18 @@ def _parse_assistant(text: str) -> ParseResult:
     * ``("action", tool_name, args_dict)`` — a well-formed
       ``Action:`` / ``Action Input:`` pair was found. Args are parsed
       as JSON; if Action Input is wrapped in a ```json`` fence the
-      fence is stripped first.
+      fence is stripped first. A ``[TOOL_CALL]`` JSON block with
+      ``{"tool": <name>, "tool_input": <args>}`` maps to the same
+      result and wins over a nearby ``Final Answer`` marker.
     * ``("error", reason)`` — neither shape is present or the JSON
       could not be parsed. The strategy will issue one corrective
       nudge and reroll; a second error terminates the turn.
     """
-    # A ``Final Answer`` always wins if present, even when an
+    tool_call = _parse_tool_call_block(text)
+    if tool_call is not None:
+        return tool_call
+
+    # A classical ``Final Answer`` wins if present, even when an
     # accidental ``Action`` appears earlier — the ReAct paper treats
     # Final Answer as strictly terminal.
     final = _FINAL_RE.search(text)
@@ -372,6 +384,42 @@ def _parse_assistant(text: str) -> ParseResult:
     if not isinstance(parsed, dict):
         return ("error", f"Action Input must be a JSON object, got {type(parsed).__name__}")
     return ("action", name, cast("dict[str, Any]", parsed))
+
+
+def _parse_tool_call_block(text: str) -> ParseResult | None:
+    """Parse a provider-style ``[TOOL_CALL]`` block if one is present."""
+    match = _TOOL_CALL_RE.search(text)
+    if match is None:
+        return None
+
+    body = match.group("body").strip()
+    fence = _CODE_FENCE_RE.match(body)
+    if fence is not None:
+        body = fence.group("inner").strip()
+
+    try:
+        parsed: Any = json.loads(body)
+    except ValueError as exc:
+        return ("error", f"TOOL_CALL body is not valid JSON ({exc!s})")
+    if not isinstance(parsed, dict):
+        return ("error", f"TOOL_CALL body must be a JSON object, got {type(parsed).__name__}")
+
+    payload = cast("dict[str, Any]", parsed)
+    tool_raw = payload.get("tool")
+    if not isinstance(tool_raw, str) or not tool_raw.strip():
+        return ("error", "TOOL_CALL field 'tool' must be a non-empty string")
+
+    args_raw: Any
+    if "tool_input" in payload:
+        args_raw = payload["tool_input"]
+    elif "args" in payload:
+        args_raw = payload["args"]
+    else:
+        args_raw = {}
+    if not isinstance(args_raw, dict):
+        return ("error", f"TOOL_CALL input must be a JSON object, got {type(args_raw).__name__}")
+
+    return ("action", tool_raw.strip(), cast("dict[str, Any]", args_raw))
 
 
 __all__ = ["ReActStrategy"]

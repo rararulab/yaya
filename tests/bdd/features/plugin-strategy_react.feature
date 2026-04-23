@@ -14,6 +14,13 @@ Feature: ReAct strategy plugin
     Then a strategy.decide.response is emitted with next tool and the parsed tool_call payload
     And the response echoes the originating request id
 
+  Scenario: Assistant message with a bracketed tool-call block decides next step is tool
+    Given a strategy.decide.request whose last assistant message contains Final Answer prose and a [TOOL_CALL] block
+    When the ReAct plugin handles the event
+    Then a strategy.decide.response is emitted with next tool and the parsed tool_call payload
+    And the Final Answer prose does not terminate the turn before the tool runs
+    And the response echoes the originating request id
+
   Scenario: Observation follows the last assistant message so the next step loops back to llm
     Given a strategy.decide.request whose state has an Observation user message after the last assistant message
     When the ReAct plugin handles the event

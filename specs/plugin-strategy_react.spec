@@ -25,6 +25,12 @@ testable and deterministic.
   a `Thought: ... Final Answer: <text>` termination. Tool intent rides
   in free-form assistant text; the strategy does not consume
   `assistant.tool_calls`.
+- Accepts provider-style `[TOOL_CALL]` JSON blocks as a compatibility
+  input for tool intent. A block shaped as `{"tool": <name>,
+  "tool_input": <object>}` maps to the same `tool_call` decision as a
+  ReAct Action, and takes precedence over a nearby `Final Answer`
+  marker so mixed responses do not silently terminate before the tool
+  runs.
 - When the most-recent assistant message parses to a valid Action, the
   decision is `{"next": "tool", "tool_call": {"id", "name", "args"}}`
   with a synthesized id; only the first Action per turn is surfaced.
@@ -51,6 +57,8 @@ testable and deterministic.
 - src/yaya/plugins/strategy_react/AGENT.md
 - tests/plugins/strategy_react/__init__.py
 - tests/plugins/strategy_react/test_strategy_react.py
+- tests/bdd/features/plugin-strategy_react.feature
+- tests/bdd/test_plugins.py
 - specs/plugin-strategy_react.spec
 
 ### Forbidden
@@ -84,6 +92,17 @@ Scenario: Assistant message with a well-formed Action decides next step is tool 
   Given a strategy.decide.request whose last assistant message contains a ReAct Action and Action Input
   When the ReAct plugin handles the event
   Then a strategy.decide.response is emitted with next tool and the parsed tool_call payload
+  And the response echoes the originating request id
+
+Scenario: Assistant message with a bracketed tool-call block decides next step is tool
+  Test:
+    Package: yaya
+    Filter: tests/plugins/strategy_react/test_strategy_react.py::test_assistant_with_tool_call_block_returns_tool
+  Level: unit
+  Given a strategy.decide.request whose last assistant message contains Final Answer prose and a [TOOL_CALL] block
+  When the ReAct plugin handles the event
+  Then a strategy.decide.response is emitted with next tool and the parsed tool_call payload
+  And the Final Answer prose does not terminate the turn before the tool runs
   And the response echoes the originating request id
 
 Scenario: Observation follows the last assistant message so the next step loops back to llm

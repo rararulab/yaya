@@ -9,6 +9,7 @@ AC-bindings:
 
 * no assistant yet → ``test_no_assistant_yet_returns_llm``
 * well-formed Action → ``test_assistant_with_react_action_returns_tool``
+* provider-style tool-call block → ``test_assistant_with_tool_call_block_returns_tool``
 * Final Answer → ``test_assistant_with_final_answer_returns_done``
 * post-Observation → ``test_post_observation_returns_llm``
 * malformed → nudge → ``test_malformed_assistant_triggers_nudge``
@@ -130,6 +131,37 @@ async def test_assistant_with_react_action_returns_tool(tmp_path: Path) -> None:
     got = captured[0].payload
     assert got["next"] == "tool"
     assert got["tool_call"] == {"id": "rx-2", "name": "bash", "args": {"cmd": ["echo", "x"]}}
+    assert "request_id" in got
+
+
+async def test_assistant_with_tool_call_block_returns_tool(tmp_path: Path) -> None:
+    """Provider-style tool-call block → tool even when prose says Final Answer."""
+    bus = EventBus()
+    assistant_text = (
+        "Final Answer: I will search Mercari Japan for XPS.\n"
+        "[TOOL_CALL]\n"
+        '{"tool": "mercari_jp_search", "tool_input": {"keyword": "XPS"}}\n'
+        "[/TOOL_CALL]"
+    )
+    captured = await _drive(
+        bus,
+        react_plugin,
+        tmp_path,
+        {
+            "state": {
+                "step": 7,
+                "messages": [
+                    {"role": "user", "content": "帮我看看mercari上的xps"},
+                    {"role": "assistant", "content": assistant_text},
+                ],
+            }
+        },
+        session_id="sess-tool-call-block",
+    )
+    assert len(captured) == 1
+    got = captured[0].payload
+    assert got["next"] == "tool"
+    assert got["tool_call"] == {"id": "rx-7", "name": "mercari_jp_search", "args": {"keyword": "XPS"}}
     assert "request_id" in got
 
 
@@ -260,6 +292,48 @@ def test_parse_assistant_action_input_in_code_fence() -> None:
 
     out = _parse_assistant('Thought: ok\nAction: bash\nAction Input: ```json\n{"cmd": ["echo", "hi"]}\n```')
     assert out == ("action", "bash", {"cmd": ["echo", "hi"]})
+
+
+def test_parse_assistant_tool_call_block() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant(
+        "Final Answer: I will search Mercari Japan.\n"
+        "[TOOL_CALL]\n"
+        '{"tool": "mercari_jp_search", "tool_input": {"keyword": "XPS"}}\n'
+        "[/TOOL_CALL]"
+    )
+    assert out == ("action", "mercari_jp_search", {"keyword": "XPS"})
+
+
+def test_parse_assistant_malformed_tool_call_block_reports_error() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant("Final Answer: I will search Mercari Japan.\n[TOOL_CALL]\nnot-json\n[/TOOL_CALL]")
+    assert out[0] == "error"
+    assert "TOOL_CALL" in out[1]
+
+
+def test_parse_assistant_tool_call_block_accepts_json_fence_and_args_alias() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant('[TOOL_CALL]\n```json\n{"tool": "bash", "args": {"cmd": ["echo", "x"]}}\n```\n[/TOOL_CALL]')
+    assert out == ("action", "bash", {"cmd": ["echo", "x"]})
+
+
+def test_parse_assistant_tool_call_block_defaults_missing_input_to_empty_object() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    out = _parse_assistant('[TOOL_CALL]\n{"tool": "bash"}\n[/TOOL_CALL]')
+    assert out == ("action", "bash", {})
+
+
+def test_parse_assistant_tool_call_block_rejects_bad_shape() -> None:
+    from yaya.plugins.strategy_react.plugin import _parse_assistant
+
+    assert _parse_assistant("[TOOL_CALL]\n[]\n[/TOOL_CALL]")[0] == "error"
+    assert _parse_assistant('[TOOL_CALL]\n{"tool": "", "tool_input": {}}\n[/TOOL_CALL]')[0] == "error"
+    assert _parse_assistant('[TOOL_CALL]\n{"tool": "bash", "tool_input": []}\n[/TOOL_CALL]')[0] == "error"
 
 
 def test_parse_assistant_missing_labels_reports_error() -> None:

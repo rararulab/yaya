@@ -476,3 +476,26 @@ async def test_provider_and_model_unknown_active_falls_back_to_first(tmp_path: P
 # specific and no longer apply — ReAct pairing is handled implicitly
 # by "message after last assistant → llm" (covered by
 # test_post_observation_returns_llm).
+
+
+def test_system_prompt_forbids_content_in_thought() -> None:
+    """The system prompt must flag Thought as internal-only and Final Answer as the sole user channel.
+
+    Regression for #183: when the model treated ``Thought: <final reasoning>``
+    literally and produced lists / tables inside Thought, the web UI hid the
+    real answer inside the 'Show reasoning' fold. The prompt must now tell
+    the model explicitly that Thought is not user-visible.
+    """
+    from yaya.plugins.strategy_react.plugin import _build_system_prompt
+
+    prompt = _build_system_prompt([])
+
+    # Hard-constrain Thought:
+    assert "Internal scratchpad only." in prompt
+    assert "collapsed 'Show reasoning' fold" in prompt
+    assert "no content the user needs" in prompt
+    # Final Answer carries every user-facing artefact:
+    assert "every list," in prompt and "table," in prompt
+    # Old loose phrasing must be gone.
+    assert "<final reasoning>" not in prompt
+    assert "<reason about what to do next>" not in prompt

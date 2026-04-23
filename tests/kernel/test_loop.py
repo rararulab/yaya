@@ -11,13 +11,22 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
 from yaya.kernel.bus import EventBus
 from yaya.kernel.events import Event, new_event
 from yaya.kernel.loop import AgentLoop, LoopConfig
+from yaya.kernel.tool import (
+    TextBlock,
+    Tool,
+    ToolOk,
+    ToolReturnValue,
+    install_dispatcher,
+    register_tool,
+    unregister_tool,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -113,6 +122,19 @@ class FakeTool:
                 source="fake-tool",
             )
         )
+
+
+class EchoV1Tool(Tool):
+    """Registered v1 tool used to prove AgentLoop routes through the dispatcher."""
+
+    name: ClassVar[str] = "v1_echo"
+    description: ClassVar[str] = "Echo a value through the v1 tool dispatcher."
+
+    x: int
+
+    async def run(self, ctx: Any) -> ToolReturnValue:
+        del ctx
+        return ToolOk(brief="echoed", display=TextBlock(text=str(self.x)))
 
 
 @dataclass
@@ -268,11 +290,66 @@ async def test_tool_roundtrip() -> None:
     assert order.index("tool.call.result") < order.index("assistant.message.done")
     assert tool.calls == [
         {
+            "schema_version": "v1",
             "id": "t1",
             "name": "echo",
             "args": {"x": 1},
         }
     ]
+
+
+async def test_tool_roundtrip_dispatches_registered_v1_tool() -> None:
+    """AgentLoop tool.call.request must carry schema_version so v1 tools run."""
+    bus = EventBus()
+    install_dispatcher(bus)
+    register_tool(EchoV1Tool)
+    strategy = FakeStrategy(
+        bus,
+        script=[
+            {
+                "next": "tool",
+                "tool_call": {"id": "v1-1", "name": "v1_echo", "args": {"x": 7}},
+            },
+            {"next": "done"},
+        ],
+    )
+    strategy.subscribe()
+
+    tool_results: list[Event] = []
+    errors: list[Event] = []
+
+    async def on_tool_result(ev: Event) -> None:
+        tool_results.append(ev)
+
+    async def on_kernel_error(ev: Event) -> None:
+        errors.append(ev)
+
+    bus.subscribe("tool.call.result", on_tool_result, source="probe")
+    bus.subscribe("kernel.error", on_kernel_error, source="probe")
+
+    loop = AgentLoop(bus, LoopConfig(step_timeout_s=0.05))
+    try:
+        await loop.start()
+        await bus.publish(
+            new_event(
+                "user.message.received",
+                {"text": "run v1"},
+                session_id="s-v1-tool",
+                source="fake-adapter",
+            )
+        )
+        await asyncio.sleep(0.1)
+        await _settle(bus)
+    finally:
+        await loop.stop()
+        await bus.close()
+        unregister_tool(EchoV1Tool.name)
+
+    assert errors == []
+    assert len(tool_results) == 1
+    assert tool_results[0].payload["id"] == "v1-1"
+    assert tool_results[0].payload["ok"] is True
+    assert tool_results[0].payload["envelope"]["display"] == {"kind": "text", "text": "7"}
 
 
 # ---------------------------------------------------------------------------

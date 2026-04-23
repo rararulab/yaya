@@ -69,6 +69,7 @@ from yaya.kernel.logging import get_plugin_logger
 from yaya.kernel.plugin import Category, KernelContext, Plugin
 from yaya.kernel.providers import PROVIDERS_PREFIX, PROVIDERS_SEEDED_MARKER
 from yaya.kernel.session import Session
+from yaya.kernel.tool import install_dispatcher
 
 if TYPE_CHECKING:  # pragma: no cover - type-only import, breaks an import cycle.
     from yaya.kernel.bus import EventBus, Subscription
@@ -282,6 +283,7 @@ class PluginRegistry:
             self._on_plugin_error,
             source=_SOURCE,
         )
+        install_dispatcher(self._bus)
 
         await self._discover_and_load()
 

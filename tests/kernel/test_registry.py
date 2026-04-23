@@ -29,6 +29,7 @@ from yaya.kernel.registry import (
     PluginStatus,
     validate_install_source,
 )
+from yaya.kernel.tool import TextBlock, Tool, ToolOk, ToolReturnValue, register_tool, unregister_tool
 
 # ---------------------------------------------------------------------------
 # Stub plugins.
@@ -84,6 +85,38 @@ class _FailingPlugin:
 
     async def on_unload(self, ctx: KernelContext) -> None:
         self.on_unload_calls += 1
+
+
+class _RegistryV1Tool(Tool):
+    name: ClassVar[str] = "registry_v1_echo"
+    description: ClassVar[str] = "Echo through a registry-installed v1 dispatcher."
+
+    text: str
+
+    async def run(self, ctx: KernelContext) -> ToolReturnValue:
+        del ctx
+        return ToolOk(brief="echoed", display=TextBlock(text=self.text))
+
+
+class _V1ToolPlugin:
+    name = "v1-tool-plugin"
+    version = "0.1.0"
+    category = Category.TOOL
+    requires: ClassVar[list[str]] = []
+
+    def subscriptions(self) -> list[str]:
+        return []
+
+    async def on_load(self, ctx: KernelContext) -> None:
+        del ctx
+        register_tool(_RegistryV1Tool)
+
+    async def on_event(self, ev: Event, ctx: KernelContext) -> None:
+        del ev, ctx
+
+    async def on_unload(self, ctx: KernelContext) -> None:
+        del ctx
+        unregister_tool(_RegistryV1Tool.name)
 
 
 class _FakeEntryPoint:
@@ -262,6 +295,43 @@ async def test_snapshot_lists_every_plugin_with_status(tmp_path: Path) -> None:
     # Every row has the mandated keys.
     for row in rows:
         assert set(row.keys()) == {"name", "version", "category", "status"}
+
+    await registry.stop()
+    await bus.close()
+
+
+async def test_registry_installs_v1_tool_dispatcher(tmp_path: Path) -> None:
+    """Registry boot wires the kernel v1 dispatcher before kernel.ready."""
+    bus = EventBus()
+    results: list[Event] = []
+    bus.subscribe("tool.call.result", _collector(results), source="observer")
+
+    plugin = _V1ToolPlugin()
+    with patch(
+        "yaya.kernel.registry.entry_points",
+        side_effect=_fake_entry_points([_FakeEntryPoint("v1-tool", plugin)]),
+    ):
+        registry = PluginRegistry(bus, state_dir=tmp_path)
+        await registry.start()
+
+    await bus.publish(
+        new_event(
+            "tool.call.request",
+            {
+                "schema_version": "v1",
+                "id": "call-1",
+                "name": _RegistryV1Tool.name,
+                "args": {"text": "ok"},
+            },
+            session_id="s",
+            source="kernel",
+        )
+    )
+    await _drain_until(lambda: len(results) == 1, bus)
+
+    assert results[0].payload["id"] == "call-1"
+    assert results[0].payload["ok"] is True
+    assert results[0].payload["envelope"]["display"] == {"kind": "text", "text": "ok"}
 
     await registry.stop()
     await bus.close()

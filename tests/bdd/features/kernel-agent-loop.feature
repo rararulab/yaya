@@ -22,6 +22,7 @@ Feature: Kernel AgentLoop fixed per-turn scheduler
     When a user.message.received event arrives
     Then a tool.call.start event and a tool.call.result event are observed
     And they occur before assistant.message.done in the frozen event sequence
+    And the tool.call.request payload uses schema_version v1
 
   Scenario: Error path — max_iterations guard emits kernel.error and aborts the turn
     Given an AgentLoop configured with max_iterations=3

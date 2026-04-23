@@ -738,6 +738,9 @@ user.message.received
 
 Strategies control: which tools to offer, when to call memory, when to
 stop. Strategies **do not** change the ordering of the sequence —
+the loop emits tool requests with `schema_version="v1"` so registered
+`Tool` subclasses route through the kernel dispatcher while legacy
+subscribers still see the same bus event.
 that is the kernel's contract with adapters.
 
 ### Cross-turn history hydration
@@ -816,7 +819,7 @@ The bus auto-persister maps bus events onto tape entries:
 | `user.message.received` | `message` role=`user` | |
 | `assistant.message.delta` | *(skipped)* | Too chatty — deltas only |
 | `assistant.message.done` | `message` role=`assistant` | Final turn |
-| `tool.call.request` | `tool_call` | `{id, name, args}` |
+| `tool.call.request` | `tool_call` | `{id, name, args, schema_version?}` |
 | `tool.call.result` | `tool_result` | Correlated by `tool_call_id` |
 | `llm.call.delta` | *(skipped)* | Streaming chunk — too chatty |
 | `session.*` | *(skipped)* | Lifecycle mirrors the tape itself |

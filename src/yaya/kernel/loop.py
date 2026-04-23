@@ -734,7 +734,7 @@ class AgentLoop:
 
         req = new_event(
             "tool.call.request",
-            {"id": tool_id, "name": name, "args": args},
+            {"schema_version": "v1", "id": tool_id, "name": name, "args": args},
             session_id=session_id,
             source=_SOURCE,
         )

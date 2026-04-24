@@ -41,7 +41,10 @@ Python 3.14+.
 # from source (recommended for reviewers)
 git clone https://github.com/rararulab/yaya.git
 cd yaya
-uv sync
+uv sync                                # preferred — uses uv.lock
+# or, with plain pip:
+#   python -m venv .venv && . .venv/bin/activate
+#   pip install -r requirements.txt && pip install -e .
 uv run yaya version
 
 # or a release wheel

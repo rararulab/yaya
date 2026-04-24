@@ -21,7 +21,7 @@ dependencies = [
     "loguru>=0.7.2",
     "httpx>=0.28.1",
     "openai>=1.52.0",
-    "fastapi>=0.115.0",
+    "fastapi>=0.136.1",
     "uvicorn[standard]>=0.30.0",
     # Event-sourcing primitives for the session tape store (issue #32).
     # republic ships Tape / TapeEntry / TapeStore / AsyncTapeStore /

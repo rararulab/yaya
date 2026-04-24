@@ -2,7 +2,7 @@
 #    uv export --no-dev --no-hashes --no-editable --no-emit-project
 annotated-doc==0.0.4
 annotated-types==0.7.0
-anthropic==0.96.0
+anthropic==0.97.0
 any-llm-sdk==1.13.0
 anyio==4.13.0
 authlib==1.7.0

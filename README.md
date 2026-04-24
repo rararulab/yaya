@@ -48,20 +48,14 @@ uv run yaya version
 pip install "yaya @ https://github.com/rararulab/yaya/releases/latest/download/yaya-py3-none-any.whl"
 ```
 
-Configure an LLM provider (bundled `llm_echo` works offline for a
-smoke test):
-
-```bash
-# OpenAI-native
-export OPENAI_API_KEY=sk-...
-
-# or any OpenAI-compatible endpoint
-yaya config set providers.default.plugin   llm-openai
-yaya config set providers.default.base_url "https://api.minimax.io/v1/"
-yaya config set providers.default.model    "MiniMax-M2.7"
-yaya config set providers.default.api_key  "${YOUR_KEY}"
-yaya config set provider default
-```
+Configure an LLM provider in the web UI: click **Settings → LLM
+Providers**, add a row (`llm-openai` plugin), paste your `api_key`,
+set `base_url` / `model` if you use an OpenAI-compatible endpoint
+(MiniMax / LM Studio / Azure / vLLM), click **Save**, then mark it
+**Active**. The bundled `llm_echo` dev provider is the default and
+replies deterministically, so `yaya serve` works offline for a first
+smoke test; setting `OPENAI_API_KEY` in the shell is also honored as
+a quick-start fallback.
 
 ## Usage
 
